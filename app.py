@@ -5,7 +5,6 @@ from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
 import io
-import os
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
@@ -25,13 +24,26 @@ def preprocess_image(uploaded_file):
     data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
     data[0] = normalized_image_array
     return data
+
+def load_model_and_labels(model_path, label_path):
+    model = None
+    class_names = []
+    try:
+        with custom_object_scope({'DepthwiseConv2D': DepthwiseConv2D}):
+            model = load_model(model_path)
+        with open(label_path, 'r') as file:
+            class_names = file.read().strip().split('\n')
+    except Exception as e:
+        st.error(f"Error loading model or labels: {str(e)}")
+    return model, class_names
+
 def predict(model, data, class_names):
     try:
         prediction = model.predict(data)
         index = np.argmax(prediction)
         class_name = class_names[index]
         confidence_score = prediction[0][index]
-        return class_name[2:], confidence_score
+        return class_name, confidence_score
     except Exception as e:
         st.error(f"Error during prediction: {str(e)}")
         return None, None
@@ -54,7 +66,8 @@ label_paths = {
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
-# ... (rest of your code remains the same)
+
+uploaded_file = st.file_uploader("Escolha uma imagem...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     # Display the uploaded image
@@ -74,4 +87,4 @@ if uploaded_file is not None:
             else:
                 st.error("An error occurred during prediction. Please try again.")
         else:
-            st.error("Failed to load the model and labels. Please check the files and try again.")
+            st.error("Failed to load the model and labels. Please check the files.")
