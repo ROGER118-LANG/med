@@ -17,22 +17,13 @@ import os
 import requests
 
 
-def download_file(url, local_path):
-    response = requests.get(url)
-    if response.status_code == 200:
-        with open(local_path, 'wb') as file:
-            file.write(response.content)
-    else:
-        st.sidebar.error(f"Erro ao baixar o arquivo de {url}")
 
 def load_models():
     models = {}
-   base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
-
+    base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
     disease_configs = {
         "Tuberculose": {
-            "model": "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/tuberculose_model.h5"
-
+            "model": "tuberculose_model.h5",
             "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
@@ -49,28 +40,33 @@ def load_models():
         model_url = base_url + config["model"]
         label_url = base_url + config["labels"]
 
-        # Caminhos temporários locais
-        model_path = f"./{config['model']}"
-        label_path = f"./{config['labels']}"
-
-        # Baixar os arquivos
-        download_file(model_url, model_path)
-        download_file(label_url, label_path)
-
-        # Verificar se os arquivos foram baixados corretamente
-        if os.path.exists(model_path) and os.path.exists(label_path):
-            try:
+        # Abrir os arquivos diretamente da URL
+        try:
+            # Carregar o modelo da URL
+            response = requests.get(model_url)
+            if response.status_code == 200:
+                model_content = BytesIO(response.content)
                 custom_objects = {'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D}
-                model = load_model(model_path, custom_objects=custom_objects, compile=False)
-                
-                with open(label_path, "r") as f:
-                    labels = [line.strip() for line in f.readlines()]
-                models[disease] = (model, labels)
-                st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
-            except Exception as e:
-                st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {str(e)}")
-        else:
-            st.sidebar.warning(f"Arquivos do modelo de {disease} não foram encontrados.")
+                model = load_model(model_content, custom_objects=custom_objects, compile=False)
+            else:
+                st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {response.status_code}")
+                continue
+
+            # Carregar os rótulos da URL
+            response = requests.get(label_url)
+            if response.status_code == 200:
+                labels = [line.strip() for line in response.text.splitlines()]
+            else:
+                st.sidebar.error(f"Erro ao carregar os rótulos de {disease}: {response.status_code}")
+                continue
+
+            # Armazenar o modelo e rótulos
+            models[disease] = (model, labels)
+            st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
+        
+        except Exception as e:
+            st.sidebar.error(f"Erro ao carregar os arquivos de {disease}: {str(e)}")
+
     return models
 
 # Continue com o restan
