@@ -18,6 +18,13 @@ import requests
 
 
 
+import requests
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+import streamlit as st
+import os
+import tempfile
+
 def load_models():
     models = {}
     base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
@@ -40,25 +47,29 @@ def load_models():
         model_url = base_url + config["model"]
         label_url = base_url + config["labels"]
 
-        # Abrir os arquivos diretamente da URL
         try:
-            # Carregar o modelo da URL
+            # Baixar o modelo da URL
             response = requests.get(model_url)
             if response.status_code == 200:
-                # Salvar o modelo em um arquivo temporário
                 with tempfile.NamedTemporaryFile(delete=False) as temp_model_file:
                     temp_model_file.write(response.content)
                     temp_model_path = temp_model_file.name
 
-                # Carregar o modelo do arquivo temporário
-                custom_objects = {'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D}
-                model = load_model(temp_model_path, custom_objects=custom_objects, compile=False)
-                os.remove(temp_model_path)  # Excluir o arquivo temporário após o carregamento
+                # Verificar se o arquivo é um .h5
+                if temp_model_path.endswith('.h5'):
+                    # Se for um arquivo HDF5, carregar normalmente
+                    custom_objects = {'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D}
+                    model = load_model(temp_model_path, custom_objects=custom_objects, compile=False)
+                else:
+                    # Se for um modelo SavedModel, usar TFSMLayer
+                    model = tf.keras.layers.TFSMLayer(temp_model_path, call_endpoint='serving_default')
+
+                os.remove(temp_model_path)  # Excluir arquivo temporário
             else:
                 st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {response.status_code}")
                 continue
 
-            # Carregar os rótulos da URL
+            # Baixar os rótulos
             response = requests.get(label_url)
             if response.status_code == 200:
                 labels = [line.strip() for line in response.text.splitlines()]
@@ -66,7 +77,6 @@ def load_models():
                 st.sidebar.error(f"Erro ao carregar os rótulos de {disease}: {response.status_code}")
                 continue
 
-            # Armazenar o modelo e rótulos
             models[disease] = (model, labels)
             st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
         
@@ -75,7 +85,6 @@ def load_models():
 
     return models
 
-# Continue com o restan
 
 # Function to prepare the database
 def init_database():
