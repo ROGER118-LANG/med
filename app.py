@@ -47,11 +47,14 @@ def load_models():
     
     models = {}
     for model_path, labels_path in zip(model_paths, labels_paths):
-        model = tf.keras.models.load_model(model_path, compile=False)
-        with open(labels_path, "r") as f:
-            class_names = [line.strip() for line in f.readlines()]
-        disease_name = model_path.split('_')[1].split('.')[0]
-        models[disease_name] = (model, class_names)
+        try:
+            model = tf.keras.models.load_model(model_path, compile=False)
+            with open(labels_path, "r") as f:
+                class_names = [line.strip() for line in f.readlines()]
+            disease_name = model_path.split('_')[1].split('.')[0]
+            models[disease_name] = (model, class_names)
+        except Exception as e:
+            st.error(f"Erro ao carregar o modelo {model_path}: {e}")
     return models
 
 # Funções de banco de dados
@@ -191,17 +194,18 @@ if uploaded_file is not None:
                 for disease, (class_name, confidence_score) in results.items():
                     save_analysis(patient_id, disease, class_name, confidence_score, image)
                 st.success("Análise salva com sucesso!")
-            else:
-                st.error("Por favor, selecione um paciente.")
 
-        # Visualizar histórico do paciente
-        if st.button("Ver Histórico do Paciente"):
-            patient_id = int(selected_patient.split(':')[0])
-            history_df = get_patient_history(patient_id)
-            if not history_df.empty:
-                visualize_patient_history(history_df)
-                st.markdown(export_to_csv(history_df), unsafe_allow_html=True)
-                display_confusion_matrix(history_df)
-            else:
-                st.write("Nenhum histórico encontrado para este paciente.")
+# Histórico do paciente
+if st.sidebar.button("Ver Histórico do Paciente"):
+    conn = sqlite3.connect('medvision_ai.db')
+    patient_id = int(selected_patient.split(':')[0])
+    df = get_patient_history(patient_id)
+    conn.close()
 
+    if not df.empty:
+        visualize_patient_history(df)
+        display_confusion_matrix(df)
+        href = export_to_csv(df)
+        st.markdown(href, unsafe_allow_html=True)
+    else:
+        st.warning("Nenhum histórico encontrado para este paciente.")
