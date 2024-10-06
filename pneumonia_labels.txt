@@ -1,0 +1,4 @@
+0 PNEUMONIA
+1 NORMAL
+0 tuberculose
+1 normal

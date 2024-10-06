@@ -1,0 +1,19 @@
+# config.yaml
+model:
+  tuberculose: "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/tuberculose_model.h5"
+  pneumonia: "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/pneumonia_model.h5"
+  cancer: "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/cancer_model.h5"
+database:
+  path: "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/medvision_ai.db"
+credentials:
+  username: "admin"
+  password: "23122010r"
+cookie:
+  name: "rodrigo"
+  key: "2312"  # A chave secreta para o cookie
+  expiry_days: 30  # Número de dias até o cookie expirar
+
+preauthorized:
+  emails:
+    - "rodrigo.rapoport231012@gmail.com"
+    - "email2@exemplo.com"

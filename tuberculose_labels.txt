@@ -1,0 +1,2 @@
+0 tuberculose
+1 normal

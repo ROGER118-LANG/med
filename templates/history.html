@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histórico do Paciente</title>
+</head>
+<body>
+    <h1>Histórico de Análises</h1>
+    <table>
+        <tr>
+            <th>Data</th>
+            <th>Previsão</th>
+            <th>Confiança</th>
+        </tr>
+        {% for analysis in analyses %}
+            <tr>
+                <td>{{ analysis.date }}</td>
+                <td>{{ analysis.prediction }}</td>
+                <td>{{ analysis.confidence }}</td>
+            </tr>
+        {% endfor %}
+    </table>
+    <a href="/">Voltar</a>
+</body>
+</html>
