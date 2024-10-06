@@ -11,7 +11,6 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 import io
 import base64
-import os  # Para verificar a existência dos arquivos
 
 # Configuração inicial
 st.set_page_config(page_title="MedVision AI", layout="wide")
@@ -41,25 +40,18 @@ def predict(image, model, class_names):
 
 # Função para carregar os modelos e os rótulos
 @st.cache_resource
-def load_models(model_paths, labels_paths):
+def load_models():
     """Carrega múltiplos modelos e suas classes."""
+    model_paths = ["tuberculose_models.h5", "model_pneumonia.h5", "model_outro.h5"]
+    labels_paths = ["labels_tuberculose.txt", "labels_pneumonia.txt", "labels_outro.txt"]
+    
     models = {}
     for model_path, labels_path in zip(model_paths, labels_paths):
-        if not os.path.exists(model_path):
-            st.error(f"Modelo não encontrado: {model_path}")
-            continue
-        if not os.path.exists(labels_path):
-            st.error(f"Arquivo de rótulos não encontrado: {labels_path}")
-            continue
-        
-        try:
-            model = load_model(model_path, compile=False)
-            with open(labels_path, "r") as f:
-                class_names = [line.strip() for line in f.readlines()]
-            disease_name = os.path.basename(model_path).split('_')[1].split('.')[0]  # Extrai o nome da doença do nome do arquivo
-            models[disease_name] = (model, class_names)
-        except Exception as e:
-            st.error(f"Erro ao carregar o modelo {model_path}: {e}")
+        model = load_model(model_path, compile=False)
+        with open(labels_path, "r") as f:
+            class_names = [line.strip() for line in f.readlines()]
+        disease_name = model_path.split('_')[1].split('.')[0]  # Extrai o nome da doença do nome do arquivo
+        models[disease_name] = (model, class_names)
     return models
 
 # Funções de banco de dados
@@ -152,9 +144,7 @@ def export_to_csv(df):
 init_database()
 
 # Carregar modelos
-model_paths = ["tuberculose_model.h5", "pneumonia_model.h5", "cancer_model.h5"]
-labels_paths = ["tuberculose_labels.txt", "pneumonia_labels.txt", "cancer_labels.txt"]
-models = load_models(model_paths, labels_paths)
+models = load_models()
 
 # Interface principal
 st.sidebar.header("Gerenciamento de Pacientes")
@@ -183,24 +173,34 @@ if uploaded_file is not None:
             st.write(f"Análise para {disease}:")
             st.write(f"Previsão: {class_name}")
             st.write(f"Confiança: {confidence_score:.2f}")
+            st.write("---")
 
-        if st.sidebar.button("Salvar Análise"):
-            if 'patient_id' in locals():
+        # Selecionar paciente e salvar análise
+        conn = sqlite3.connect('medvision_ai.db')
+        c = conn.cursor()
+        c.execute("SELECT id, name, age, gender FROM patients ORDER BY name")
+        patients = c.fetchall()
+        conn.close()
+
+        patient_names = [f"{id}: {name} (Idade: {age}, Gênero: {gender})" for (id, name, age, gender) in patients]
+        selected_patient = st.selectbox("Selecionar Paciente", patient_names)
+
+        if st.button("Salvar Análise"):
+            if selected_patient:
+                patient_id = int(selected_patient.split(':')[0])
                 for disease, (class_name, confidence_score) in results.items():
                     save_analysis(patient_id, disease, class_name, confidence_score, image)
-                st.sidebar.success("Análise salva com sucesso!")
+                st.success("Análise salva com sucesso!")
             else:
-                st.sidebar.error("Nenhum paciente selecionado.")
+                st.error("Por favor, selecione um paciente.")
 
-# Visualização de histórico do paciente
-if st.sidebar.button("Visualizar Histórico do Paciente"):
-    if 'patient_id' in locals():
-        df_history = get_patient_history(patient_id)
-        if not df_history.empty:
-            visualize_patient_history(df_history)
-            display_confusion_matrix(df_history)
-            st.markdown(export_to_csv(df_history), unsafe_allow_html=True)
-        else:
-            st.write("Nenhum histórico encontrado para este paciente.")
-    else:
-        st.sidebar.error("Nenhum paciente selecionado.")
+        # Visualizar histórico do paciente
+        if st.button("Ver Histórico do Paciente"):
+            patient_id = int(selected_patient.split(':')[0])
+            history_df = get_patient_history(patient_id)
+            if not history_df.empty:
+                visualize_patient_history(history_df)
+                st.markdown(export_to_csv(history_df), unsafe_allow_html=True)
+                display_confusion_matrix(history_df)
+            else:
+                st.warning("Nenhum histórico encontrado para este paciente.")
