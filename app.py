@@ -43,7 +43,7 @@ def predict(image, model, class_names):
 def load_models():
     """Carrega múltiplos modelos e suas classes."""
     model_paths = ["tuberculose_model.h5", "pneumonia_model.h5", "cancer_model.h5"]
-    labels_paths = ["labels_tuberculose.txt", "labels_pneumonia.txt", "labels_outro.txt"]
+    labels_paths = ["tuberculose_labels.txt", "pneumonia_labels.txt", "cancer_labels.txt"]
     
     models = {}
     for model_path, labels_path in zip(model_paths, labels_paths):
