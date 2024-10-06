@@ -1,7 +1,9 @@
 import streamlit as st
 from PIL import Image, ImageOps
 import numpy as np
-from tensorflow.keras.models import load_model  # Alterado para TensorFlow Keras
+from tensorflow.keras.models import load_model  
+import tensorflow as tf
+# Alterado para TensorFlow Keras
 import sqlite3
 from datetime import datetime
 import matplotlib.pyplot as plt
