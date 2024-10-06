@@ -25,31 +25,42 @@ def load_models():
             "labels": "cancer_labels.txt"
         },
         "Pneumonia": {
-            "model": "pneumonia_model.h5",
+            "model": "/pneumonia_model.h5",
             "labels": "pneumonia_labels.txt"
         }
     }
 
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-
     for disease, config in disease_configs.items():
-        model_path = os.path.join(current_dir, config["model"])
-        label_path = os.path.join(current_dir, config["labels"])
+        model_path = config["model"]
+        label_path = config["labels"]
 
         if os.path.exists(model_path) and os.path.exists(label_path):
             try:
-                model = load_model(model_path, compile=False)
+                # Use custom_objects to handle DepthwiseConv2D compatibility issue
+                custom_objects = {
+                    'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D
+                }
+                model = load_model(model_path, custom_objects=custom_objects, compile=False)
+                
                 with open(label_path, "r") as f:
                     labels = [line.strip() for line in f.readlines()]
                 models[disease] = (model, labels)
                 st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
             except Exception as e:
                 st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {str(e)}")
+                st.sidebar.info(f"Tentando carregar o modelo de {disease} com opções alternativas...")
+                try:
+                    # Try loading with TensorFlow 2.x compatibility
+                    model = tf.keras.models.load_model(model_path, compile=False)
+                    with open(label_path, "r") as f:
+                        labels = [line.strip() for line in f.readlines()]
+                    models[disease] = (model, labels)
+                    st.sidebar.success(f"Modelo de {disease} carregado com sucesso usando opções alternativas.")
+                except Exception as e2:
+                    st.sidebar.error(f"Falha ao carregar o modelo de {disease} com opções alternativas: {str(e2)}")
         else:
             st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
     return models
-
-
 # Function to prepare the database
 def init_database():
     conn = sqlite3.connect('medvision_ai.db')
