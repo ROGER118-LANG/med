@@ -13,33 +13,48 @@ import io
 import base64
 import os
 
+def download_file(url, local_path):
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(local_path, 'wb') as file:
+            file.write(response.content)
+    else:
+        st.sidebar.error(f"Erro ao baixar o arquivo de {url}")
+
 def load_models():
     models = {}
+    base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
     disease_configs = {
         "Tuberculose": {
-            "model": "./models/tuberculose_model.h5",
-            "labels": "./models/tuberculose_labels.txt"
+            "model": "tuberculose_model.h5",
+            "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
-            "model": "./models/cancer_model.h5",  # Certifique-se de que o modelo está disponível
-            "labels": "./models/cancer_labels.txt"
+            "model": "cancer_model.h5",
+            "labels": "cancer_labels.txt"
         },
         "Pneumonia": {
-            "model": "./models/pneumonia_model.h5",
-            "labels": "./models/pneumonia_labels.txt"
+            "model": "pneumonia_model.h5",
+            "labels": "pneumonia_labels.txt"
         }
     }
 
     for disease, config in disease_configs.items():
-        model_path = config["model"]
-        label_path = config["labels"]
+        model_url = base_url + config["model"]
+        label_url = base_url + config["labels"]
 
+        # Caminhos temporários locais
+        model_path = f"./{config['model']}"
+        label_path = f"./{config['labels']}"
+
+        # Baixar os arquivos
+        download_file(model_url, model_path)
+        download_file(label_url, label_path)
+
+        # Verificar se os arquivos foram baixados corretamente
         if os.path.exists(model_path) and os.path.exists(label_path):
             try:
-                # Use custom_objects to handle DepthwiseConv2D compatibility issue
-                custom_objects = {
-                    'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D
-                }
+                custom_objects = {'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D}
                 model = load_model(model_path, custom_objects=custom_objects, compile=False)
                 
                 with open(label_path, "r") as f:
@@ -48,19 +63,11 @@ def load_models():
                 st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
             except Exception as e:
                 st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {str(e)}")
-                st.sidebar.info(f"Tentando carregar o modelo de {disease} com opções alternativas...")
-                try:
-                    # Try loading with TensorFlow 2.x compatibility
-                    model = tf.keras.models.load_model(model_path, compile=False)
-                    with open(label_path, "r") as f:
-                        labels = [line.strip() for line in f.readlines()]
-                    models[disease] = (model, labels)
-                    st.sidebar.success(f"Modelo de {disease} carregado com sucesso usando opções alternativas.")
-                except Exception as e2:
-                    st.sidebar.error(f"Falha ao carregar o modelo de {disease} com opções alternativas: {str(e2)}")
         else:
-            st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
+            st.sidebar.warning(f"Arquivos do modelo de {disease} não foram encontrados.")
     return models
+
+# Continue com o restan
 
 # Function to prepare the database
 def init_database():
