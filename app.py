@@ -41,6 +41,8 @@ def predict(image, model, class_names):
 # Função para carregar os modelos e os rótulos
 @st.cache_resource
 def load_models(model_paths, labels_paths):
+    model_paths = ["tuberculose_model.h5", "caminho/para/model_pneumonia.h5", "caminho/para/model_outro.h5"]
+
     """Carrega múltiplos modelos e suas classes."""
     models = {}
     for model_path, labels_path in zip(model_paths, labels_paths):
