@@ -11,26 +11,31 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 import io
 import base64
+import os
+
+# Obter o caminho absoluto do modelo e das label
 
 # Function to load models and labels
 
 # Function to load models and labels
 def load_models():
     models = {}
-    disease_configs = {
-        "Tuberculose": {
-            "model": "https://github.com/ROGER118-LANG/med/blob/main/tuberculose_model.h5",  # Apenas o nome do arquivo
-            "labels": "https://github.com/ROGER118-LANG/med/blob/main/tuberculose_labels.txt"  # Apenas o nome do arquivo
-        },
-        "Câncer": {
-            "model": "https://github.com/ROGER118-LANG/med/blob/main/cancer_model.h5",  # Apenas o nome do arquivo
-            "labels": "https://github.com/ROGER118-LANG/med/blob/main/cancer_labels.txt"  # Apenas o nome do arquivo
-        },
-        "Pneumonia": {
-            "model": "https://github.com/ROGER118-LANG/med/blob/main/pneumonia_model.h5",  # Apenas o nome do arquivo
-            "labels": "https://github.com/ROGER118-LANG/med/blob/main/pneumonia_labels.txt"  # Apenas o nome do arquivo
-        }
+   current_dir = os.path.dirname(os.path.abspath(__file__))
+
+disease_configs = {
+    "Tuberculose": {
+        "model": os.path.join(current_dir, "tuberculose_model.h5"),
+        "labels": os.path.join(current_dir, "tuberculose_labels.txt")
+    },
+    "Câncer": {
+        "model": os.path.join(current_dir, "cancer_model.h5"),
+        "labels": os.path.join(current_dir, "cancer_labels.txt")
+    },
+    "Pneumonia": {
+        "model": os.path.join(current_dir, "pneumonia_model.h5"),
+        "labels": os.path.join(current_dir, "pneumonia_labels.txt")
     }
+}
 
     for disease, config in disease_configs.items():
         model_path = config["model"]
