@@ -15,20 +15,21 @@ import os
 
 def load_models():
     models = {}
-  disease_configs = {
-    "Tuberculose": {
-        "model": "./models/tuberculose_model.h5",  # Caminho relativo ao arquivo local
-        "labels": "./models/tuberculose_labels.txt"
-    },
-    "Câncer": {
-        "model": "./models/cancer_model.h5",  # Assumindo que você fez o download e adicionou o arquivo
-        "labels": "./models/cancer_labels.txt"
-    },
-    "Pneumonia": {
-        "model": "./models/pneumonia_model.h5",  # Caminho correto para o arquivo local
-        "labels": "./models/pneumonia_labels.txt"
+    disease_configs = {
+        "Tuberculose": {
+            "model": "./models/tuberculose_model.h5",
+            "labels": "./models/tuberculose_labels.txt"
+        },
+        "Câncer": {
+            "model": "./models/cancer_model.h5",  # Certifique-se de que o modelo está disponível
+            "labels": "./models/cancer_labels.txt"
+        },
+        "Pneumonia": {
+            "model": "./models/pneumonia_model.h5",
+            "labels": "./models/pneumonia_labels.txt"
+        }
     }
-}
+
     for disease, config in disease_configs.items():
         model_path = config["model"]
         label_path = config["labels"]
@@ -60,6 +61,7 @@ def load_models():
         else:
             st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
     return models
+
 # Function to prepare the database
 def init_database():
     conn = sqlite3.connect('medvision_ai.db')
