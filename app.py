@@ -8,6 +8,8 @@ import io
 import os
 import pandas as pd
 from datetime import datetime
+from openpyxl import Workbook, load_workbook
+import hashlib
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
@@ -15,6 +17,55 @@ np.set_printoptions(suppress=True)
 # Initialize session state
 if 'patient_history' not in st.session_state:
     st.session_state.patient_history = {}
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'username' not in st.session_state:
+    st.session_state.username = None
+
+# File to store login information
+LOGIN_FILE = 'login_info.xlsx'
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def init_login_file():
+    if not os.path.exists(LOGIN_FILE):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['Username', 'Password', 'Last Login'])
+        admin_password = hash_password('123')
+        ws.append(['admin', admin_password, ''])
+        wb.save(LOGIN_FILE)
+
+def check_login(username, password):
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] == username and row[1] == hash_password(password):
+            return True
+    return False
+
+def update_last_login(username):
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2):
+        if row[0].value == username:
+            row[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+    wb.save(LOGIN_FILE)
+
+def login_page():
+    st.title("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if check_login(username, password):
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            update_last_login(username)
+            st.success("Logged in successfully!")
+        else:
+            st.error("Invalid username or password")
 
 def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
@@ -97,49 +148,62 @@ def view_patient_history(patient_id):
     else:
         st.info("No history found for this patient.")
 
-# Streamlit app
-st.title("Medical Image Analysis using AI")
+def main():
+    init_login_file()
 
-# Sidebar menu
-st.sidebar.title("Menu")
-menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
+    if not st.session_state.logged_in:
+        login_page()
+    else:
+        st.title("Medical Image Analysis using AI")
+        st.sidebar.title(f"Welcome, {st.session_state.username}")
 
-model_paths = {
-    "Pneumonia": "pneumonia_model.h5",
-    "Tuberculosis": "tuberculose_model.h5",
-    "Cancer": "cancer_model.h5"
-}
+        if st.sidebar.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.experimental_rerun()
 
-label_paths = {
-    "Pneumonia": "pneumonia_labels.txt",
-    "Tuberculosis": "tuberculose_labels.txt",
-    "Cancer": "cancer_labels.txt"
-}
+        # Sidebar menu
+        menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
 
-if menu_option == "Classify Exam":
-    st.header("Classify Exam")
-    patient_id = st.text_input("Enter Patient ID:")
-    model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+        model_paths = {
+            "Pneumonia": "pneumonia_model.h5",
+            "Tuberculosis": "tuberculose_model.h5",
+            "Cancer": "cancer_model.h5"
+        }
 
-    if uploaded_file is not None:
-        st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
+        label_paths = {
+            "Pneumonia": "pneumonia_labels.txt",
+            "Tuberculosis": "tuberculose_labels.txt",
+            "Cancer": "cancer_labels.txt"
+        }
 
-    if st.button("Analyze"):
-        if patient_id:
-            result = classify_exam(patient_id, model_option, uploaded_file)
-            if result:
-                st.write(f"Model: {result['model']}")
-                st.write(f"Class: {result['class']}")
-                st.write(f"Confidence Score: {result['confidence']:.2f}")
-        else:
-            st.error("Please enter a Patient ID.")
+        if menu_option == "Classify Exam":
+            st.header("Classify Exam")
+            patient_id = st.text_input("Enter Patient ID:")
+            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+            uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-elif menu_option == "View Patient History":
-    st.header("View Patient History")
-    patient_id = st.text_input("Enter Patient ID to view history:")
-    if st.button("View History"):
-        if patient_id:
-            view_patient_history(patient_id)
-        else:
-            st.error("Please enter a Patient ID.")
+            if uploaded_file is not None:
+                st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
+
+            if st.button("Analyze"):
+                if patient_id:
+                    result = classify_exam(patient_id, model_option, uploaded_file)
+                    if result:
+                        st.write(f"Model: {result['model']}")
+                        st.write(f"Class: {result['class']}")
+                        st.write(f"Confidence Score: {result['confidence']:.2f}")
+                else:
+                    st.error("Please enter a Patient ID.")
+
+        elif menu_option == "View Patient History":
+            st.header("View Patient History")
+            patient_id = st.text_input("Enter Patient ID to view history:")
+            if st.button("View History"):
+                if patient_id:
+                    view_patient_history(patient_id)
+                else:
+                    st.error("Please enter a Patient ID.")
+
+if __name__ == "__main__":
+    main()
