@@ -1,0 +1,9 @@
+streamlit
+Pillow
+numpy
+tensorflow  # Inclui Keras, pois o Keras foi integrado ao TensorFlow
+sqlite3  # Não é necessário, pois o SQLite é parte da biblioteca padrão
+pandas
+seaborn
+matplotlib
+scikit-learn  # Para o sklearn.metrics
