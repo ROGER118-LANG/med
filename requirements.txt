@@ -1,8 +1,12 @@
 streamlit
+streamlit-authenticator
+Pillow
 numpy
+keras
+sqlite3
+matplotlib
+seaborn
 pandas
-tensorflow==2.12.0
 scikit-learn
-matplotlib==3.7.1
-Pillow==10.0.0
-opencv-python==4.7.0.72
+pyyaml
+reportlab
