@@ -26,8 +26,8 @@ class MedVisionAIPro:
         self.root.configure(bg="#1E1E1E")
 
         # Load the model and class names
-        self.model = load_model("keras_Model.h5", compile=False)
-        self.class_names = open("labels.txt", "r").readlines()
+        self.model = load_model("pneumonia_model.h5", compile=False)
+        self.class_names = open("pnuemonia_labels.txt", "r").readlines()
 
         # Create a model for generating heatmaps
         self.heatmap_model = Model(inputs=self.model.inputs, outputs=self.model.layers[-1].output)
