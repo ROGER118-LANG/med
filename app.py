@@ -18,28 +18,30 @@ import os
 # Function to load models and labels
 
 # Function to load models and labels
+import os
+
 def load_models():
     models = {}
-   current_dir = os.path.dirname(os.path.abspath(__file__))
-
-disease_configs = {
-    "Tuberculose": {
-        "model": os.path.join(current_dir, "tuberculose_model.h5"),
-        "labels": os.path.join(current_dir, "tuberculose_labels.txt")
-    },
-    "Câncer": {
-        "model": os.path.join(current_dir, "cancer_model.h5"),
-        "labels": os.path.join(current_dir, "cancer_labels.txt")
-    },
-    "Pneumonia": {
-        "model": os.path.join(current_dir, "pneumonia_model.h5"),
-        "labels": os.path.join(current_dir, "pneumonia_labels.txt")
+    disease_configs = {
+        "Tuberculose": {
+            "model": "tuberculose_model.h5",
+            "labels": "tuberculose_labels.txt"
+        },
+        "Câncer": {
+            "model": "cancer_model.h5",
+            "labels": "cancer_labels.txt"
+        },
+        "Pneumonia": {
+            "model": "pneumonia_model.h5",
+            "labels": "pneumonia_labels.txt"
+        }
     }
-}
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
 
     for disease, config in disease_configs.items():
-        model_path = config["model"]
-        label_path = config["labels"]
+        model_path = os.path.join(current_dir, config["model"])
+        label_path = os.path.join(current_dir, config["labels"])
 
         if os.path.exists(model_path) and os.path.exists(label_path):
             try:
@@ -53,6 +55,7 @@ disease_configs = {
         else:
             st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
     return models
+
 
 # Function to prepare the database
 def init_database():
