@@ -1,4 +1,4 @@
-tensorflow
+--upgrade tensorflow
 keras
 Pillow
 numpy
