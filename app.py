@@ -19,16 +19,16 @@ def load_models():
     models = {}
     disease_configs = {
         "Tuberculose": {
-            "model": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/tuberculose_model.h5",
-            "labels": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/tuberculose_labels.txt"
+            "model": "tuberculose_model.h5",
+            "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
-            "model": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/cancer_model.h5",
-            "labels": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/cancer_labels.txt"
+            "model": "cancer_model.h5",
+            "labels": "cancer_labels.txt"
         },
         "Pneumonia": {
-            "model": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/pneumonia_model.h5",
-            "labels": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/pneumonia_labels.txt"
+            "model": "/pneumonia_model.h5",
+            "labels": "pneumonia_labels.txt"
         }
     }
 
