@@ -19,16 +19,16 @@ def load_models():
     models = {}
     disease_configs = {
         "Tuberculose": {
-            "model": "tuberculose_model.h5",  # Apenas o nome do arquivo
-            "labels": "tuberculose_labels.txt"  # Apenas o nome do arquivo
+            "model": "https://github.com/ROGER118-LANG/med/blob/main/tuberculose_model.h5",  # Apenas o nome do arquivo
+            "labels": "https://github.com/ROGER118-LANG/med/blob/main/tuberculose_labels.txt"  # Apenas o nome do arquivo
         },
         "Câncer": {
-            "model": "cancer_model.h5",  # Apenas o nome do arquivo
-            "labels": "cancer_labels.txt"  # Apenas o nome do arquivo
+            "model": "https://github.com/ROGER118-LANG/med/blob/main/cancer_model.h5",  # Apenas o nome do arquivo
+            "labels": "https://github.com/ROGER118-LANG/med/blob/main/cancer_labels.txt"  # Apenas o nome do arquivo
         },
         "Pneumonia": {
-            "model": "pneumonia_model.h5",  # Apenas o nome do arquivo
-            "labels": "pneumonia_labels.txt"  # Apenas o nome do arquivo
+            "model": "https://github.com/ROGER118-LANG/med/blob/main/pneumonia_model.h5",  # Apenas o nome do arquivo
+            "labels": "https://github.com/ROGER118-LANG/med/blob/main/pneumonia_labels.txt"  # Apenas o nome do arquivo
         }
     }
 
