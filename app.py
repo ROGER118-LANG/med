@@ -109,9 +109,9 @@ def predict(model, data, class_names):
     except Exception as e:
         st.error(f"Error during prediction: {str(e)}")
         return None, None
-
 def classify_exam(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
+        st.write(f"Model option selected: {model_option}")  # Depuração
         model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
         
         if model is not None and class_names is not None:
