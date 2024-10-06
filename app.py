@@ -15,21 +15,20 @@ import os
 
 def load_models():
     models = {}
-    disease_configs = {
-        "Tuberculose": {
-            "model": "tuberculose_model.h5",
-            "labels": "tuberculose_labels.txt"
-        },
-        "Câncer": {
-            "model": "https://github.com/ROGER118-LANG/med/blob/main/cancer_model.h5",
-            "labels": "cancer_labels.txt"
-        },
-        "Pneumonia": {
-            "model": "/pneumonia_model.h5",
-            "labels": "pneumonia_labels.txt"
-        }
+  disease_configs = {
+    "Tuberculose": {
+        "model": "./models/tuberculose_model.h5",  # Caminho relativo ao arquivo local
+        "labels": "./models/tuberculose_labels.txt"
+    },
+    "Câncer": {
+        "model": "./models/cancer_model.h5",  # Assumindo que você fez o download e adicionou o arquivo
+        "labels": "./models/cancer_labels.txt"
+    },
+    "Pneumonia": {
+        "model": "./models/pneumonia_model.h5",  # Caminho correto para o arquivo local
+        "labels": "./models/pneumonia_labels.txt"
     }
-
+}
     for disease, config in disease_configs.items():
         model_path = config["model"]
         label_path = config["labels"]
