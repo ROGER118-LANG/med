@@ -11,7 +11,7 @@ import os
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
-from io import BytesIO
+import tempfile 
 import base64
 import os
 import requests
@@ -45,9 +45,15 @@ def load_models():
             # Carregar o modelo da URL
             response = requests.get(model_url)
             if response.status_code == 200:
-                model_content = BytesIO(response.content)
+                # Salvar o modelo em um arquivo temporário
+                with tempfile.NamedTemporaryFile(delete=False) as temp_model_file:
+                    temp_model_file.write(response.content)
+                    temp_model_path = temp_model_file.name
+
+                # Carregar o modelo do arquivo temporário
                 custom_objects = {'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D}
-                model = load_model(model_content, custom_objects=custom_objects, compile=False)
+                model = load_model(temp_model_path, custom_objects=custom_objects, compile=False)
+                os.remove(temp_model_path)  # Excluir o arquivo temporário após o carregamento
             else:
                 st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {response.status_code}")
                 continue
