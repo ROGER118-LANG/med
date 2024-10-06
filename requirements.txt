@@ -1,5 +1,6 @@
 streamlit==1.24.0
 numpy
+streamlit-authenticator 
 pandas==1.5.3
 tensorflow==2.12.0
 scikit-learn==1.3.0
