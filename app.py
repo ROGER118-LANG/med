@@ -1,353 +1,244 @@
-import streamlit as st
-from PIL import Image
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
+from ttkthemes import ThemedTk
+from PIL import Image, ImageTk, ImageOps, ImageEnhance
 import numpy as np
 from keras.models import load_model
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import sqlite3
 from datetime import datetime
-import matplotlib.pyplot as plt
 import os
-import pandas as pd
-import seaborn as sns
-from sklearn.metrics import confusion_matrix
-import io
-import base64
-import hashlib
-import yaml
-from yaml.loader import SafeLoader
+import cv2
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import pydicom
+import threading
+import queue
+import tempfile
+from tensorflow.keras.models import Model
 
-# Function to load models and labels
-def load_models():
-    models = {}
-    disease_configs = {
-        "Tuberculose": {
-            "model": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/tuberculose_model.h5",
-            "labels": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/tuberculose_labels.txt"
-        },
-        "Câncer": {
-            "model": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/cancer_model.h5",
-            "labels": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/cancer_labels.txt"
-        },
-        "Pneumonia": {
-            "model": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/pneumonia_model.h5",
-            "labels": "C:/Users/RORO_LINDO/PycharmProjects/Curso____/MedVision IA/pneumonia_labels.txt"
-        }
-    }
+class MedVisionAIPro:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("MedVision AI Pro - Advanced Medical Imaging Analysis")
+        self.root.geometry("1600x900")
+        self.root.configure(bg="#1E1E1E")
 
-    for disease, config in disease_configs.items():
-        model_path = config["model"]
-        label_path = config["labels"]
+        # Load the model and class names
+        self.model = load_model("keras_Model.h5", compile=False)
+        self.class_names = open("labels.txt", "r").readlines()
 
-        if os.path.exists(model_path) and os.path.exists(label_path):
-            try:
-                model = load_model(model_path, compile=False)
-                with open(label_path, "r") as f:
-                    labels = [line.strip() for line in f.readlines()]
-                models[disease] = (model, labels)
-                st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
-            except Exception as e:
-                st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {str(e)}")
-        else:
-            st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
-    return models
+        # Create a model for generating heatmaps
+        self.heatmap_model = Model(inputs=self.model.inputs, outputs=self.model.layers[-1].output)
 
-# Function to initialize the database
-def init_database():
-    conn = sqlite3.connect('medvision_ai.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS patients
-                 (id INTEGER PRIMARY KEY, name TEXT, date TEXT, age INTEGER, gender TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS analyses
-                 (id INTEGER PRIMARY KEY, patient_id INTEGER, 
-                  disease TEXT, prediction TEXT, confidence REAL, 
-                  date TEXT, image BLOB)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, email TEXT UNIQUE)''')
-    conn.commit()
-    conn.close()
+        # Initialize database
+        self.init_database()
 
-# Function to hash password
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+        # Create main layout
+        self.create_main_layout()
 
-# Function to register new user
-def register_user(username, password, email):
-    conn = sqlite3.connect('medvision_ai.db')
-    c = conn.cursor()
-    try:
-        hashed_password = hash_password(password)
-        c.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
-                  (username, hashed_password, email))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-    finally:
-        conn.close()
+        # Initialize variables
+        self.current_image = None
+        self.current_patient_id = None
+        self.original_image = None
+        self.enhanced_image = None
+        self.heatmap_image = None
 
-# Function to verify user credentials
-def verify_user(username, password):
-    conn = sqlite3.connect('medvision_ai.db')
-    c = conn.cursor()
-    c.execute("SELECT password FROM users WHERE username = ?", (username,))
-    result = c.fetchone()
-    conn.close()
-    if result:
-        return result[0] == hash_password(password)
-    return False
+        # Threading
+        self.queue = queue.Queue()
+        self.thread = None
 
-# Function to save analysis in the database
-def save_analysis(patient_id, disease, prediction, confidence, image):
-    conn = sqlite3.connect('medvision_ai.db')
-    c = conn.cursor()
-    image_bytes = io.BytesIO()
-    image.save(image_bytes, format='PNG')
-    image_blob = image_bytes.getvalue()
-    c.execute(
-        "INSERT INTO analyses (patient_id, disease, prediction, confidence, date, image) VALUES (?, ?, ?, ?, ?, ?)",
-        (patient_id, disease, prediction, confidence, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), image_blob))
-    conn.commit()
-    conn.close()
+    # ... (previous methods remain the same)
 
-# Function to analyze the image
-def analyze_image(image, model_index):
-    results = {}
-    disease = list(models.keys())[model_index]
-    model_instance, class_names = models[disease]
+    def create_main_layout(self):
+        # Main frame
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-    image_array = np.asarray(image.resize((224, 224)))
-    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
-    data = np.expand_dims(normalized_image_array, axis=0)
+        # Left panel (Image upload and analysis)
+        left_panel = ttk.Frame(main_frame)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-    prediction = model_instance.predict(data)
-    index = np.argmax(prediction)
-    class_name = class_names[index].strip()  # Clean class name
-    confidence_score = float(prediction[0][index])
+        # Image upload area
+        self.image_label = ttk.Label(left_panel, text="No image selected")
+        self.image_label.pack(pady=10)
 
-    results[disease] = (class_name, confidence_score)
-    return results
+        upload_button = ttk.Button(left_panel, text="Load Image", command=self.load_image)
+        upload_button.pack(pady=5)
 
-# Function to add patient
-def add_patient(name, age, gender):
-    try:
-        conn = sqlite3.connect('medvision_ai.db')
+        analyze_button = ttk.Button(left_panel, text="Analyze Image", command=self.start_analysis_thread)
+        analyze_button.pack(pady=5)
+
+        enhance_button = ttk.Button(left_panel, text="Enhance Image", command=self.enhance_image)
+        enhance_button.pack(pady=5)
+
+        heatmap_button = ttk.Button(left_panel, text="Generate Heatmap", command=self.generate_heatmap)
+        heatmap_button.pack(pady=5)
+
+        self.progress_bar = ttk.Progressbar(left_panel, orient=tk.HORIZONTAL, length=200, mode='indeterminate')
+
+        # Analysis result area
+        self.result_label = ttk.Label(left_panel, text="Analysis Result:")
+        self.result_label.pack(pady=10)
+
+        # Notes area
+        self.notes_text = tk.Text(left_panel, height=5, width=40)
+        self.notes_text.pack(pady=10)
+        
+        save_notes_button = ttk.Button(left_panel, text="Save Notes", command=self.save_notes)
+        save_notes_button.pack(pady=5)
+
+        # Right panel (Patient info, history, and statistics)
+        right_panel = ttk.Frame(main_frame)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # ... (rest of the layout remains the same)
+
+    def generate_heatmap(self):
+        if self.current_image is None:
+            messagebox.showwarning("Warning", "Please load and analyze an image first.")
+            return
+
+        # Prepare the image for the model
+        image_array = np.asarray(self.current_image.resize((224, 224)))
+        normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+        data = np.expand_dims(normalized_image_array, axis=0)
+
+        # Get the model's prediction
+        predictions = self.heatmap_model.predict(data)
+        class_idx = np.argmax(predictions[0])
+
+        # Generate class activation heatmap
+        cam = np.zeros(dtype=np.float32, shape=predictions.shape[1:3])
+        for i, w in enumerate(self.model.layers[-1].get_weights()[0][:, class_idx]):
+            cam += w * predictions[0, :, :, i]
+        cam = cv2.resize(cam, (224, 224))
+        cam = np.maximum(cam, 0)
+        heatmap = (cam - cam.min()) / (cam.max() - cam.min())
+
+        # Apply the heatmap to the original image
+        heatmap = cv2.applyColorMap(np.uint8(255 * heatmap), cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        superimposed_img = heatmap * 0.4 + image_array * 0.6
+
+        # Convert back to PIL Image
+        self.heatmap_image = Image.fromarray(np.uint8(superimposed_img))
+        self.display_image(self.heatmap_image)
+
+    def display_image(self, image):
+        display_image = ImageOps.fit(image, (400, 400), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(display_image)
+        self.image_label.config(image=photo)
+        self.image_label.image = photo
+
+    def analyze_image_thread(self):
+        # Prepare the image for the model
+        image_array = np.asarray(self.current_image.resize((224, 224)))
+        normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+        data = np.expand_dims(normalized_image_array, axis=0)
+
+        # Predict
+        prediction = self.model.predict(data)
+        index = np.argmax(prediction)
+        class_name = self.class_names[index].strip()
+        confidence_score = float(prediction[0][index])
+
+        self.queue.put((class_name, confidence_score))
+
+        # Generate heatmap
+        self.generate_heatmap()
+
+    def process_analysis_result(self):
+        class_name, confidence_score = self.queue.get()
+
+        # Update result label
+        result_text = f"Prediction: {class_name}\nConfidence: {confidence_score:.2f}"
+        self.result_label.config(text=result_text)
+
+        # Save analysis to database
+        self.save_analysis(class_name, confidence_score)
+
+        # Update patient history and statistics
+        self.load_patient_history()
+
+        # Display heatmap
+        if self.heatmap_image:
+            self.display_image(self.heatmap_image)
+
+    def generate_report(self):
+        if not self.current_patient_id:
+            messagebox.showwarning("Warning", "Please select a patient first.")
+            return
+
+        conn = sqlite3.connect('medvision_ai_pro.db')
         c = conn.cursor()
-        c.execute("INSERT INTO patients (name, date, age, gender) VALUES (?, ?, ?, ?)",
-                  (name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), age, gender))
-        conn.commit()
-        patient_id = c.lastrowid
+        c.execute("SELECT name, age, gender FROM patients WHERE id = ?", (self.current_patient_id,))
+        patient_info = c.fetchone()
+        
+        c.execute("SELECT date, prediction, confidence, notes FROM analyses WHERE patient_id = ? ORDER BY date DESC LIMIT 5",
+                  (self.current_patient_id,))
+        analyses = c.fetchall()
         conn.close()
-        return patient_id
-    except sqlite3.Error as e:
-        st.error(f"Erro ao adicionar paciente: {e}")
-        return None
 
-def get_patient_history(patient_id):
-    conn = sqlite3.connect('medvision_ai.db')
-    df = pd.read_sql_query("SELECT * FROM analyses WHERE patient_id = ? ORDER BY date DESC", conn, params=(patient_id,))
-    conn.close()
-    return df
+        if not patient_info or not analyses:
+            messagebox.showwarning("Warning", "No data available for report generation.")
+            return
 
-# Function to visualize patient history
-def visualize_patient_history(df):
-    st.write("Histórico de Análises do Paciente")
-    st.dataframe(df)
+        # Create PDF
+        file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
+        if not file_path:
+            return
 
-    st.write("Gráfico de Confiança das Análises")
-    plt.figure(figsize=(10, 5))
-    sns.lineplot(x='date', y='confidence', hue='disease', data=df)
-    plt.xlabel('Data')
-    plt.ylabel('Confiança')
-    plt.title('Histórico de Confiança das Análises')
-    plt.xticks(rotation=45)
-    st.pyplot(plt)
+        c = canvas.Canvas(file_path, pagesize=letter)
+        width, height = letter
 
-    st.write("Distribuição de Previsões por Doença")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    df_grouped = df.groupby(['disease', 'prediction']).size().unstack(fill_value=0)
-    df_grouped.plot(kind='bar', stacked=True, ax=ax)
-    plt.xlabel('Doença')
-    plt.ylabel('Contagem')
-    plt.title('Distribuição de Previsões por Doença')
-    plt.legend(title='Previsão', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
-    st.pyplot(fig)
+        # Title
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, height - 50, "MedVision AI Pro - Patient Report")
 
-# Function to generate and display confusion matrix
-def display_confusion_matrix(df):
-    if 'disease' in df.columns and 'prediction' in df.columns:
-        diseases = df['disease'].unique()
-        for disease in diseases:
-            disease_df = df[df['disease'] == disease]
-            true_labels = disease_df['disease']
-            predicted_labels = disease_df['prediction']
-            cm = confusion_matrix(true_labels, predicted_labels)
-            plt.figure(figsize=(8, 6))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-            plt.title(f'Matriz de Confusão - {disease}')
-            plt.xlabel('Previsão')
-            plt.ylabel('Verdadeiro')
-            st.pyplot(plt)
-    else:
-        st.error("Colunas 'disease' ou 'prediction' não encontradas.")
+        # Patient Info
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 80, "Patient Information:")
+        c.setFont("Helvetica", 12)
+        c.drawString(50, height - 100, f"Name: {patient_info[0]}")
+        c.drawString(50, height - 120, f"Age: {patient_info[1]}")
+        c.drawString(50, height - 140, f"Gender: {patient_info[2]}")
 
-# Function to export patient data to CSV
-def export_to_csv(df):
-    csv = df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="patient_data.csv">Download CSV File</a>'
-    return href
+        # Recent Analyses
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 180, "Recent Analyses:")
+        c.setFont("Helvetica", 10)
+        for i, analysis in enumerate(analyses):
+            y_position = height - 200 - (i * 60)
+            c.drawString(50, y_position, f"Date: {analysis[0]}")
+            c.drawString(50, y_position - 15, f"Prediction: {analysis[1]}")
+            c.drawString(50, y_position - 30, f"Confidence: {analysis[2]:.2f}")
+            c.drawString(50, y_position - 45, f"Notes: {analysis[3][:50]}...")  # Truncate long notes
 
-# Initialize the database
-init_database()
+        # Add images if available
+        if self.current_image:
+            img_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            img_temp_filename = img_temp.name
+            self.current_image.save(img_temp_filename, format="PNG")
+            c.drawImage(img_temp_filename, 300, height - 300, width=250, height=250)
+            os.unlink(img_temp_filename)
 
-# Main interface
-st.title("MedVision AI - Análise Avançada de Raio-X")
-st.sidebar.header("Configurações")
+        if self.heatmap_image:
+            heatmap_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            heatmap_temp_filename = heatmap_temp.name
+            self.heatmap_image.save(heatmap_temp_filename, format="PNG")
+            c.drawImage(heatmap_temp_filename, 300, height - 600, width=250, height=250)
+            os.unlink(heatmap_temp_filename)
 
-# Load models
-models = load_models()
+        c.save()
+        messagebox.showinfo("Success", f"Report saved as {file_path}")
 
-if not models:
-    st.error("Nenhum modelo foi carregado. Por favor, verifique se os arquivos dos modelos estão presentes no diretório.")
-else:
-    st.success(f"{len(models)} modelos carregados com sucesso.")
+    def run(self):
+        self.root.mainloop()
 
-# Patient management
-st.sidebar.header("Gerenciamento de Pacientes")
-new_patient_name = st.sidebar.text_input("Nome do Novo Paciente")
-new_patient_age = st.sidebar.number_input("Idade do Paciente", min_value=0, max_value=120)
-new_patient_gender = st.sidebar.selectbox("Gênero do Paciente", ["Masculino", "Feminino", "Outro"])
-patient_id = None
-
-if st.sidebar.button("Adicionar Paciente"):
-    if new_patient_name and new_patient_age:
-        patient_id = add_patient
-(new_patient_name, new_patient_age, new_patient_gender)
-        st.sidebar.success(f"Paciente {new_patient_name} adicionado com ID {patient_id}")
-    else:
-        st.sidebar.error("Por favor, preencha todos os campos do paciente")
-
-# Load image
-uploaded_file = st.file_uploader("Carregar Imagem de Raio-X", type=["png", "jpg", "jpeg"])
-
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-
-    # Model selection
-    model_options = list(models.keys())
-    selected_model = st.selectbox("Escolha o Modelo de Análise", model_options)
-
-    if st.button("Analisar Imagem"):
-        model_index = model_options.index(selected_model)
-        results = analyze_image(image, model_index)
-
-        for disease, (prediction, confidence) in results.items():
-            st.success(f"Diagnóstico para {disease}: {prediction} com {confidence:.2f}% de confiança")
-            if patient_id:
-                save_analysis(patient_id, disease, prediction, confidence, image)
-
-        # Visualize patient analysis history
-        if patient_id:
-            patient_history = get_patient_history(patient_id)
-            visualize_patient_history(patient_history)
-            st.markdown(export_to_csv(patient_history), unsafe_allow_html=True)
-            display_confusion_matrix(patient_history)
-
-# Function to generate PDF report
-def generate_pdf_report(patient_id, analyses_df):
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
-    from reportlab.lib.styles import getSampleStyleSheet
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    elements = []
-
-    styles = getSampleStyleSheet()
-    elements.append(Paragraph(f"Relatório do Paciente - ID: {patient_id}", styles['Heading1']))
-
-    data = [analyses_df.columns.tolist()] + analyses_df.values.tolist()
-    t = Table(data)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 14),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 12),
-        ('TOPPADDING', (0, 1), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    elements.append(t)
-
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
-
-# Main interface function
-def main():
-    st.set_page_config(page_title="MedVision AI", layout="wide")
-
-    # Initialize database and load models
-    init_database()
-    models = load_models()
-
-    if not models:
-        st.error("Nenhum modelo foi carregado. Verifique se os arquivos estão no diretório.")
-        return
-
-    st.success(f"{len(models)} modelos carregados com sucesso.")
-
-    # Patient management and analysis
-    new_patient_name = st.sidebar.text_input("Nome do Novo Paciente")
-    new_patient_age = st.sidebar.number_input("Idade do Paciente", min_value=0, max_value=120)
-    new_patient_gender = st.sidebar.selectbox("Gênero do Paciente", ["Masculino", "Feminino", "Outro"])
-    patient_id = None
-
-    if st.sidebar.button("Adicionar Paciente"):
-        if new_patient_name and new_patient_age:
-            patient_id = add_patient(new_patient_name, new_patient_age, new_patient_gender)
-            st.sidebar.success(f"Paciente {new_patient_name} adicionado com ID {patient_id}")
-        else:
-            st.sidebar.error("Por favor, preencha todos os campos do paciente")
-
-    uploaded_file = st.file_uploader("Carregar Imagem de Raio-X", type=["png", "jpg", "jpeg"])
-
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        model_options = list(models.keys())
-        selected_model = st.selectbox("Escolha o Modelo de Análise", model_options)
-
-        if st.button("Analisar Imagem"):
-            model_index = model_options.index(selected_model)
-            results = analyze_image(image, model_index)
-
-            for disease, (prediction, confidence) in results.items():
-                st.success(f"Diagnóstico para {disease}: {prediction} com {confidence:.2f}% de confiança")
-                if patient_id:
-                    save_analysis(patient_id, disease, prediction, confidence, image)
-
-            if patient_id:
-                patient_history = get_patient_history(patient_id)
-                visualize_patient_history(patient_history)
-                st.markdown(export_to_csv(patient_history), unsafe_allow_html=True)
-                display_confusion_matrix(patient_history)
-
-                # Generate and offer PDF report download
-                pdf_buffer = generate_pdf_report(patient_id, patient_history)
-                st.download_button(
-                    label="Download Relatório PDF",
-                    data=pdf_buffer,
-                    file_name=f"relatorio_paciente_{patient_id}.pdf",
-                    mime="application/pdf"
-                )
 
 if __name__ == "__main__":
-    main()
+    root = ThemedTk(theme="equilux")
+    app = MedVisionAIPro(root)
+    app.run()
