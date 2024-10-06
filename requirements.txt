@@ -1,9 +1,9 @@
-streamlit==1.24.0
+streamlit
 numpy
 streamlit-authenticator 
-pandas==1.5.3
+pandas
 tensorflow==2.12.0
-scikit-learn==1.3.0
+scikit-learn
 matplotlib==3.7.1
 Pillow==10.0.0
 opencv-python==4.7.0.72
