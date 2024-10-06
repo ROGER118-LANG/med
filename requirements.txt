@@ -1,6 +1,5 @@
 streamlit
 numpy
-streamlit-authenticator 
 pandas
 tensorflow==2.12.0
 scikit-learn
