@@ -27,11 +27,12 @@ def download_file(url, local_path):
 
 def load_models():
     models = {}
-   base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/tuberculose_model.h5"
+   base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
 
     disease_configs = {
         "Tuberculose": {
-            "model": ""https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/tuberculose_model.h5"",
+            "model": "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/tuberculose_model.h5"
+
             "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
