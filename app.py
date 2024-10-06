@@ -44,10 +44,19 @@ def check_login(username, password):
     ws = wb.active
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] == username and row[1] == hash_password(password):
-            expiration_date = row[3]
-            if expiration_date and datetime.now() > expiration_date:
-                return False, "Account expired"
-            return True, row[4]  # Return login success and admin status
+            is_admin = row[4] if len(row) > 4 else False
+            if is_admin:
+                return True, True  # Admin login successful, no expiration check
+            expiration_date = row[3] if len(row) > 3 else None
+            if expiration_date:
+                try:
+                    expiration_date = datetime.strptime(expiration_date, "%Y-%m-%d %H:%M:%S")
+                    if datetime.now() > expiration_date:
+                        return False, "Account expired"
+                except ValueError:
+                    # If the date is not in the correct format, assume it's not expired
+                    pass
+            return True, False  # Non-admin login successful
     return False, "Invalid credentials"
 
 def update_last_login(username):
@@ -68,12 +77,11 @@ def login_page():
         if login_success:
             st.session_state.logged_in = True
             st.session_state.username = username
-            st.session_state.is_admin = result
+            st.session_state.is_admin = result if isinstance(result, bool) else False
             update_last_login(username)
             st.success("Logged in successfully!")
         else:
             st.error(result)
-
 def manage_users():
     st.header("Manage Users")
     
@@ -185,6 +193,15 @@ def main():
             pass
         elif menu_option == "Manage Users" and st.session_state.is_admin:
             manage_users()
+
+def main():
+    init_login_file()
+    
+    if not st.session_state.get('logged_in', False):
+        login_page()
+    else:
+        # Your main application logic here
+        pass
 
 if __name__ == "__main__":
     main()
