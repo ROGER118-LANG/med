@@ -34,12 +34,15 @@ def predict(image_path, model, class_names):
 def load_models(model_paths, labels_paths):
     models = []
     class_names_list = []
+    
     for model_path, labels_path in zip(model_paths, labels_paths):
         model = load_model(model_path, compile=False)
-        with open(labels_path, "r") as f:
-            class_names = f.readlines()
         models.append(model)
-        class_names_list.append(class_names)
+        
+        with open(labels_path, 'r') as f:
+            class_names = f.read().splitlines()
+            class_names_list.append(class_names)
+    
     return models, class_names_list
 
 model_paths = ["tuberculose_model.h5", "model_pneumonia.h5", "model_outro.h5"]
