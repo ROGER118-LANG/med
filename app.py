@@ -8,7 +8,6 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from sklearn.metrics import confusion_matrix
 import io
 import base64
 
@@ -22,10 +21,10 @@ np.set_printoptions(suppress=True)
 # Funções de processamento de imagem e predição
 def load_image(image):
     """Carrega e processa a imagem para o modelo."""
-    size = (224, 224)
+    size = (224, 224)  # Tamanho que o modelo espera
     image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
     image_array = np.asarray(image)
-    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1  # Normalização
     return normalized_image_array
 
 def predict(image, model, class_names):
@@ -41,17 +40,18 @@ def predict(image, model, class_names):
 # Função para carregar os modelos e os rótulos
 @st.cache_resource
 def load_models():
-    """Carrega múltiplos modelos e suas classes."""
+    """Carrega múltiplos modelos e suas classes do Teachable Machine."""
     model_paths = ["tuberculose_model.h5", "pneumonia_model.h5", "cancer_model.h5"]
-    labels_paths = ["tuberculose_labels.txt", "pneumonia_labels.txt", "cancer_labels.txt"]
+    labels_paths = ["labels_tuberculose.txt", "labels_pneumonia.txt", "labels_cancer.txt"]
     
     models = {}
     for model_path, labels_path in zip(model_paths, labels_paths):
         try:
+            # Carregar o modelo
             model = tf.keras.models.load_model(model_path, compile=False)
             with open(labels_path, "r") as f:
                 class_names = [line.strip() for line in f.readlines()]
-            disease_name = model_path.split('_')[1].split('.')[0]
+            disease_name = model_path.split('_')[0]  # Alterado para corresponder ao nome do modelo
             models[disease_name] = (model, class_names)
         except Exception as e:
             st.error(f"Erro ao carregar o modelo {model_path}: {e}")
@@ -111,31 +111,6 @@ def visualize_patient_history(df):
     plt.title('Histórico de Confiança das Análises')
     plt.xticks(rotation=45)
     st.pyplot(plt)
-
-    st.write("Distribuição de Previsões por Doença")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    df_grouped = df.groupby(['disease', 'prediction']).size().unstack(fill_value=0)
-    df_grouped.plot(kind='bar', stacked=True, ax=ax)
-    plt.xlabel('Doença')
-    plt.ylabel('Contagem')
-    plt.title('Distribuição de Previsões por Doença')
-    plt.legend(title='Previsão', bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.tight_layout()
-    st.pyplot(fig)
-
-def display_confusion_matrix(df):
-    diseases = df['disease'].unique()
-    for disease in diseases:
-        disease_df = df[df['disease'] == disease]
-        true_labels = disease_df['prediction']
-        predicted_labels = disease_df['prediction']  # Assumindo que a previsão está correta para este exemplo
-        cm = confusion_matrix(true_labels, predicted_labels)
-        plt.figure(figsize=(8, 6))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-        plt.title(f'Matriz de Confusão - {disease}')
-        plt.xlabel('Previsão')
-        plt.ylabel('Verdadeiro')
-        st.pyplot(plt)
 
 def export_to_csv(df):
     csv = df.to_csv(index=False)
@@ -204,7 +179,6 @@ if st.sidebar.button("Ver Histórico do Paciente"):
 
     if not df.empty:
         visualize_patient_history(df)
-        display_confusion_matrix(df)
         href = export_to_csv(df)
         st.markdown(href, unsafe_allow_html=True)
     else:
