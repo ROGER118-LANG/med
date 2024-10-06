@@ -1,0 +1,3 @@
+0 Casos iniciais
+1 Caso Maligna
+2 Casos Normal
