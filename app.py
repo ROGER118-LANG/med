@@ -7,6 +7,13 @@ import os
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
+from keras.layers import DepthwiseConv2D
+from keras.utils import custom_object_scope
+
+def custom_depthwise_conv2d(*args, **kwargs):
+    kwargs.pop('groups', None)
+    return DepthwiseConv2D(*args, **kwargs)
+
 def load_model_and_labels(model_path, labels_path):
     try:
         if not os.path.exists(model_path):
@@ -14,23 +21,15 @@ def load_model_and_labels(model_path, labels_path):
         if not os.path.exists(labels_path):
             raise FileNotFoundError(f"Labels file not found: {labels_path}")
         
-        model = load_model(model_path, compile=False)
+        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+            model = load_model(model_path, compile=False)
+        
         with open(labels_path, "r") as f:
             class_names = f.readlines()
         return model, class_names
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
-
-def preprocess_image(image):
-    size = (224, 224)
-    image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
-    image_array = np.asarray(image)
-    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
-    data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-    data[0] = normalized_image_array
-    return data
-
 def predict(model, data, class_names):
     try:
         prediction = model.predict(data)
