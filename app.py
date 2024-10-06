@@ -11,7 +11,7 @@ import os
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
-import io
+from io import BytesIO
 import base64
 import os
 import requests
