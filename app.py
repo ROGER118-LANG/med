@@ -27,7 +27,7 @@ def download_file(url, local_path):
 
 def load_models():
     models = {}
-    base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
+    base_url = ""
     disease_configs = {
         "Tuberculose": {
             "model": "tuberculose_model.h5",
