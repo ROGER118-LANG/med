@@ -1,8 +1,2 @@
-tensorflow
+
 keras
-sqlite3
-matplotlib
-seaborn
-pandas
-scikit-learn
-pyyaml
