@@ -7,3 +7,4 @@ seaborn
 scikit-learn
 streamlit
 pandas
+requests
