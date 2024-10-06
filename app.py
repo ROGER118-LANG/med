@@ -1,7 +1,10 @@
 import streamlit as st
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import load_model
+from keras.models import load_model
+import tensorflow as tf
+print(tf.__version__)
+
 from PIL import Image, ImageOps
 import sqlite3
 from datetime import datetime
