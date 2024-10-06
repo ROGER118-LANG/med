@@ -203,4 +203,4 @@ if uploaded_file is not None:
                 st.markdown(export_to_csv(history_df), unsafe_allow_html=True)
                 display_confusion_matrix(history_df)
             else:
-                st.warning("Nenhum histórico encontrado para este paciente.")
+                st.write("Nenhum histórico encontrado para este paciente.")
