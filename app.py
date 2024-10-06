@@ -148,6 +148,54 @@ def view_patient_history(patient_id):
     else:
         st.info("No history found for this patient.")
 
+def manage_users():
+    st.header("User Management")
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+
+    # Show existing users
+    st.subheader("Existing Users")
+    user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
+    user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login"])
+    st.dataframe(user_df)
+
+    # Add new user
+    st.subheader("Add User")
+    new_username = st.text_input("New Username")
+    new_password = st.text_input("New Password", type="password")
+    if st.button("Add User"):
+        if new_username and new_password:
+            hashed_password = hash_password(new_password)
+            ws.append([new_username, hashed_password, ""])
+            wb.save(LOGIN_FILE)
+            st.success("User added successfully!")
+        else:
+            st.error("Please provide both username and password.")
+
+    # Edit user
+    st.subheader("Edit User")
+    edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
+    edited_password = st.text_input("New Password for Selected User", type="password")
+    if st.button("Edit User"):
+        if edited_password:
+            hashed_password = hash_password(edited_password)
+            for row in ws.iter_rows(min_row=2):
+                if row[0].value == edit_username:
+                    row[1].value = hashed_password
+                    break
+            wb.save(LOGIN_FILE)
+            st.success("User edited successfully!")
+        else:
+            st.error("Please provide a new password.")
+
+    # Remove user
+    st.subheader("Remove User")
+    remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
+    if st.button("Remove User"):
+        ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
+        wb.save(LOGIN_FILE)
+        st.success("User removed successfully!")
+
 def main():
     init_login_file()
 
@@ -165,6 +213,10 @@ def main():
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
 
+        # Add "User Management" option for admin
+        if st.session_state.username == 'admin':
+            menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History", "User Management"))
+
         model_paths = {
             "Pneumonia": "pneumonia_model.h5",
             "Tuberculosis": "tuberculose_model.h5",
@@ -181,29 +233,19 @@ def main():
             st.header("Classify Exam")
             patient_id = st.text_input("Enter Patient ID:")
             model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-            uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
 
-            if uploaded_file is not None:
-                st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-
-            if st.button("Analyze"):
-                if patient_id:
-                    result = classify_exam(patient_id, model_option, uploaded_file)
-                    if result:
-                        st.write(f"Model: {result['model']}")
-                        st.write(f"Class: {result['class']}")
-                        st.write(f"Confidence Score: {result['confidence']:.2f}")
-                else:
-                    st.error("Please enter a Patient ID.")
+            if st.button("Classify"):
+                classify_exam(patient_id, model_option, uploaded_file)
 
         elif menu_option == "View Patient History":
-            st.header("View Patient History")
-            patient_id = st.text_input("Enter Patient ID to view history:")
+            st.header("Patient History")
+            patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
-                if patient_id:
-                    view_patient_history(patient_id)
-                else:
-                    st.error("Please enter a Patient ID.")
+                view_patient_history(patient_id)
+
+        elif menu_option == "User Management":
+            manage_users()
 
 if __name__ == "__main__":
     main()
