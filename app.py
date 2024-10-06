@@ -47,7 +47,8 @@ def load_models():
     
     models = {}
     for model_path, labels_path in zip(model_paths, labels_paths):
-        model = load_model(model_path, compile=False)
+model = load_model(model_path, compile=False)
+
         with open(labels_path, "r") as f:
             class_names = [line.strip() for line in f.readlines()]
         disease_name = model_path.split('_')[1].split('.')[0]  # Extrai o nome da doença do nome do arquivo
