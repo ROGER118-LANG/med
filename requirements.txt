@@ -1,9 +1,8 @@
 streamlit
 Pillow
 numpy
-tensorflow  # Inclui Keras, pois o Keras foi integrado ao TensorFlow
-sqlite3  # Não é necessário, pois o SQLite é parte da biblioteca padrão
+tensorflow==2.13.0  # Use uma versão que seja compatível com a versão do Python no Streamlit Cloud
 pandas
 seaborn
 matplotlib
-scikit-learn  # Para o sklearn.metrics
+scikit-learn
