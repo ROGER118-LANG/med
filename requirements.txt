@@ -1,7 +1,5 @@
-streamlit
-streamlit-authenticator
-Pillow
-numpy
+
+tensorflow
 keras
 sqlite3
 matplotlib
