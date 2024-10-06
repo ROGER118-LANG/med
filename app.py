@@ -42,7 +42,7 @@ def predict(image, model, class_names):
 @st.cache_resource
 def load_models():
     """Carrega múltiplos modelos e suas classes."""
-    model_paths = ["tuberculose_models.h5", "model_pneumonia.h5", "model_outro.h5"]
+    model_paths = ["tuberculose_model.h5", "pneumonia_model.h5", "cancer_model.h5"]
     labels_paths = ["labels_tuberculose.txt", "labels_pneumonia.txt", "labels_outro.txt"]
     
     models = {}
