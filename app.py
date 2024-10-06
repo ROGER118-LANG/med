@@ -12,6 +12,8 @@ from sklearn.metrics import confusion_matrix
 import io
 import base64
 import os
+import requests
+
 
 def download_file(url, local_path):
     response = requests.get(url)
