@@ -1,4 +1,5 @@
-tensorflow
+tensorflow==2.3
+keras
 Pillow
 numpy
 matplotlib
