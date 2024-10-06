@@ -17,7 +17,7 @@ def load_models():
     models = {}
     disease_configs = {
         "Tuberculose": {
-            "model": "ROGER118-LANG/med/blob/main/pneumonia_model.h5",
+            "model": "pneumonia_model.h5",
             "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
