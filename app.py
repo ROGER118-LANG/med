@@ -46,9 +46,8 @@ def load_models():
     labels_paths = ["labels_tuberculose.txt", "labels_pneumonia.txt", "labels_outro.txt"]
     
     models = {}
-  for model_path in model_paths:  # Certifique-se de que model_paths esteja definido
-    model = load_model(model_path, compile=False
-
+    for model_path, labels_path in zip(model_paths, labels_paths):
+        model = load_model(model_path, compile=False)
         with open(labels_path, "r") as f:
             class_names = [line.strip() for line in f.readlines()]
         disease_name = model_path.split('_')[1].split('.')[0]  # Extrai o nome da doença do nome do arquivo
@@ -205,3 +204,4 @@ if uploaded_file is not None:
                 display_confusion_matrix(history_df)
             else:
                 st.write("Nenhum histórico encontrado para este paciente.")
+
