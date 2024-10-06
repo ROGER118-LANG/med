@@ -52,6 +52,9 @@ def load_models():
 # Load models and verify labels
 models = load_models()
 verify_model_labels(models)
+def verify_model_labels(labels):
+    # Lógica para verificar os rótulos do modelo
+    return all(isinstance(label, str) for label in labels)
 
 # Function to prepare the database
 def init_database():
