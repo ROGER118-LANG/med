@@ -13,13 +13,6 @@ import io
 import base64
 import os
 
-# Obter o caminho absoluto do modelo e das label
-
-# Function to load models and labels
-
-# Function to load models and labels
-import os
-
 def load_models():
     models = {}
     disease_configs = {
