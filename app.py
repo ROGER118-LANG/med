@@ -21,12 +21,12 @@ def load_models():
             "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
-            "model": "cancer_model.h5",
-            "labels": "cancer_labels.txt"
+            "model": "ROGER118-LANG/med/blob/main/cancer_model.h5",
+            "labels": "ROGER118-LANG/med/blob/main/cancer_labels.txt"
         },
         "Pneumonia": {
-            "model": "pneumonia_model.h5",
-            "labels": "pneumonia_labels.txt"
+            "model": "ROGER118-LANG/med/blob/main/pneumonia_model.h5",
+            "labels": "ROGER118-LANG/med/blob/main/pneumonia_labels.txt"
         }
     }
 
