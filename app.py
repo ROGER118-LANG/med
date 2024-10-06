@@ -44,13 +44,13 @@ def check_login(username, password):
     ws = wb.active
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] == username and row[1] == hash_password(password):
+            is_admin = row[4]
+            if is_admin:
+                return True, True  # Admin login successful, no expiration check
             expiration_date = row[3]
-            is_admin = row[4]  # Verifica se é admin
-            # Ignora expiração se for admin
-            if is_admin or (expiration_date and datetime.now() > expiration_date):
-                return False, "Account expired" if not is_admin else True, is_admin
-            
-            return True, is_admin  # Retorna sucesso de login e status de admin
+            if expiration_date and datetime.now() > datetime.strptime(expiration_date, "%Y-%m-%d %H:%M:%S"):
+                return False, "Account expired"
+            return True, False  # Non-admin login successful
     return False, "Invalid credentials"
 
 def update_last_login(username):
@@ -71,7 +71,7 @@ def login_page():
         if login_success:
             st.session_state.logged_in = True
             st.session_state.username = username
-            st.session_state.is_admin = result
+            st.session_state.is_admin = result if isinstance(result, bool) else False
             update_last_login(username)
             st.success("Logged in successfully!")
         else:
