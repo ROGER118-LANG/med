@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit_authenticator as stauth
 from PIL import Image
 import numpy as np
 from keras.models import load_model
@@ -12,24 +11,6 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 import io
 import base64
-import hashlib
-import yaml
-from yaml.loader import SafeLoader
-
-# Inicializar o banco de dados
-def init_database():
-    conn = sqlite3.connect('medvision_ai.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS patients
-                 (id INTEGER PRIMARY KEY, name TEXT, date TEXT, age INTEGER, gender TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS analyses
-                 (id INTEGER PRIMARY KEY, patient_id INTEGER, 
-                  disease TEXT, prediction TEXT, confidence REAL, 
-                  date TEXT, image BLOB)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, email TEXT UNIQUE)''')
-    conn.commit()
-    conn.close()
 
 # Função para carregar modelos e rótulos
 def load_models():
@@ -66,51 +47,19 @@ def load_models():
             st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
     return models
 
-# Função para gerar hash da senha
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# Função para registrar novo usuário
-def register_user(username, password, email):
+# Função para inicializar o banco de dados
+def init_database():
     conn = sqlite3.connect('medvision_ai.db')
     c = conn.cursor()
-    try:
-        hashed_password = hash_password(password)
-        c.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
-                  (username, hashed_password, email))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-    finally:
-        conn.close()
-
-# Função para verificar credenciais do usuário
-def verify_user(username, password):
-    conn = sqlite3.connect('medvision_ai.db')
-    c = conn.cursor()
-    c.execute("SELECT password FROM users WHERE username = ?", (username,))
-    result = c.fetchone()
+    c.execute('''CREATE TABLE IF NOT EXISTS patients
+                 (id INTEGER PRIMARY KEY, name TEXT, date TEXT, age INTEGER, gender TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS analyses
+                 (id INTEGER PRIMARY KEY, patient_id INTEGER, 
+                  disease TEXT, prediction TEXT, confidence REAL, 
+                  date TEXT, image BLOB)''')
+    conn.commit()
     conn.close()
-    if result:
-        return result[0] == hash_password(password)
-    return False
 
-# Função para adicionar paciente
-def add_patient(name, age, gender):
-    try:
-        conn = sqlite3.connect('medvision_ai.db')
-        c = conn.cursor()
-        c.execute("INSERT INTO patients (name, date, age, gender) VALUES (?, ?, ?, ?)",
-                  (name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), age, gender))
-        conn.commit()
-        patient_id = c.lastrowid
-        return patient_id
-    except sqlite3.Error as e:
-        st.error(f"Erro ao adicionar paciente: {e}")
-        return None
-    finally:
-        conn.close()
 
 # Função para salvar análise no banco de dados
 def save_analysis(patient_id, disease, prediction, confidence, image):
@@ -126,7 +75,7 @@ def save_analysis(patient_id, disease, prediction, confidence, image):
     conn.close()
 
 # Função para analisar a imagem
-def analyze_image(image, model_index, models):
+def analyze_image(image, model_index):
     results = {}
     disease = list(models.keys())[model_index]
     model_instance, class_names = models[disease]
@@ -143,6 +92,69 @@ def analyze_image(image, model_index, models):
     results[disease] = (class_name, confidence_score)
     return results
 
+def add_patient(name, age, gender):
+    try:
+        conn = sqlite3.connect('medvision_ai.db')
+        c = conn.cursor()
+        c.execute("INSERT INTO patients (name, date, age, gender) VALUES (?, ?, ?, ?)",
+                  (name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), age, gender))
+        conn.commit()
+        patient_id = c.lastrowid
+        conn.close()
+        return patient_id
+    except sqlite3.Error as e:
+        st.error(f"Erro ao adicionar paciente: {e}")
+        return None
+
+def get_patient_history(patient_id):
+    conn = sqlite3.connect('medvision_ai.db')
+    df = pd.read_sql_query("SELECT * FROM analyses WHERE patient_id = ? ORDER BY date DESC", conn, params=(patient_id,))
+    conn.close()
+    return df
+
+# Função para visualizar histórico do paciente
+def visualize_patient_history(df):
+    st.write("Histórico de Análises do Paciente")
+    st.dataframe(df)
+
+    st.write("Gráfico de Confiança das Análises")
+    plt.figure(figsize=(10, 5))
+    sns.lineplot(x='date', y='confidence', hue='disease', data=df)
+    plt.xlabel('Data')
+    plt.ylabel('Confiança')
+    plt.title('Histórico de Confiança das Análises')
+    plt.xticks(rotation=45)
+    st.pyplot(plt)
+
+    st.write("Distribuição de Previsões por Doença")
+    fig, ax = plt.subplots(figsize=(10, 5))
+    df_grouped = df.groupby(['disease', 'prediction']).size().unstack(fill_value=0)
+    df_grouped.plot(kind='bar', stacked=True, ax=ax)
+    plt.xlabel('Doença')
+    plt.ylabel('Contagem')
+    plt.title('Distribuição de Previsões por Doença')
+    plt.legend(title='Previsão', bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    st.pyplot(fig)
+
+# Função para gerar e exibir matriz de confusão
+def display_confusion_matrix(df):
+    if 'disease' in df.columns and 'prediction' in df.columns:
+        diseases = df['disease'].unique()
+        for disease in diseases:
+            disease_df = df[df['disease'] == disease]
+            true_labels = disease_df['prediction']
+            predicted_labels = disease_df['prediction']  # Presumindo que a previsão está correta neste exemplo
+            cm = confusion_matrix(true_labels, predicted_labels)
+            plt.figure(figsize=(8, 6))
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+            plt.title(f'Matriz de Confusão - {disease}')
+            plt.xlabel('Previsão')
+            plt.ylabel('Verdadeiro')
+            st.pyplot(plt)
+    else:
+        st.error("Colunas 'disease' ou 'prediction' não encontradas.")
+
 # Função para exportar dados do paciente para CSV
 def export_to_csv(df):
     csv = df.to_csv(index=False)
@@ -150,96 +162,60 @@ def export_to_csv(df):
     href = f'<a href="data:file/csv;base64,{b64}" download="patient_data.csv">Download CSV File</a>'
     return href
 
-# Função principal
-def main():
-    st.set_page_config(page_title="MedVision AI", layout="wide")
-    st.title("MedVision AI - Análise Avançada de Raio-X")
-
-    # Autenticação
-    with open('config.yaml') as file:
-        config = yaml.load(file, Loader=SafeLoader)
-
-    authenticator = stauth.Authenticate(
-        config['credentials'],
-        config['cookie']['name'],
-        config['cookie']['key'],
-        config['cookie']['expiry_days'],
-        config['preauthorized']
-    )
-
-    name, authentication_status, username = authenticator.login('Login', 'main')
-
-    if authentication_status:
-        authenticator.logout('Logout', 'main')
-        st.write(f'Welcome *{name}*')
-
-        # Carregar modelos
-        models = load_models()
-
-        if not models:
-            st.error("Nenhum modelo foi carregado. Por favor, verifique se os arquivos dos modelos estão presentes no diretório.")
-        else:
-            st.success(f"{len(models)} modelos carregados com sucesso.")
-
-        # Gerenciamento de Pacientes
-        st.sidebar.header("Gerenciamento de Pacientes")
-        new_patient_name = st.sidebar.text_input("Nome do Novo Paciente")
-        new_patient_age = st.sidebar.number_input("Idade do Paciente", min_value=0, max_value=120)
-        new_patient_gender = st.sidebar.selectbox("Gênero do Paciente", ["Masculino", "Feminino", "Outro"])
-        patient_id = None  # Inicializa patient_id
-
-        if st.sidebar.button("Adicionar Paciente"):
-            if new_patient_name and new_patient_age:
-                patient_id = add_patient(new_patient_name, new_patient_age, new_patient_gender)
-                st.sidebar.success(f"Paciente {new_patient_name} adicionado com ID {patient_id}")
-            else:
-                st.sidebar.error("Por favor, preencha todos os campos do paciente")
-
-        # Carregar imagem
-        uploaded_file = st.file_uploader("Carregar Imagem de Raio-X", type=["png", "jpg", "jpeg"])
-
-        if uploaded_file is not None:
-            image = Image.open(uploaded_file)
-
-            # Seleção do modelo
-            model_options = list(models.keys())
-            selected_model = st.selectbox("Escolha o Modelo de Análise", model_options)
-
-            if st.button("Analisar Imagem"):
-                model_index = model_options.index(selected_model)
-                results = analyze_image(image, model_index, models)
-
-                for disease, (prediction, confidence) in results.items():
-                    st.success(f"Diagnóstico para {disease}: {prediction} com {confidence:.2f}% de confiança")
-                    if patient_id:
-                        save_analysis(patient_id, disease, prediction, confidence, image)
-
-                # Visualizar histórico de análises do paciente
-                if patient_id:
-                    patient_history = get_patient_history(patient_id)
-                    st.write("Histórico de Análises do Paciente")
-                    st.dataframe(patient_history)
-
-        # Exibir e exportar dados do paciente
-        if st.button("Exportar Dados para CSV"):
-            if patient_id:
-                patient_data = get_patient_data(patient_id)
-                if patient_data is not None:
-                    df = pd.DataFrame(patient_data)
-                    st.markdown(export_to_csv(df), unsafe_allow_html=True)
-                else:
-                    st.error("Não foi possível encontrar dados para exportar.")
-
-    elif authentication_status == False:
-        st.error('Usuário/senha incorretos.')
-    elif authentication_status == None:
-        st.warning('Por favor, insira seu nome de usuário e senha.')
-
-        if st.button("Registrar Novo Usuário"):
-            registration_form()
-
-# Inicializar o banco de dados ao iniciar o aplicativo
+# Inicializar o banco de dados
 init_database()
 
-if __name__ == "__main__":
-    main()
+# Interface principal
+st.title("MedVision AI - Análise Avançada de Raio-X")
+st.sidebar.header("Configurações")
+
+# Carregar modelos
+models = load_models()
+
+if not models:
+    st.error("Nenhum modelo foi carregado. Por favor, verifique se os arquivos dos modelos estão presentes no diretório.")
+else:
+    st.success(f"{len(models)} modelos carregados com sucesso.")
+
+# Gerenciamento de Pacientes
+st.sidebar.header("Gerenciamento de Pacientes")
+new_patient_name = st.sidebar.text_input("Nome do Novo Paciente")
+new_patient_age = st.sidebar.number_input("Idade do Paciente", min_value=0, max_value=120)
+new_patient_gender = st.sidebar.selectbox("Gênero do Paciente", ["Masculino", "Feminino", "Outro"])
+patient_id = None  # Inicializa patient_id
+
+if st.sidebar.button("Adicionar Paciente"):
+    if new_patient_name and new_patient_age:
+        patient_id = add_patient(new_patient_name, new_patient_age, new_patient_gender)
+        st.sidebar.success(f"Paciente {new_patient_name} adicionado com ID {patient_id}")
+    else:
+        st.sidebar.error("Por favor, preencha todos os campos do paciente")
+
+# Carregar imagem
+uploaded_file = st.file_uploader("Carregar Imagem de Raio-X", type=["png", "jpg", "jpeg"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+
+    # Seleção do modelo
+    model_options = list(models.keys())
+    selected_model = st.selectbox("Escolha o Modelo de Análise", model_options)
+
+    if st.button("Analisar Imagem"):
+        model_index = model_options.index(selected_model)
+        results = analyze_image(image, model_index)
+
+        for disease, (prediction, confidence) in results.items():
+            st.success(f"Diagnóstico para {disease}: {prediction} com confiança de {confidence:.2f}")
+            if patient_id is not None:  # Certifica-se de que patient_id é válido
+                save_analysis(patient_id, disease, prediction, confidence, image)
+
+    # Visualizar histórico do paciente
+    if patient_id is not None:
+        patient_history_df = get_patient_history(patient_id)
+        if not patient_history_df.empty:
+            visualize_patient_history(patient_history_df)
+            st.markdown(export_to_csv(patient_history_df), unsafe_allow_html=True)
+            display_confusion_matrix(patient_history_df)
+        else:
+            st.write("Nenhum histórico encontrado para este paciente.")
