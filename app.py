@@ -45,9 +45,12 @@ def check_login(username, password):
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] == username and row[1] == hash_password(password):
             expiration_date = row[3]
-            if expiration_date and datetime.now() > expiration_date:
-                return False, "Account expired"
-            return True, row[4]  # Return login success and admin status
+            is_admin = row[4]  # Verifica se é admin
+            # Ignora expiração se for admin
+            if is_admin or (expiration_date and datetime.now() > expiration_date):
+                return False, "Account expired" if not is_admin else True, is_admin
+            
+            return True, is_admin  # Retorna sucesso de login e status de admin
     return False, "Invalid credentials"
 
 def update_last_login(username):
@@ -111,11 +114,12 @@ def add_user(username, password, expiration_days, is_admin):
     wb = load_workbook(LOGIN_FILE)
     ws = wb.active
     hashed_password = hash_password(password)
-    expiration_date = datetime.now() + timedelta(days=expiration_days)
-    ws.append([username, hashed_password, '', expiration_date.strftime("%Y-%m-%d %H:%M:%S"), is_admin])
+    # Se for admin, não define a data de expiração
+    expiration_date = None if is_admin else (datetime.now() + timedelta(days=expiration_days)).strftime("%Y-%m-%d %H:%M:%S")
+    
+    ws.append([username, hashed_password, '', expiration_date, is_admin])
     wb.save(LOGIN_FILE)
     st.success(f"User {username} added successfully!")
-
 def get_user_data(username):
     wb = load_workbook(LOGIN_FILE)
     ws = wb.active
