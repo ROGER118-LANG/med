@@ -2,14 +2,25 @@ import streamlit as st
 from keras.models import load_model
 from PIL import Image, ImageOps
 import numpy as np
+import os
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
 def load_model_and_labels(model_path, labels_path):
-    model = load_model(model_path, compile=False)
-    class_names = open(labels_path, "r").readlines()
-    return model, class_names
+    try:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        if not os.path.exists(labels_path):
+            raise FileNotFoundError(f"Labels file not found: {labels_path}")
+        
+        model = load_model(model_path, compile=False)
+        with open(labels_path, "r") as f:
+            class_names = f.readlines()
+        return model, class_names
+    except Exception as e:
+        st.error(f"Error loading model and labels: {str(e)}")
+        return None, None
 
 def preprocess_image(image):
     size = (224, 224)
@@ -21,11 +32,15 @@ def preprocess_image(image):
     return data
 
 def predict(model, data, class_names):
-    prediction = model.predict(data)
-    index = np.argmax(prediction)
-    class_name = class_names[index]
-    confidence_score = prediction[0][index]
-    return class_name[2:], confidence_score
+    try:
+        prediction = model.predict(data)
+        index = np.argmax(prediction)
+        class_name = class_names[index]
+        confidence_score = prediction[0][index]
+        return class_name[2:], confidence_score
+    except Exception as e:
+        st.error(f"Error during prediction: {str(e)}")
+        return None, None
 
 st.title("Medical Image Analysis using AI")
 
@@ -54,9 +69,17 @@ if uploaded_file is not None:
 
     if st.button("Analyze"):
         model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
-        processed_image = preprocess_image(image)
-        class_name, confidence_score = predict(model, processed_image, class_names)
+        
+        if model is not None and class_names is not None:
+            processed_image = preprocess_image(image)
+            class_name, confidence_score = predict(model, processed_image, class_names)
+            
+            if class_name is not None and confidence_score is not None:
+                st.write(f"Model: {model_option}")
+                st.write(f"Class: {class_name}")
+                st.write(f"Confidence Score: {confidence_score:.2f}")
+            else:
+                st.error("An error occurred during prediction. Please try again.")
+        else:
+            st.error("Failed to load the model and labels. Please check the files and try again.")
 
-        st.write(f"Model: {model_option}")
-        st.write(f"Class: {class_name}")
-        st.write(f"Confidence Score: {confidence_score:.2f}")
