@@ -1,7 +1,7 @@
 import streamlit as st
 from PIL import Image, ImageOps
 import numpy as np
-from keras.models import load_model
+from tensorflow.keras.models import load_model  # Alterado para TensorFlow Keras
 import sqlite3
 from datetime import datetime
 import matplotlib.pyplot as plt
@@ -12,8 +12,6 @@ from sklearn.metrics import confusion_matrix
 import io
 import base64
 
-
-# Function to load models and labels
 # Function to load models and labels
 def load_models():
     models = {}
@@ -27,7 +25,7 @@ def load_models():
             "labels": "cancer_labels.txt"
         },
         "Pneumonia": {
-            "model": "/pneumonia_model.h5",
+            "model": "pneumonia_model.h5",
             "labels": "pneumonia_labels.txt"
         }
     }
@@ -49,13 +47,6 @@ def load_models():
             st.sidebar.warning(f"Arquivos do modelo de {disease} não encontrados.")
     return models
 
-# Load models and verify labels
-models = load_models()
-verify_model_labels(models)
-def verify_model_labels(labels):
-    # Lógica para verificar os rótulos do modelo
-    return all(isinstance(label, str) for label in labels)
-
 # Function to prepare the database
 def init_database():
     conn = sqlite3.connect('medvision_ai.db')
@@ -69,7 +60,6 @@ def init_database():
     conn.commit()
     conn.close()
 
-
 # Function to save analysis to the database
 def save_analysis(patient_id, disease, prediction, confidence, image):
     conn = sqlite3.connect('medvision_ai.db')
@@ -82,7 +72,6 @@ def save_analysis(patient_id, disease, prediction, confidence, image):
         (patient_id, disease, prediction, confidence, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), image_blob))
     conn.commit()
     conn.close()
-
 
 # Function to analyze the image
 def analyze_image(image, models):
@@ -100,7 +89,6 @@ def analyze_image(image, models):
         results[disease] = (class_name, confidence_score)
     return results
 
-
 # Function to add a new patient
 def add_patient(name, age, gender):
     conn = sqlite3.connect('medvision_ai.db')
@@ -112,14 +100,12 @@ def add_patient(name, age, gender):
     conn.close()
     return patient_id
 
-
 # Function to get patient history
 def get_patient_history(patient_id):
     conn = sqlite3.connect('medvision_ai.db')
     df = pd.read_sql_query("SELECT * FROM analyses WHERE patient_id = ? ORDER BY date DESC", conn, params=(patient_id,))
     conn.close()
     return df
-
 
 # Function to visualize patient history
 def visualize_patient_history(df):
@@ -146,7 +132,6 @@ def visualize_patient_history(df):
     plt.tight_layout()
     st.pyplot(fig)
 
-
 # Function to generate and display confusion matrix
 def display_confusion_matrix(df):
     diseases = df['disease'].unique()
@@ -162,14 +147,12 @@ def display_confusion_matrix(df):
         plt.ylabel('Verdadeiro')
         st.pyplot(plt)
 
-
 # Function to export patient data to CSV
 def export_to_csv(df):
     csv = df.to_csv(index=False)
     b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="patient_data.csv">Download CSV File</a>'
     return href
-
 
 # Initialize the database
 init_database()
@@ -182,8 +165,7 @@ st.sidebar.header("Configurações")
 models = load_models()
 
 if not models:
-    st.error(
-        "Nenhum modelo foi carregado. Por favor, verifique se os arquivos dos modelos estão presentes no diretório 'models'.")
+    st.error("Nenhum modelo foi carregado. Por favor, verifique se os arquivos dos modelos estão presentes.")
 else:
     st.success(f"{len(models)} modelos carregados com sucesso.")
 
@@ -224,75 +206,30 @@ if uploaded_file is not None:
             patients = c.fetchall()
             conn.close()
 
-            patient_names = [f"{id}: {name} (Idade: {age}, Gênero: {gender})" for id, name, age, gender in patients]
-            patient_selected = st.selectbox("Selecione o Paciente", patient_names)
+            patient_names = [f"{id}: {name} (Idade: {age}, Gênero: {gender})" for (id, name, age, gender) in patients]
+            selected_patient = st.selectbox("Selecionar Paciente", patient_names)
 
-            if patient_selected:
-                patient_id = int(patient_selected.split(":")[0])
-                for disease, (class_name, confidence_score) in results.items():
-                    save_analysis(patient_id, disease, class_name, confidence_score, image)
-                st.success("Análises salvas com sucesso!")
-
-                # Display patient history
-                df_history = get_patient_history(patient_id)
-                visualize_patient_history(df_history)
-
-                # Display confusion matrix
-                st.header("Matriz de Confusão")
-                display_confusion_matrix(df_history)
-
-                # Export data option
-                st.header("Exportar Dados")
-                st.markdown(export_to_csv(df_history), unsafe_allow_html=True)
-
+            # Save analysis to database
+            if st.button("Salvar Análise"):
+                if selected_patient:
+                    patient_id = int(selected_patient.split(':')[0])
+                    for disease, (class_name, confidence_score) in results.items():
+                        save_analysis(patient_id, disease, class_name, confidence_score, image)
+                    st.success("Análise salva com sucesso!")
+                else:
+                    st.error("Por favor, selecione um paciente para salvar a análise.")
         except Exception as e:
-            st.error(f"Ocorreu um erro durante a análise da imagem: {str(e)}")
-else:
-    st.write("Por favor, carregue uma imagem para análise.")
+            st.error(f"Erro ao analisar a imagem: {str(e)}")
 
-# Add a section for overall statistics
-st.header("Estatísticas Gerais")
-conn = sqlite3.connect('medvision_ai.db')
-df_all = pd.read_sql_query("SELECT * FROM analyses", conn)
-conn.close()
-
-if not df_all.empty:
-    st.write("Total de Análises Realizadas:", len(df_all))
-    st.write("Distribuição de Análises por Doença")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    df_all['disease'].value_counts().plot(kind='pie', autopct='%1.1f%%', ax=ax)
-    plt.title('Distribuição de Análises por Doença')
-    st.pyplot(fig)
-
-    st.write("Média de Confiança por Doença")
-    fig, ax = plt.subplots(figsize=(10, 5))
-    df_all.groupby('disease')['confidence'].mean().plot(kind='bar', ax=ax)
-    plt.title('Média de Confiança por Doença')
-    plt.ylabel('Confiança Média')
-    st.pyplot(fig)
-
-    # Display overall confusion matrix
-    st.header("Matriz de Confusão Geral")
-    display_confusion_matrix(df_all)
-else:
-    st.write("Ainda não há análises realizadas.")
-
-# Add a section for model performance over time
-st.header("Desempenho do Modelo ao Longo do Tempo")
-if not df_all.empty:
-    df_all['date'] = pd.to_datetime(df_all['date'])
-    df_all.set_index('date', inplace=True)
-    df_monthly = df_all.resample('M').mean()
-
-    plt.figure(figsize=(12, 6))
-    for disease in df_all['disease'].unique():
-        disease_data = df_monthly[df_monthly.index.get_level_values('disease') == disease]
-        plt.plot(disease_data.index, disease_data['confidence'], label=disease)
-
-    plt.title('Confiança Média do Modelo ao Longo do Tempo')
-    plt.xlabel('Data')
-    plt.ylabel('Confiança Média')
-    plt.legend()
-    st.pyplot(plt)
-else:
-    st.write("Não há dados suficientes para mostrar o desempenho do modelo ao longo do tempo.")
+# Patient history
+st.sidebar.header("Histórico de Pacientes")
+patient_history_id = st.sidebar.number_input("ID do Paciente para Histórico", min_value=1)
+if st.sidebar.button("Visualizar Histórico"):
+    df_history = get_patient_history(patient_history_id)
+    if not df_history.empty:
+        visualize_patient_history(df_history)
+        if st.button("Gerar Matriz de Confusão"):
+            display_confusion_matrix(df_history)
+        st.sidebar.markdown(export_to_csv(df_history), unsafe_allow_html=True)
+    else:
+        st.sidebar.warning("Nenhum histórico encontrado para este paciente.")
