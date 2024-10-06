@@ -1,5 +1,6 @@
 streamlit
 Pillow
+keras
 numpy
 tensorflow==2.13.0  # Use uma versão que seja compatível com a versão do Python no Streamlit Cloud
 pandas
