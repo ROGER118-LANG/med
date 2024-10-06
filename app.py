@@ -21,7 +21,7 @@ def load_models():
             "labels": "tuberculose_labels.txt"
         },
         "Câncer": {
-            "model": "cancer_model.h5",
+            "model": "https://github.com/ROGER118-LANG/med/blob/main/cancer_model.h5",
             "labels": "cancer_labels.txt"
         },
         "Pneumonia": {
