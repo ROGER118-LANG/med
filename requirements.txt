@@ -1,8 +1,9 @@
-streamlit
+tensorflow
 Pillow
-keras
 numpy
-pandas
-seaborn
+sqlite3
 matplotlib
+seaborn
 scikit-learn
+streamlit
+pandas
