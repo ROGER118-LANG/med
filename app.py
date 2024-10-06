@@ -3,6 +3,7 @@ from PIL import Image, ImageOps
 import numpy as np
 from tensorflow.keras.models import load_model  
 import tensorflow as tf
+from PIL import Image, ImageOps
 # Alterado para TensorFlow Keras
 import sqlite3
 from datetime import datetime
@@ -25,66 +26,90 @@ import streamlit as st
 import os
 import tempfile
 
-def load_models():
-    models = {}
-    base_url = "https://raw.githubusercontent.com/ROGER118-LANG/med/main/models/"
-    disease_configs = {
-        "Tuberculose": {
-            "model": "tuberculose_model.h5",
-            "labels": "tuberculose_labels.txt"
-        },
-        "Câncer": {
-            "model": "cancer_model.h5",
-            "labels": "cancer_labels.txt"
-        },
-        "Pneumonia": {
-            "model": "pneumonia_model.h5",
-            "labels": "pneumonia_labels.txt"
-        }
-    }
+# Desabilitar notação científica para clareza
+np.set_printoptions(suppress=True)
 
-    for disease, config in disease_configs.items():
-        model_url = base_url + config["model"]
-        label_url = base_url + config["labels"]
+def load_image(image_path):
+    """Carrega e processa a imagem para o modelo."""
+    # Carregar a imagem e converter para RGB
+    image = Image.open(image_path).convert("RGB")
+    
+    # Redimensionar a imagem para 224x224
+    size = (224, 224)
+    image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
+    
+    # Converter a imagem em um array numpy
+    image_array = np.asarray(image)
+    
+    # Normalizar a imagem
+    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+    
+    return normalized_image_array
 
-        try:
-            # Baixar o modelo da URL
-            response = requests.get(model_url)
-            if response.status_code == 200:
-                with tempfile.NamedTemporaryFile(delete=False) as temp_model_file:
-                    temp_model_file.write(response.content)
-                    temp_model_path = temp_model_file.name
+def predict(image_path, model, class_names):
+    """Faz a predição da imagem usando o modelo fornecido."""
+    # Criar a array com a forma correta para alimentar o modelo
+    data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
+    
+    # Carregar e processar a imagem
+    data[0] = load_image(image_path)
 
-                # Verificar se o arquivo é um .h5
-                if temp_model_path.endswith('.h5'):
-                    # Se for um arquivo HDF5, carregar normalmente
-                    custom_objects = {'DepthwiseConv2D': tf.keras.layers.DepthwiseConv2D}
-                    model = load_model(temp_model_path, custom_objects=custom_objects, compile=False)
-                else:
-                    # Se for um modelo SavedModel, usar TFSMLayer
-                    model = tf.keras.layers.TFSMLayer(temp_model_path, call_endpoint='serving_default')
+    # Fazer a predição
+    prediction = model.predict(data)
+    index = np.argmax(prediction)
+    class_name = class_names[index].strip()  # Remover quebra de linha
+    confidence_score = prediction[0][index]
 
-                os.remove(temp_model_path)  # Excluir arquivo temporário
-            else:
-                st.sidebar.error(f"Erro ao carregar o modelo de {disease}: {response.status_code}")
-                continue
+    # Retornar resultados
+    return class_name, confidence_score
 
-            # Baixar os rótulos
-            response = requests.get(label_url)
-            if response.status_code == 200:
-                labels = [line.strip() for line in response.text.splitlines()]
-            else:
-                st.sidebar.error(f"Erro ao carregar os rótulos de {disease}: {response.status_code}")
-                continue
+# Função para carregar os modelos e os rótulos
+def load_models(model_paths, labels_paths):
+    """Carrega múltiplos modelos e suas classes."""
+    models = []
+    class_names_list = []
+    
+    for model_path, labels_path in zip(model_paths, labels_paths):
+        model = load_model(model_path, compile=False)
+        with open(labels_path, "r") as f:
+            class_names = f.readlines()
+        models.append(model)
+        class_names_list.append(class_names)
+    
+    return models, class_names_list
 
-            models[disease] = (model, labels)
-            st.sidebar.success(f"Modelo de {disease} carregado com sucesso.")
-        
-        except Exception as e:
-            st.sidebar.error(f"Erro ao carregar os arquivos de {disease}: {str(e)}")
+# Definir caminhos para os modelos e rótulos
+model_paths = ["tuberculose_model.h5", "model_pneumonia.h5", "model_outro.h5"]
+labels_paths = ["labels_tuberculose.txt", "labels_pneumonia.txt", "labels_outro.txt"]
 
-    return models
+# Carregar modelos e rótulos
+models, class_names_list = load_models(model_paths, labels_paths)
 
+# Exibir opções para o usuário escolher
+print("Escolha um modelo:")
+for i, model_path in enumerate(model_paths):
+    print(f"{i + 1}. {model_path}")
+
+# Obter escolha do usuário
+model_choice = int(input("Digite o número do modelo que deseja usar: ")) - 1
+
+# Verificar se a escolha é válida
+if model_choice < 0 or model_choice >= len(models):
+    print("Escolha inválida.")
+else:
+    # Definir o modelo escolhido e suas classes
+    selected_model = models[model_choice]
+    selected_class_names = class_names_list[model_choice]
+
+    # Defina o caminho para sua imagem
+    image_path = input("Digite o caminho da imagem: ")  # Solicitar o caminho da imagem
+
+    # Fazer a predição
+    class_name, confidence_score = predict(image_path, selected_model, selected_class_names)
+
+    # Exibir os resultados
+    print("Class:", class_name)
+    print("Confidence Score:", confidence_score)
 
 # Function to prepare the database
 def init_database():
