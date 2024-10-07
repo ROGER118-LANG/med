@@ -207,8 +207,9 @@ def main():
         st.sidebar.title(f"Welcome, {st.session_state.username}")
 
 if st.sidebar.button("Logout"):
-    st.session_state.clear()  # Clear all session state variables
-    st.experimental_rerun()   # Rerun the app to show the login page
+    st.session_state.clear()  # Clear session state variables on logout
+    st.experimental_rerun()   # Force page rerun to show the login page
+
 
 
         # Sidebar menu
