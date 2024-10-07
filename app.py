@@ -51,6 +51,11 @@ def init_login_file():
         admin_password = hash_password('123')
         ws.append(['admin', admin_password, '', '', 'True'])
         wb.save(LOGIN_FILE)
+def check_password(provided_password, stored_hashed_password):
+    # Usando hashlib (ou substitua por bcrypt)
+    hashed_password = hashlib.sha256(provided_password.encode('utf-8')).hexdigest()
+    return hashed_password == stored_hashed_password
+
 def check_login(username, password):
     try:
         # Abrindo o arquivo Excel
