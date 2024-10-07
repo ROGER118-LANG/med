@@ -52,7 +52,6 @@ def init_login_file():
         ws.append(['admin', admin_password, '', '', 'True'])
         wb.save(LOGIN_FILE)
 
-
 def check_login(username, password):
     wb = load_workbook(LOGIN_FILE)
     ws = wb.active
@@ -182,9 +181,6 @@ def view_patient_history(patient_id):
     else:
         st.info("No history found for this patient.")
 
-
-
-
 def is_admin(username):
     if not username:
         return False
@@ -273,6 +269,7 @@ def manage_users():
             st.info("No users to remove.")
     except Exception as e:
         st.error(f"Error managing users: {str(e)}")
+
 def display_image(uploaded_file):
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
@@ -326,8 +323,7 @@ def add_doctor_notes(patient_id, exam_index):
     if st.button("Save Notes"):
         st.session_state.patient_history[patient_id][exam_index]['doctor_notes'] = notes
         st.success("Notes saved successfully!")
-
-def filter_patient_history(patient_id):
+        def filter_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
         df = pd.DataFrame(st.session_state.patient_history[patient_id])
         start_date = st.date_input("Start Date")
@@ -335,16 +331,19 @@ def filter_patient_history(patient_id):
         filtered_df = df[(df['date'] >= str(start_date)) & (df['date'] <= str(end_date))]
         st.dataframe(filtered_df)
 
-def is_admin(username):
-    wb = load_workbook(LOGIN_FILE)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] == username:
-            return row[4]  # Is Admin column
-    return False
+def print_login_file_contents():
+    try:
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+        for row in ws.iter_rows(values_only=True):
+            print(row)
+    except Exception as e:
+        print(f"Error reading LOGIN_FILE: {str(e)}")
 
 def main():
     init_login_file()
+    print_login_file_contents()  # Para debug
+
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
