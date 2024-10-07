@@ -28,13 +28,13 @@ if 'username' not in st.session_state:
 LOGIN_FILE = 'login_info.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 model_paths = {
-    "Pneumonia": "keras_model.h5",
+    "Pneumonia": "pneumonia_model.h5",
     "Tuberculosis": "tuberculose_model.h5",
     "Cancer": "cancer_model.h5"
 }
 
 label_paths = {
-    "Pneumonia": "labels.txt",
+    "Pneumonia": "pneumonia_labels.txt",
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
