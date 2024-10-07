@@ -330,55 +330,111 @@ def generate_heatmap(model, preprocessed_image, last_conv_layer_name, pred_index
         st.warning("Cannot generate heatmap: No convolutional layer found.")
         return None
 
-    # Create a model that maps the input image to the activations
-    # of the last conv layer as well as the output predictions
+    # Get the last conv layer by name
     last_conv_layer = None
     for layer in model.layers:
-        if isinstance(layer, tf.keras.models.Sequential):
-            for inner_layer in layer.layers:
-                if isinstance(inner_layer, tf.keras.models.Model):
-                    last_conv_layer = inner_layer.get_layer(last_conv_layer_name)
-                    if last_conv_layer is not None:
-                        break
-            if last_conv_layer is not None:
+        if hasattr(layer, 'get_layer'):
+            try:
+                last_conv_layer = layer.get_layer(last_conv_layer_name)
                 break
+            except ValueError:
+                continue
 
     if last_conv_layer is None:
         st.warning(f"Layer '{last_conv_layer_name}' not found in the model.")
         return None
 
+    # Create a model that maps the input image to the activations
+    # of the last conv layer as well as the output predictions
     grad_model = tf.keras.models.Model(
         [model.inputs], 
         [last_conv_layer.output, model.output]
     )
 
+
     # Rest of the function remains the same
     # ...
-
 def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
-    # ... (previous code remains the same)
-
-    if last_conv_layer_name is None:
-        st.warning("Could not find a convolutional layer in the model. Heatmap generation is not possible.")
-    else:
-        # Generate heatmap
-        heatmap = generate_heatmap(model, processed_image, last_conv_layer_name)
+    if uploaded_file is not None:
+        st.write(f"Model option selected: {model_option}")
         
-        if heatmap is not None:
-            # Load the original image
-            original_image = Image.open(uploaded_file).convert("RGB")
+        if model_option not in model_paths or model_option not in label_paths:
+            st.error(f"Model option '{model_option}' not found in available models.")
+            return None
+        
+        try:
+            model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
             
-            # Apply heatmap to the original image
-            heatmap_image = apply_heatmap(original_image, heatmap)
-            
-            # Display the original and heatmap images side by side
-            col1, col2 = st.columns(2)
-            with col1:
-                st.image(original_image, caption="Original Image", use_column_width=True)
-            with col2:
-                st.image(heatmap_image, caption="Anomaly Heatmap", use_column_width=True)
-        else:
-            st.warning("Could not generate heatmap.")
+            if model is not None and class_names is not None:
+                # Build the model
+                input_shape = (224, 224, 3)  # Adjust this if your input shape is different
+                model.build(input_shape=(None, *input_shape))
+                
+                st.write("Model summary:")
+                model.summary(print_fn=lambda x: st.text(x))
+                
+                st.write("Model layers:")
+                for idx, layer in enumerate(model.layers):
+                    st.write(f"{idx}: {layer.name} - {type(layer).__name__}")
+                    if hasattr(layer, 'layers'):
+                        for sub_idx, sub_layer in enumerate(layer.layers):
+                            st.write(f"  {sub_idx}: {sub_layer.name} - {type(sub_layer).__name__}")
+                
+                processed_image = preprocess_image(uploaded_file)
+                
+                if processed_image is not None:
+                    class_name, confidence_score = predict(model, processed_image, class_names)
+                    
+                    if class_name is not None and confidence_score is not None:
+                        result = {
+                            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'model': model_option,
+                            'class': class_name,
+                            'confidence': confidence_score
+                        }
+                        
+                        if patient_id not in st.session_state.patient_history:
+                            st.session_state.patient_history[patient_id] = []
+                        st.session_state.patient_history[patient_id].append(result)
+                        
+                        st.success("Exam classified successfully!")
+                        
+                        # Find the last convolutional layer
+                        last_conv_layer_name = find_last_conv_layer(model)
+                        if last_conv_layer_name is None:
+                            st.warning("Could not find a convolutional layer in the model. Heatmap generation is not possible.")
+                        else:
+                            # Generate heatmap
+                            heatmap = generate_heatmap(model, processed_image, last_conv_layer_name)
+                            
+                            if heatmap is not None:
+                                # Load the original image
+                                original_image = Image.open(uploaded_file).convert("RGB")
+                                
+                                # Apply heatmap to the original image
+                                heatmap_image = apply_heatmap(original_image, heatmap)
+                                
+                                # Display the original and heatmap images side by side
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.image(original_image, caption="Original Image", use_column_width=True)
+                                with col2:
+                                    st.image(heatmap_image, caption="Anomaly Heatmap", use_column_width=True)
+                            else:
+                                st.warning("Could not generate heatmap.")
+                        
+                        return result
+                    else:
+                        st.error("An error occurred during prediction. Please try again.")
+                else:
+                    st.error("Failed to preprocess the image. Please try a different image.")
+            else:
+                st.error("Failed to load the model and labels. Please check the files and try again.")
+        except Exception as e:
+            st.error(f"An error occurred during classification: {str(e)}")
+    else:
+        st.error("Please upload an image first.")
+    return None
 def apply_heatmap(image, heatmap):
     # Resize the heatmap to match the image size
     heatmap = Image.fromarray(np.uint8(255 * heatmap))
@@ -400,18 +456,21 @@ def apply_heatmap(image, heatmap):
     superimposed_img = np.clip(superimposed_img, 0, 255).astype('uint8')
     
     return Image.fromarray(superimposed_img)
-
 def find_last_conv_layer(model):
     last_conv_layer = None
-    for layer in model.layers:
-        if isinstance(layer, tf.keras.models.Sequential):
-            for inner_layer in layer.layers:
-                if isinstance(inner_layer, tf.keras.layers.Conv2D):
-                    last_conv_layer = inner_layer
-                elif isinstance(inner_layer, tf.keras.models.Model):  # For Functional models
-                    for deepest_layer in inner_layer.layers:
-                        if isinstance(deepest_layer, tf.keras.layers.Conv2D):
-                            last_conv_layer = deepest_layer
+    
+    def search_layers(layers):
+        nonlocal last_conv_layer
+        for layer in reversed(layers):
+            if isinstance(layer, tf.keras.layers.Conv2D):
+                last_conv_layer = layer
+                return True
+            elif hasattr(layer, 'layers'):
+                if search_layers(layer.layers):
+                    return True
+        return False
+    
+    search_layers(model.layers)
     
     if last_conv_layer:
         st.write(f"Last convolutional layer found: {last_conv_layer.name}")
