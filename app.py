@@ -189,7 +189,6 @@ def is_admin(username):
         ws = wb.active
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row and len(row) > 0 and row[0] == username:
-                # Verifica se a coluna 'Is Admin' existe
                 is_admin_value = row[4] if len(row) > 4 else False
                 return str(is_admin_value).lower() == 'true'
     except Exception as e:
@@ -205,12 +204,11 @@ def manage_users():
         st.subheader("Existing Users")
         user_data = list(ws.iter_rows(min_row=2, values_only=True))
         
-        # Ensure all rows have the same number of columns
         max_columns = max(len(row) for row in user_data) if user_data else 5
         user_data = [row + (None,) * (max_columns - len(row)) for row in user_data]
         
         columns = ["Username", "Password", "Last Login", "Valid Until", "Is Admin"]
-        columns = columns[:max_columns]  # Adjust columns based on actual data
+        columns = columns[:max_columns]
         user_df = pd.DataFrame(user_data, columns=columns)
         st.dataframe(user_df)
 
@@ -225,7 +223,7 @@ def manage_users():
                 hashed_password = hash_password(new_password)
                 valid_until = (datetime.now() + timedelta(days=valid_days)).strftime("%Y-%m-%d %H:%M:%S")
                 new_row = [new_username, hashed_password, "", valid_until, str(is_admin)]
-                ws.append(new_row[:max_columns])  # Ensure we only add existing columns
+                ws.append(new_row[:max_columns])
                 wb.save(LOGIN_FILE)
                 st.success("User added successfully!")
             else:
@@ -238,170 +236,57 @@ def manage_users():
             edit_username = st.selectbox("Select User to Edit", usernames)
             edited_password = st.text_input("New Password for Selected User", type="password")
             edit_is_admin = st.checkbox("Is Admin", value=False)
-            edit_valid_days = st.number_input("Extend validity (days)", min_value=0, value=0)
-            if st.button("Edit User"):
-                for row in ws.iter_rows(min_row=2):
-                    if row[0].value == edit_username:
-                        if edited_password:
-                            row[1].value = hash_password(edited_password)
-                        if len(row) > 4:
-                            row[4].value = str(edit_is_admin)
-                        if edit_valid_days > 0 and len(row) > 3:
-                            current_valid_until = datetime.strptime(row[3].value, "%Y-%m-%d %H:%M:%S") if row[3].value else datetime.now()
-                            new_valid_until = (current_valid_until + timedelta(days=edit_valid_days)).strftime("%Y-%m-%d %H:%M:%S")
+            edit_valid_days = st.number_input("Extend validity             by (days)", min_value=1, value=7)
+            if st.button("Update User"):
+                if edited_password:
+                    hashed_password = hash_password(edited_password)
+                    new_valid_until = (datetime.now() + timedelta(days=edit_valid_days)).strftime("%Y-%m-%d %H:%M:%S")
+                    for row in ws.iter_rows(min_row=2):
+                        if row[0].value == edit_username:
+                            row[1].value = hashed_password
                             row[3].value = new_valid_until
-                        break
-                wb.save(LOGIN_FILE)
-                st.success("User edited successfully!")
+                            row[4].value = str(edit_is_admin)
+                            break
+                    wb.save(LOGIN_FILE)
+                    st.success("User updated successfully!")
+                else:
+                    st.error("Please provide a new password.")
 
-        # Remove user
-        st.subheader("Remove User")
-        if usernames:
-            remove_username = st.selectbox("Select User to Remove", usernames)
-            if st.button("Remove User"):
-                for idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
-                    if row[0].value == remove_username:
-                        ws.delete_rows(idx)
-                        break
-                wb.save(LOGIN_FILE)
-                st.success("User removed successfully!")
-        else:
-            st.info("No users to remove.")
     except Exception as e:
         st.error(f"Error managing users: {str(e)}")
 
-def display_image(uploaded_file):
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption='Uploaded Image', use_column_width=True)
+# Main App Layout
+def app_layout():
+    st.title("Medical Exam Classifier")
+    patient_id = st.text_input("Patient ID", placeholder="Enter Patient ID")
+    model_option = st.selectbox("Select Exam Type", ["Pneumonia", "Tuberculosis", "Cancer"])
+    
+    uploaded_file = st.file_uploader("Choose an X-ray image...", type=["jpg", "jpeg", "png"])
 
-def export_patient_history(patient_id):
-    if patient_id in st.session_state.patient_history:
-        df = pd.DataFrame(st.session_state.patient_history[patient_id])
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="Download Patient History",
-            data=csv,
-            file_name=f"{patient_id}_history.csv",
-            mime="text/csv",
-        )
-
-def compare_models(uploaded_file):
-    results = {}
-    for model_option in model_paths.keys():
-        result = classify_exam("", model_option, uploaded_file)
+    if st.button("Classify Exam"):
+        result = classify_exam(patient_id, model_option, uploaded_file)
         if result:
-            results[model_option] = result
+            st.write(f"**Prediction:** {result['class']} with **confidence score** of {result['confidence']:.2f}")
     
-    comparison_df = pd.DataFrame(results).T
-    st.dataframe(comparison_df)
+    if st.button("View Patient History"):
+        view_patient_history(patient_id)
 
-def display_usage_stats():
-    total_exams = sum(len(history) for history in st.session_state.patient_history.values())
-    model_usage = {}
-    for history in st.session_state.patient_history.values():
-        for exam in history:
-            model = exam['model']
-            model_usage[model] = model_usage.get(model, 0) + 1
-    
-    st.write(f"Total exams classified: {total_exams}")
-    st.bar_chart(model_usage)
-
-def collect_feedback(prediction_result):
-    st.write("Was this prediction helpful?")
-    if st.button("Yes"):
-        # Store positive feedback
-        st.success("Thank you for your feedback!")
-    if st.button("No"):
-        reason = st.text_input("Please tell us why:")
-        if st.button("Submit"):
-            # Store negative feedback with reason
-            st.success("Thank you for your feedback!")
-
-def add_doctor_notes(patient_id, exam_index):
-    notes = st.text_area("Doctor's Notes:")
-    if st.button("Save Notes"):
-        st.session_state.patient_history[patient_id][exam_index]['doctor_notes'] = notes
-        st.success("Notes saved successfully!")
-        def filter_patient_history(patient_id):
-    if patient_id in st.session_state.patient_history:
-        df = pd.DataFrame(st.session_state.patient_history[patient_id])
-        start_date = st.date_input("Start Date")
-        end_date = st.date_input("End Date")
-        filtered_df = df[(df['date'] >= str(start_date)) & (df['date'] <= str(end_date))]
-        st.dataframe(filtered_df)
-
-def print_login_file_contents():
-    try:
-        wb = load_workbook(LOGIN_FILE)
-        ws = wb.active
-        for row in ws.iter_rows(values_only=True):
-            print(row)
-    except Exception as e:
-        print(f"Error reading LOGIN_FILE: {str(e)}")
-
-def main():
+# Main entry point of the app
+if __name__ == '__main__':
     init_login_file()
-    print_login_file_contents()  # Para debug
-
-    if not st.session_state.get('logged_in', False):
+    
+    if not st.session_state.logged_in:
         login_page()
     else:
-        st.title("Medical Image Analysis using AI")
-        st.sidebar.title(f"Welcome, {st.session_state.username}")
-        if st.sidebar.button("Logout"):
+        if is_admin(st.session_state.username):
+            if st.sidebar.checkbox("Manage Users"):
+                manage_users()
+        
+        st.sidebar.title("Menu")
+        if st.sidebar.button("Log Out"):
             st.session_state.logged_in = False
             st.session_state.username = None
-            st.rerun()
+            st.success("Logged out successfully!")
+        else:
+            app_layout()
 
-        # Sidebar menu
-        if 'menu_option' not in st.session_state:
-            st.session_state.menu_option = "Classify Exam"
-        options = ["Classify Exam", "View Patient History", "Compare Models", "Usage Statistics"]
-        if is_admin(st.session_state.username):
-            options.append("User Management")
-        st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
-
-        if st.session_state.menu_option == "Classify Exam":
-            st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
-            if uploaded_file:
-                display_image(uploaded_file)
-            if st.button("Classify"):
-                result = classify_exam(patient_id, model_option, uploaded_file)
-                if result:
-                    st.write(result)
-                    collect_feedback(result)
-                    add_doctor_notes(patient_id, -1)  # Add notes to the last exam
-
-        elif st.session_state.menu_option == "View Patient History":
-            st.header("Patient History")
-            patient_id = st.text_input("Enter Patient ID:")
-            if st.button("View History"):
-                view_patient_history(patient_id)
-                export_patient_history(patient_id)
-            if st.button("Filter History"):
-                filter_patient_history(patient_id)
-
-        elif st.session_state.menu_option == "Compare Models":
-            st.header("Compare Models")
-            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
-            if uploaded_file:
-                display_image(uploaded_file)
-                if st.button("Compare Models"):
-                    compare_models(uploaded_file)
-
-        elif st.session_state.menu_option == "Usage Statistics":
-            st.header("Usage Statistics")
-            display_usage_stats()
-
-        elif st.session_state.menu_option == "User Management":
-            if is_admin(st.session_state.username):
-                manage_users()
-            else:
-                st.error("You don't have permission to access this page.")
-
-if __name__ == "__main__":
-    main()
