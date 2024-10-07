@@ -13,7 +13,25 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
 
+# Função para carregar logins do arquivo JSON
+def load_logins():
+    with open('logins.json', 'r') as file:
+        data = json.load(file)
+    return data['logins']
+
+# Lógica do seu aplicativo Streamlit
+st.title("Meu Aplicativo de Saúde")
+
+# Carregar e exibir logins
+logins = load_logins()
+if logins:
+    st.write("Logins recebidos:")
+    for login in logins:
+        st.write(f"Usuário: {login['username']}, Senha: {login['password']}")
+else:
+    st.write("Nenhum login recebido ainda.")
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
