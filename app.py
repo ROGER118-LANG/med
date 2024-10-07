@@ -14,8 +14,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 
-# Função para carregar logins do arquivo JSON
-def load_logins():
+ef load_logins():
+    if not os.path.exists('logins.json'):
+        # Se o arquivo não existir, cria um novo arquivo com a estrutura inicial
+        with open('logins.json', 'w') as file:
+            json.dump({"logins": []}, file)
+
     with open('logins.json', 'r') as file:
         data = json.load(file)
     return data['logins']
@@ -31,7 +35,6 @@ if logins:
         st.write(f"Usuário: {login['username']}, Senha: {login['password']}")
 else:
     st.write("Nenhum login recebido ainda.")
-# Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
 # Initialize session state
