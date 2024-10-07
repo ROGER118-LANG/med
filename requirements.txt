@@ -2,3 +2,4 @@ openpyxl
 tensorflow
 keras
 matplotlib
+seaborn
