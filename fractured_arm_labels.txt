@@ -1,0 +1,2 @@
+0 Fratura
+1 Sem fratura
