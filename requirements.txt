@@ -4,3 +4,4 @@ keras
 matplotlib
 seaborn
 cv2
+streamlit==1.39.0
