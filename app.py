@@ -206,10 +206,10 @@ def main():
         st.title("Medical Image Analysis using AI")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
 
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.experimental_rerun()
+if st.sidebar.button("Logout"):
+    st.session_state.clear()  # Clear all session state variables
+    st.experimental_rerun()   # Rerun the app to show the login page
+
 
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
