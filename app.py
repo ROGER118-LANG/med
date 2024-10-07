@@ -15,7 +15,15 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tensorflow.keras.layers import DepthwiseConv2D
 
+def custom_depthwise_conv2d(*args, **kwargs):
+    # Remove the 'groups' parameter if present
+    kwargs.pop('groups', None)
+    return DepthwiseConv2D(*args, **kwargs)
+
+# Use this custom function when loading the model
+from tensorflow.keras.utils import custom_object_scope
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
