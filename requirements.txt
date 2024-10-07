@@ -3,4 +3,4 @@ tensorflow
 keras
 matplotlib
 seaborn
-request
+json
