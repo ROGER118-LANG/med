@@ -384,9 +384,9 @@ def main():
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
-        st.title("MedVision IA")
-        st.sidebar.title(f"Welcome, {st.session_state.username}")
-        if st.sidebar.button("Logout"):
+        st.title("Login")
+        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
+        if st.sidebar.button("Sair"):
             st.session_state.logged_in = False
             st.session_state.username = None
             st.rerun()
