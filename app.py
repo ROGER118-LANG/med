@@ -29,7 +29,7 @@ LOGIN_FILE = 'login_info.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 model_paths = {
     "Pneumonia": "keras_model.h5",
-    "Tuberculosis": "tuberculosis_model.h5",
+    "Tuberculosis": "tuberculose_model.h5",
     "Cancer": "cancer_model.h5"
 }
 
