@@ -2,7 +2,7 @@ import streamlit as st
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-from tensorflow.keras.layers import DepthwiseConv2D
+from keras.layers import DepthwiseConv2D
 from tensorflow.keras.utils import custom_object_scope
 from tensorflow.keras.preprocessing import image
 from PIL import Image, ImageOps
