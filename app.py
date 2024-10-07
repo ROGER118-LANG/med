@@ -262,18 +262,18 @@ def classify_exam(patient_id, model_option, uploaded_file):
     return None
 def generate_heatmap(img_array, model):
     last_conv_layer = model.get_layer('Conv_1')  # Adjust this layer name if necessary
-    grad_model = Model([model.inputs], [last_conv_layer.output, model.output])
+    grad_model = tf.keras.models.Model([model.inputs], [last_conv_layer.output, model.output])
     
     with tf.GradientTape() as tape:
         conv_output, predictions = grad_model(img_array)
-        loss = predictions[:, np.argmax(predictions[0])]
+        loss = predictions[:, tf.argmax(predictions[0])]
         
     grads = tape.gradient(loss, conv_output)
     pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
     
     heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_output), axis=-1)
-    heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
-    heatmap = heatmap.reshape((7, 7))
+    heatmap = tf.maximum(heatmap, 0) / tf.reduce_max(heatmap)
+    heatmap = heatmap.numpy().reshape((7, 7))
     heatmap = cv2.resize(heatmap, (224, 224))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
@@ -288,9 +288,9 @@ def display_heatmap():
         # Load and preprocess the image
         img = Image.open(uploaded_file).convert("RGB")
         img = img.resize((224, 224))
-        img_array = keras.preprocessing.image.img_to_array(img)
+        img_array = img_to_array(img)
         img_array = np.expand_dims(img_array, axis=0)
-        img_array = keras.applications.mobilenet_v2.preprocess_input(img_array)
+        img_array = preprocess_input(img_array)
         
         # Display original image
         st.image(img, caption="Original Image", use_column_width=True)
@@ -318,8 +318,6 @@ def display_heatmap():
                 st.error(f"Error processing {model_name} model: {str(e)}")
     else:
         st.warning("Please upload an X-ray image.")
-
-# ... (rest of your code)
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
         history = st.session_state.patient_history[patient_id]
