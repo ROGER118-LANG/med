@@ -233,13 +233,6 @@ def main():
                 view_patient_history(patient_id)
         elif st.session_state.menu_option == "User Management":
             manage_users()
-
-    # Add footer
-    st.markdown("<footer style='text-align: center;'><p>Feito por Rodrigo Rapoport em 2024</p></footer>", unsafe_allow_html=True)
-
-if __name__ == "__main__":
-    main()
-
 if __name__ == "__main__":
     main()
 
