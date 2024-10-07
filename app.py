@@ -30,6 +30,7 @@ LOGIN_FILE = 'login_info.xlsx'
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+
 def init_login_file():
     if not os.path.exists(LOGIN_FILE):
         wb = Workbook()
@@ -40,16 +41,37 @@ def init_login_file():
         wb.save(LOGIN_FILE)
 
 def check_login(username, password):
-    wb = load_workbook(LOGIN_FILE)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] == username and row[1] == hash_password(password):
-            if row[4] != 'admin':
-                expiry_date = row[3]
-                if expiry_date and datetime.now() > expiry_date:
-                    return False, "Account expired"
-            return True, "Success"
-    return False, "Invalid credentials"
+    try:
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if len(row) < 5:  # Check if the row has all expected columns
+                continue  # Skip this row if it doesn't have enough columns
+            if row[0] == username and row[1] == hash_password(password):
+                role = row[4] if len(row) > 4 else 'user'  # Default to 'user' if role is not specified
+                if role != 'admin':
+                    expiry_date = row[3] if len(row) > 3 else None
+                    if expiry_date and isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
+                        return False, "Account expired"
+                return True, "Success"
+        return False, "Invalid credentials"
+    except Exception as e:
+        st.error(f"An error occurred while checking login: {str(e)}")
+        return False, "Login check failed"
+
+def login_page():
+    st.title("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        login_success, message = check_login(username, password)
+        if login_success:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            update_last_login(username)
+            st.success("Logged in successfully!")
+        else:
+            st.error(message)
 
 def update_last_login(username):
     wb = load_workbook(LOGIN_FILE)
@@ -202,7 +224,6 @@ def manage_users():
         ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
         wb.save(LOGIN_FILE)
         st.success("User removed successfully!")
-
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
