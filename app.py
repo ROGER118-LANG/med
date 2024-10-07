@@ -198,7 +198,7 @@ def manage_users():
         st.success("User removed successfully!")
 
 def main():
-   init_login_file()
+    init_login_file()
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
@@ -209,6 +209,27 @@ def main():
             st.session_state.username = None
             st.experimental_rerun()
 
+        # Sidebar menu
+        menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
+
+        # Add "User Management" option for admin
+        if st.session_state.username == 'admin':
+            menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History", "User Management"))
+
+        if menu_option == "Classify Exam":
+            st.header("Classify Exam")
+            patient_id = st.text_input("Enter Patient ID:")
+            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+            if st.button("Classify"):
+                classify_exam(patient_id, model_option, uploaded_file)
+        elif menu_option == "View Patient History":
+            st.header("Patient History")
+            patient_id = st.text_input("Enter Patient ID:")
+            if st.button("View History"):
+                view_patient_history(patient_id)
+        elif menu_option == "User Management":
+            manage_users()
 
 
         # Sidebar menu
