@@ -246,6 +246,23 @@ label_paths = {
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
+def main():
+    init_login_file()
 
-if __name__ == "__main__":
-    main()
+    if not st.session_state.logged_in:
+        login_page()
+    else:
+        st.title("Medical Image Analysis using AI")
+        st.sidebar.title(f"Welcome, {st.session_state.username}")
+
+        if st.sidebar.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.experimental_rerun()
+
+        # Sidebar menu
+        menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
+
+        # Adicionar "User Management" para o admin
+        if st.session_state.username == 'admin':
+            menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History", "User Management"))
