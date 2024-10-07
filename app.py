@@ -115,9 +115,9 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_enviado):
         st.write(f"Modelo selecionado: {opcao_modelo}")
         modelo, nomes_classes = carregar_modelo_e_labels(caminho_modelos[opcao_modelo], caminho_labels[opcao_modelo])
         
-        se modelo é None ou nomes_classes são None:
-            st.error("Falha ao carregar o modelo e labels. Verifique os arquivos e tente novamente.")
-        else:
+    if modelo is None or nomes_classes is None:
+    st.error("Falha ao carregar o modelo e labels. Verifique os arquivos e tente novamente.")
+
             imagem_processada = preprocessar_imagem(arquivo_enviado)
             nome_classe, confianca = prever(modelo, imagem_processada, nomes_classes)
             
