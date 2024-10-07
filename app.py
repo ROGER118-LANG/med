@@ -441,7 +441,7 @@ def main():
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
 
-        options = ["Classify Exam", "View Patient History", "Compare Patients"]
+        options = ["Classify Exam", "View Patient History", "Compare Patients", "Anomaly Heatmap"]
         if st.session_state.username == 'admin':
             options.append("User Management")
 
@@ -459,10 +459,10 @@ def main():
             patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
                 view_patient_history(patient_id)
-                  elif st.session_state.menu_option == "Anomaly Heatmap":
-            display_heatmap()
         elif st.session_state.menu_option == "Compare Patients":
             compare_patients()
+        elif st.session_state.menu_option == "Anomaly Heatmap":
+            display_heatmap()
         elif st.session_state.menu_option == "User Management":
             manage_users()
 
