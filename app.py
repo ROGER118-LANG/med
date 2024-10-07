@@ -17,7 +17,7 @@ import os
 import requests
 
 # URL do webhook do Zapier
-zapier_webhook_url = "SUA_URL_DO_WEBHOOK_AQUI"
+zapier_webhook_url = "https://zapier.com/editor/261273371/draft/_GEN_1728345153400/fields"
 
 # Função para carregar logins do arquivo JSON
 def load_logins():
