@@ -49,7 +49,7 @@ def init_login_file():
         ws = wb.active
         ws.append(['Username', 'Password', 'Last Login', 'Valid Until', 'Is Admin'])
         admin_password = hash_password('123')
-        ws.append(['admin', admin_password, '', '', True])
+        ws.append(['admin', admin_password, '', '', 'True'])
         wb.save(LOGIN_FILE)
 
 def check_login(username, password):
@@ -181,14 +181,24 @@ def view_patient_history(patient_id):
     else:
         st.info("No history found for this patient.")
 
+
+
+def is_admin(username):
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] == username:
+            return str(row[4]).lower() == 'true'  # Is Admin column
+    return False
+
 def manage_users():
     st.header("User Management")
     wb = load_workbook(LOGIN_FILE)
     ws = wb.active
     # Show existing users
     st.subheader("Existing Users")
-    user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-    user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login", "Valid Until", "Is Admin"])
+    user_data = list(ws.iter_rows(min_row=2, values_only=True))
+    user_df = pd.DataFrame(user_data, columns=["Username", "Password", "Last Login", "Valid Until", "Is Admin"])
     st.dataframe(user_df)
 
     # Add new user
@@ -201,7 +211,7 @@ def manage_users():
         if new_username and new_password:
             hashed_password = hash_password(new_password)
             valid_until = (datetime.now() + timedelta(days=valid_days)).strftime("%Y-%m-%d %H:%M:%S")
-            ws.append([new_username, hashed_password, "", valid_until, is_admin])
+            ws.append([new_username, hashed_password, "", valid_until, str(is_admin)])
             wb.save(LOGIN_FILE)
             st.success("User added successfully!")
         else:
@@ -209,16 +219,17 @@ def manage_users():
 
     # Edit user
     st.subheader("Edit User")
-    edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
+    usernames = [row[0] for row in user_data]
+    edit_username = st.selectbox("Select User to Edit", usernames)
     edited_password = st.text_input("New Password for Selected User", type="password")
-    edit_is_admin = st.checkbox("Is Admin", value=user_data[edit_username][4])
+    edit_is_admin = st.checkbox("Is Admin", value=str(dict(zip(usernames, [row[4] for row in user_data]))[edit_username]).lower() == 'true')
     edit_valid_days = st.number_input("Extend validity (days)", min_value=0, value=0)
     if st.button("Edit User"):
         for row in ws.iter_rows(min_row=2):
             if row[0].value == edit_username:
                 if edited_password:
                     row[1].value = hash_password(edited_password)
-                row[4].value = edit_is_admin
+                row[4].value = str(edit_is_admin)
                 if edit_valid_days > 0:
                     current_valid_until = datetime.strptime(row[3].value, "%Y-%m-%d %H:%M:%S") if row[3].value else datetime.now()
                     new_valid_until = (current_valid_until + timedelta(days=edit_valid_days)).strftime("%Y-%m-%d %H:%M:%S")
@@ -229,14 +240,14 @@ def manage_users():
 
     # Remove user
     st.subheader("Remove User")
-    remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
+    remove_username = st.selectbox("Select User to Remove", usernames)
     if st.button("Remove User"):
-        ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
+        for idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
+            if row[0].value == remove_username:
+                ws.delete_rows(idx)
+                break
         wb.save(LOGIN_FILE)
         st.success("User removed successfully!")
-
-# New functions
-
 def display_image(uploaded_file):
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
