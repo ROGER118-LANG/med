@@ -35,7 +35,7 @@ model_paths = {
 
 label_paths = {
     "Pneumonia": "pneumonia_labels.txt",
-    "Tuberculosis": "tuberculosis_labels.txt",
+    "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
 
