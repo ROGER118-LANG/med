@@ -28,15 +28,15 @@ if 'username' not in st.session_state:
 LOGIN_FILE = 'login_info.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 model_paths = {
-    "Pneumonia": "path/to/pneumonia_model.h5",
-    "Tuberculosis": "path/to/tuberculosis_model.h5",
-    "Cancer": "path/to/cancer_model.h5"
+    "Pneumonia": "keras_model.h5",
+    "Tuberculosis": "tuberculosis_model.h5",
+    "Cancer": "cancer_model.h5"
 }
 
 label_paths = {
-    "Pneumonia": "path/to/pneumonia_labels.txt",
-    "Tuberculosis": "path/to/tuberculosis_labels.txt",
-    "Cancer": "path/to/cancer_labels.txt"
+    "Pneumonia": "pneumonia_labels.txt",
+    "Tuberculosis": "tuberculosis_labels.txt",
+    "Cancer": "cancer_labels.txt"
 }
 
 def custom_depthwise_conv2d(*args, **kwargs):
