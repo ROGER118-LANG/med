@@ -384,7 +384,7 @@ def main():
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
-        st.title("Advanced Medical Image Analysis using AI")
+        st.title("MedVision IA")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
         if st.sidebar.button("Logout"):
             st.session_state.logged_in = False
