@@ -1,6 +1,6 @@
 import streamlit as st
 import tensorflow as tf
-import cv2
+
 from keras.models import load_model
 from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
@@ -307,7 +307,7 @@ def compare_patients():
 def generate_heatmap(model, preprocessed_image, last_conv_layer_name, pred_index=None):
     # Create a model that maps the input image to the activations
     # of the last conv layer as well as the output predictions
-    grad_model = Model(
+    grad_model = tf.keras.models.Model(
         [model.inputs], 
         [model.get_layer(last_conv_layer_name).output, model.output]
     )
@@ -341,17 +341,25 @@ def generate_heatmap(model, preprocessed_image, last_conv_layer_name, pred_index
 
 def apply_heatmap(image, heatmap):
     # Resize the heatmap to match the image size
-    heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+    heatmap = Image.fromarray(np.uint8(255 * heatmap))
+    heatmap = heatmap.resize((image.width, image.height), Image.LANCZOS)
+    heatmap = np.array(heatmap)
     
-    # Convert heatmap to RGB
-    heatmap = np.uint8(255 * heatmap)
-    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    # Create a color map
+    color_map = plt.get_cmap('jet')
+    heatmap_colored = color_map(heatmap)
+    heatmap_colored = np.delete(heatmap_colored, 3, 2)  # Remove alpha channel
+    heatmap_colored = (heatmap_colored * 255).astype(np.uint8)
+    
+    # Convert image to numpy array if it's not already
+    if isinstance(image, Image.Image):
+        image = np.array(image)
     
     # Superimpose the heatmap on original image
-    superimposed_img = heatmap * 0.4 + image
+    superimposed_img = heatmap_colored * 0.4 + image * 0.6
     superimposed_img = np.clip(superimposed_img, 0, 255).astype('uint8')
     
-    return superimposed_img
+    return Image.fromarray(superimposed_img)
 
 def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
@@ -390,7 +398,6 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
                         
                         # Load the original image
                         original_image = Image.open(uploaded_file).convert("RGB")
-                        original_image = np.array(original_image)
                         
                         # Apply heatmap to the original image
                         heatmap_image = apply_heatmap(original_image, heatmap)
@@ -414,6 +421,7 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
     else:
         st.error("Please upload an image first.")
     return None
+
 
 
 def manage_users():
