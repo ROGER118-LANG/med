@@ -74,10 +74,36 @@ def login_page():
         else:
             st.error(message)
 
-# ... (keep the existing model loading and prediction functions)
-
 def classify_exam(patient_id, model_option, uploaded_file):
-    # ... (keep the existing classify_exam function)
+    if uploaded_file is not None:
+        st.write(f"Model option selected: {model_option}")
+        model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
+        
+        if model is not None and class_names is not None:
+            processed_image = preprocess_image(uploaded_file)
+            class_name, confidence_score = predict(model, processed_image, class_names)
+            
+            if class_name is not None and confidence_score is not None:
+                result = {
+                    'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'model': model_option,
+                    'class': class_name,
+                    'confidence': confidence_score
+                }
+                
+                if patient_id not in st.session_state.patient_history:
+                    st.session_state.patient_history[patient_id] = []
+                st.session_state.patient_history[patient_id].append(result)
+                
+                st.success("Exam classified successfully!")
+                return result
+            else:
+                st.error("An error occurred during prediction. Please try again.")
+        else:
+            st.error("Failed to load the model and labels. Please check the files and try again.")
+    else:
+        st.error("Please upload an image first.")
+    return None
 
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
