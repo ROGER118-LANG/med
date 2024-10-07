@@ -311,7 +311,8 @@ def manage_users():
     # Show existing users
     st.subheader("Existing Users")
     user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-    user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
+user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
+
     st.dataframe(user_df)
 
     # Add new user
