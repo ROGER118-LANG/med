@@ -250,3 +250,13 @@ label_paths = {
 
 if __name__ == "__main__":
     main()
+
+def main():
+    init_login_file()
+    if not st.session_state.get('logged_in', False):
+        login_page()
+    else:
+        st.title("Medical Image Analysis using AI")
+        st.sidebar.title(f"Welcome, {st.session_state.username}")
+        if st.sidebar.button("Logout"):
+            logout()
