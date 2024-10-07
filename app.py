@@ -194,13 +194,7 @@ def main():
         elif menu_option == "Manage Users" and st.session_state.is_admin:
             manage_users()
 
-def main():
-    init_login_file()
-    
-    if not st.session_state.get('logged_in', False):
-        login_page()
-    else:
-        # Your main application logic here
-        pass
+if __name__ == "__main__":
+    main()
 
 
