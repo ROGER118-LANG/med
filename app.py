@@ -45,15 +45,19 @@ def check_login(username, password):
         wb = load_workbook(LOGIN_FILE)
         ws = wb.active
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if len(row) < 5:  # Check if the row has all expected columns
-                continue  # Skip this row if it doesn't have enough columns
             if row[0] == username and row[1] == hash_password(password):
-                role = row[4] if len(row) > 4 else 'user'  # Default to 'user' if role is not specified
-                if role != 'admin':
-                    expiry_date = row[3] if len(row) > 3 else None
-                    if expiry_date and isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
-                        return False, "Account expired"
+                # Verifica se a coluna de role existe e se o usuário é admin
+                is_admin = len(row) > 4 and row[4] == 'admin'
+                
+                if not is_admin:
+                    # Se não for admin, verifica a data de expiração (se existir)
+                    if len(row) > 3 and row[3]:
+                        expiry_date = row[3]
+                        if isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
+                            return False, "Account expired"
+                
                 return True, "Success"
+        
         return False, "Invalid credentials"
     except Exception as e:
         st.error(f"An error occurred while checking login: {str(e)}")
