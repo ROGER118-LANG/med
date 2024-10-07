@@ -52,6 +52,13 @@ def init_login_file():
         ws.append(['admin', admin_password, '', '', 'True'])
         wb.save(LOGIN_FILE)
 
+def is_admin(username):
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] == username:
+            return str(row[4]).lower() == 'true'  # Is Admin column
+    return False
 def check_login(username, password):
     wb = load_workbook(LOGIN_FILE)
     ws = wb.active
@@ -183,13 +190,6 @@ def view_patient_history(patient_id):
 
 
 
-def is_admin(username):
-    wb = load_workbook(LOGIN_FILE)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] == username:
-            return str(row[4]).lower() == 'true'  # Is Admin column
-    return False
 
 def manage_users():
     st.header("User Management")
