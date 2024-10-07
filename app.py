@@ -42,24 +42,44 @@ label_paths = {
 }
 
 def custom_depthwise_conv2d(*args, **kwargs):
+    st.write("Custom DepthwiseConv2D called")
+    st.write(f"Args: {args}")
+    st.write(f"Kwargs before pop: {kwargs}")
     kwargs.pop('groups', None)
+    st.write(f"Kwargs after pop: {kwargs}")
     return DepthwiseConv2D(*args, **kwargs)
 
 def load_model_and_labels(model_path, labels_path):
     try:
         if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Arquivo de modelo não funciona: {model_path}")
+            raise FileNotFoundError(f"Model file not found: {model_path}")
         if not os.path.exists(labels_path):
-            raise FileNotFoundError(f"Labels não funciona: {labels_path}")
+            raise FileNotFoundError(f"Labels file not found: {labels_path}")
         
+        st.write(f"Loading model from: {model_path}")
+        st.write(f"Loading labels from: {labels_path}")
+        
+        # Load the model
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             model = load_model(model_path, compile=False)
         
+        if model is None:
+            raise ValueError("Model loaded as None")
+        
+        st.write("Model loaded successfully")
+        st.write(f"Model type: {type(model)}")
+        
+        # Load the labels
         with open(labels_path, "r") as f:
             class_names = f.readlines()
+        
+        st.write(f"Loaded {len(class_names)} class names")
+        
         return model, class_names
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
+        st.error(f"Model path: {model_path}")
+        st.error(f"Labels path: {labels_path}")
         return None, None
 def predict(model, data, class_names):
     try:
@@ -387,7 +407,13 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
             return None
         
         try:
+            st.write(f"Attempting to load model from: {model_paths[model_option]}")
+            st.write(f"Attempting to load labels from: {label_paths[model_option]}")
             model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
+            
+           
+                   if model is not None and class_names is not None:
+                st.write("Model and labels loaded successfully")
             
             if model is not None and class_names is not None:
                 st.write("Model summary:")
@@ -442,11 +468,7 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
                         
                         return result
                     else:
-                        st.error("An error occurred during prediction. Please try again.")
-                else:
-                    st.error("Failed to preprocess the image. Please try a different image.")
-            else:
-                st.error("Failed to load the model and labels. Please check the files and try again.")
+                st.error("Failed to load the model and labels. Please check the error messages above.")
         except Exception as e:
             st.error(f"An error occurred during classification: {str(e)}")
     else:
