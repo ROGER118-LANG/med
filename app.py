@@ -172,33 +172,72 @@ def login_page():
         else:
             st.error(message)
 
+def preprocess_image(uploaded_file):
+    try:
+        # Lê o arquivo carregado como bytes
+        image_bytes = uploaded_file.getvalue()
+        
+        # Abre a imagem usando PIL
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        
+        # Redimensiona a imagem para 224x224 pixels
+        size = (224, 224)
+        image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
+        
+        # Converte a imagem para um array numpy
+        image_array = np.asarray(image)
+        
+        # Normaliza os valores dos pixels
+        normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+        
+        # Cria um array 4D para entrada no modelo
+        data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
+        data[0] = normalized_image_array
+        
+        return data
+    except Exception as e:
+        st.error(f"Error preprocessing image: {str(e)}")
+        return None
+
 def classify_exam(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
         st.write(f"Model option selected: {model_option}")
-        model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
         
-        if model is not None and class_names is not None:
-            processed_image = preprocess_image(uploaded_file)
-            class_name, confidence_score = predict(model, processed_image, class_names)
+        if model_option not in model_paths or model_option not in label_paths:
+            st.error(f"Model option '{model_option}' not found in available models.")
+            return None
+        
+        try:
+            model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
             
-            if class_name is not None and confidence_score is not None:
-                result = {
-                    'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'model': model_option,
-                    'class': class_name,
-                    'confidence': confidence_score
-                }
+            if model is not None and class_names is not None:
+                processed_image = preprocess_image(uploaded_file)
                 
-                if patient_id not in st.session_state.patient_history:
-                    st.session_state.patient_history[patient_id] = []
-                st.session_state.patient_history[patient_id].append(result)
-                
-                st.success("Exam classified successfully!")
-                return result
+                if processed_image is not None:
+                    class_name, confidence_score = predict(model, processed_image, class_names)
+                    
+                    if class_name is not None and confidence_score is not None:
+                        result = {
+                            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'model': model_option,
+                            'class': class_name,
+                            'confidence': confidence_score
+                        }
+                        
+                        if patient_id not in st.session_state.patient_history:
+                            st.session_state.patient_history[patient_id] = []
+                        st.session_state.patient_history[patient_id].append(result)
+                        
+                        st.success("Exam classified successfully!")
+                        return result
+                    else:
+                        st.error("An error occurred during prediction. Please try again.")
+                else:
+                    st.error("Failed to preprocess the image. Please try a different image.")
             else:
-                st.error("An error occurred during prediction. Please try again.")
-        else:
-            st.error("Failed to load the model and labels. Please check the files and try again.")
+                st.error("Failed to load the model and labels. Please check the files and try again.")
+        except Exception as e:
+            st.error(f"An error occurred during classification: {str(e)}")
     else:
         st.error("Please upload an image first.")
     return None
