@@ -7,7 +7,7 @@ import numpy as np
 import io
 import os
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 import hashlib
 
@@ -47,9 +47,9 @@ def init_login_file():
     if not os.path.exists(LOGIN_FILE):
         wb = Workbook()
         ws = wb.active
-        ws.append(['Username', 'Password', 'Last Login'])
+        ws.append(['Username', 'Password', 'Last Login', 'Valid Until', 'Is Admin'])
         admin_password = hash_password('123')
-        ws.append(['admin', admin_password, ''])
+        ws.append(['admin', admin_password, '', '', True])
         wb.save(LOGIN_FILE)
 
 def check_login(username, password):
@@ -57,8 +57,12 @@ def check_login(username, password):
     ws = wb.active
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] == username and row[1] == hash_password(password):
-            return True
-    return False
+            valid_until = row[3]
+            if valid_until:
+                if datetime.now() > datetime.strptime(valid_until, "%Y-%m-%d %H:%M:%S"):
+                    return False, "Your account has expired. Please contact the admin."
+            return True, ""
+    return False, "Invalid username or password"
 
 def update_last_login(username):
     wb = load_workbook(LOGIN_FILE)
@@ -74,13 +78,14 @@ def login_page():
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if check_login(username, password):
+        success, message = check_login(username, password)
+        if success:
             st.session_state.logged_in = True
             st.session_state.username = username
             update_last_login(username)
             st.success("Logged in successfully!")
         else:
-            st.error("Invalid username or password")
+            st.error(message)
 
 def custom_depthwise_conv2d(*args, **kwargs):
     if kwargs is None:
@@ -104,6 +109,7 @@ def load_model_and_labels(model_path, labels_path):
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
+
 def preprocess_image(uploaded_file):
     image_bytes = uploaded_file.getvalue()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -167,7 +173,6 @@ def classify_exam(patient_id, model_option, uploaded_file):
         st.error("Please upload an image first.")
     return None
 
-
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
         history = st.session_state.patient_history[patient_id]
@@ -183,17 +188,20 @@ def manage_users():
     # Show existing users
     st.subheader("Existing Users")
     user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-    user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login"])
+    user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login", "Valid Until", "Is Admin"])
     st.dataframe(user_df)
 
     # Add new user
     st.subheader("Add User")
     new_username = st.text_input("New Username")
     new_password = st.text_input("New Password", type="password")
+    is_admin = st.checkbox("Is Admin")
+    valid_days = st.number_input("Valid for (days)", min_value=1, value=7)
     if st.button("Add User"):
         if new_username and new_password:
             hashed_password = hash_password(new_password)
-            ws.append([new_username, hashed_password, ""])
+            valid_until = (datetime.now() + timedelta(days=valid_days)).strftime("%Y-%m-%d %H:%M:%S")
+            ws.append([new_username, hashed_password, "", valid_until, is_admin])
             wb.save(LOGIN_FILE)
             st.success("User added successfully!")
         else:
@@ -203,17 +211,21 @@ def manage_users():
     st.subheader("Edit User")
     edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
     edited_password = st.text_input("New Password for Selected User", type="password")
+    edit_is_admin = st.checkbox("Is Admin", value=user_data[edit_username][4])
+    edit_valid_days = st.number_input("Extend validity (days)", min_value=0, value=0)
     if st.button("Edit User"):
-        if edited_password:
-            hashed_password = hash_password(edited_password)
-            for row in ws.iter_rows(min_row=2):
-                if row[0].value == edit_username:
-                    row[1].value = hashed_password
-                    break
-            wb.save(LOGIN_FILE)
-            st.success("User edited successfully!")
-        else:
-            st.error("Please provide a new password.")
+        for row in ws.iter_rows(min_row=2):
+            if row[0].value == edit_username:
+                if edited_password:
+                    row[1].value = hash_password(edited_password)
+                row[4].value = edit_is_admin
+                if edit_valid_days > 0:
+                    current_valid_until = datetime.strptime(row[3].value, "%Y-%m-%d %H:%M:%S") if row[3].value else datetime.now()
+                    new_valid_until = (current_valid_until + timedelta(days=edit_valid_days)).strftime("%Y-%m-%d %H:%M:%S")
+                    row[3].value = new_valid_until
+                break
+        wb.save(LOGIN_FILE)
+        st.success("User edited successfully!")
 
     # Remove user
     st.subheader("Remove User")
@@ -287,6 +299,14 @@ def filter_patient_history(patient_id):
         filtered_df = df[(df['date'] >= str(start_date)) & (df['date'] <= str(end_date))]
         st.dataframe(filtered_df)
 
+def is_admin(username):
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] == username:
+            return row[4]  # Is Admin column
+    return False
+
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
@@ -302,13 +322,15 @@ def main():
         # Sidebar menu
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
-        options = ["Classify Exam", "View Patient History", "Compare Models", "Usage Statistics", "User Management"]
+        options = ["Classify Exam", "View Patient History", "Compare Models", "Usage Statistics"]
+        if is_admin(st.session_state.username):
+            options.append("User Management")
         st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
 
         if st.session_state.menu_option == "Classify Exam":
             st.header("Classify Exam")
             patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculose", "Cancer"))
+            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
             if uploaded_file:
                 display_image(uploaded_file)
@@ -341,11 +363,10 @@ def main():
             display_usage_stats()
 
         elif st.session_state.menu_option == "User Management":
-            if st.session_state.username == 'admin':
+            if is_admin(st.session_state.username):
                 manage_users()
             else:
                 st.error("You don't have permission to access this page.")
 
 if __name__ == "__main__":
     main()
-
