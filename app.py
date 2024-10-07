@@ -59,6 +59,24 @@ def load_model_and_labels(model_path, labels_path):
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
+def predict(model, data, class_names):
+    try:
+        # Faz a predição
+        prediction = model.predict(data)
+        
+        # Obtém o índice da classe com maior probabilidade
+        index = np.argmax(prediction)
+        
+        # Obtém o nome da classe
+        class_name = class_names[index]
+        
+        # Obtém a pontuação de confiança
+        confidence_score = float(prediction[0][index])
+        
+        return class_name.strip(), confidence_score
+    except Exception as e:
+        st.error(f"Error during prediction: {str(e)}")
+        return None, None
 
 def classify_exam(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
