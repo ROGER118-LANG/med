@@ -259,17 +259,12 @@ def classify_exam(patient_id, model_option, uploaded_file):
     else:
         st.error("Please upload an image first.")
     return None
-def generate_heatmap(img_path, model):
-    img = image.load_img(img_path, target_size=(224, 224))
-    x = image.img_to_array(img)
-    x = np.expand_dims(x, axis=0)
-    x = keras.applications.mobilenet_v2.preprocess_input(x)
-    
-    last_conv_layer = model.get_layer('Conv_1')
+def generate_heatmap(img_array, model):
+    last_conv_layer = model.get_layer('Conv_1')  # Adjust this layer name if necessary
     grad_model = Model([model.inputs], [last_conv_layer.output, model.output])
     
     with tf.GradientTape() as tape:
-        conv_output, predictions = grad_model(x)
+        conv_output, predictions = grad_model(img_array)
         loss = predictions[:, np.argmax(predictions[0])]
         
     grads = tape.gradient(loss, conv_output)
@@ -278,34 +273,52 @@ def generate_heatmap(img_path, model):
     heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_output), axis=-1)
     heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
     heatmap = heatmap.reshape((7, 7))
-    heatmap = cv2.resize(heatmap, (img.size[1], img.size[0]))
+    heatmap = cv2.resize(heatmap, (224, 224))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
     
     return heatmap
 
-# Add this to your main() function
 def display_heatmap():
     st.header("Anomaly Heatmap")
+    
     uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
     if uploaded_file is not None:
-        # Save the uploaded file temporarily
-        with open("temp.jpg", "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # Load and preprocess the image
+        img = Image.open(uploaded_file).convert("RGB")
+        img = img.resize((224, 224))
+        img_array = keras.preprocessing.image.img_to_array(img)
+        img_array = np.expand_dims(img_array, axis=0)
+        img_array = keras.applications.mobilenet_v2.preprocess_input(img_array)
         
-        # Load the model (you need to train this model using Teachable Machine)
-        model = load_model('path_to_your_teachable_machine_model.h5')
+        # Display original image
+        st.image(img, caption="Original Image", use_column_width=True)
         
-        # Generate heatmap
-        heatmap = generate_heatmap("temp.jpg", model)
-        
-        # Display original image and heatmap
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(uploaded_file, caption="Original Image")
-        with col2:
-            st.image(heatmap, caption="Anomaly Heatmap")
+        # Generate heatmaps for each model
+        cols = st.columns(len(model_paths))
+        for i, (model_name, model_path) in enumerate(model_paths.items()):
+            try:
+                model = load_model(model_path)
+                heatmap = generate_heatmap(img_array, model)
+                
+                # Overlay heatmap on original image
+                heatmap = cv2.resize(heatmap, (img.size[0], img.size[1]))
+                superimposed_img = heatmap * 0.4 + np.array(img)
+                superimposed_img = np.clip(superimposed_img, 0, 255).astype(np.uint8)
+                
+                with cols[i]:
+                    st.image(superimposed_img, caption=f"{model_name} Heatmap", use_column_width=True)
+                    
+                    # Get prediction
+                    prediction = model.predict(img_array)
+                    confidence = np.max(prediction) * 100
+                    st.write(f"Confidence: {confidence:.2f}%")
+            except Exception as e:
+                st.error(f"Error processing {model_name} model: {str(e)}")
+    else:
+        st.warning("Please upload an X-ray image.")
 
+# ... (rest of your code)
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
         history = st.session_state.patient_history[patient_id]
