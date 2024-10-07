@@ -83,6 +83,8 @@ def login_page():
             st.error("Invalid username or password")
 
 def custom_depthwise_conv2d(*args, **kwargs):
+    if kwargs is None:
+        kwargs = {}
     kwargs.pop('groups', None)
     return DepthwiseConv2D(*args, **kwargs)
 
@@ -102,7 +104,6 @@ def load_model_and_labels(model_path, labels_path):
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
-
 def preprocess_image(uploaded_file):
     image_bytes = uploaded_file.getvalue()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -116,6 +117,13 @@ def preprocess_image(uploaded_file):
 
 def predict(model, data, class_names):
     try:
+        if model is None:
+            raise ValueError("Model is not loaded properly")
+        if data is None:
+            raise ValueError("Input data is None")
+        if class_names is None or len(class_names) == 0:
+            raise ValueError("Class names are not loaded properly")
+        
         prediction = model.predict(data)
         index = np.argmax(prediction)
         class_name = class_names[index]
@@ -132,29 +140,33 @@ def classify_exam(patient_id, model_option, uploaded_file):
         
         if model is not None and class_names is not None:
             processed_image = preprocess_image(uploaded_file)
-            class_name, confidence_score = predict(model, processed_image, class_names)
-            
-            if class_name is not None and confidence_score is not None:
-                result = {
-                    'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'model': model_option,
-                    'class': class_name,
-                    'confidence': confidence_score
-                }
+            if processed_image is not None:
+                class_name, confidence_score = predict(model, processed_image, class_names)
                 
-                if patient_id not in st.session_state.patient_history:
-                    st.session_state.patient_history[patient_id] = []
-                st.session_state.patient_history[patient_id].append(result)
-                
-                st.success("Exam classified successfully!")
-                return result
+                if class_name is not None and confidence_score is not None:
+                    result = {
+                        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'model': model_option,
+                        'class': class_name,
+                        'confidence': confidence_score
+                    }
+                    
+                    if patient_id not in st.session_state.patient_history:
+                        st.session_state.patient_history[patient_id] = []
+                    st.session_state.patient_history[patient_id].append(result)
+                    
+                    st.success("Exam classified successfully!")
+                    return result
+                else:
+                    st.error("An error occurred during prediction. Please try again.")
             else:
-                st.error("An error occurred during prediction. Please try again.")
+                st.error("Error processing the image. Please try again with a different image.")
         else:
             st.error("Failed to load the model and labels. Please check the files and try again.")
     else:
         st.error("Please upload an image first.")
     return None
+
 
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
