@@ -308,7 +308,7 @@ def main():
         if st.session_state.menu_option == "Classify Exam":
             st.header("Classify Exam")
             patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculose", "Cancer"))
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
             if uploaded_file:
                 display_image(uploaded_file)
