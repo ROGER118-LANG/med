@@ -89,13 +89,11 @@ def carregar_modelo_e_etiquetas(caminho_do_modelo, caminho_das_etiquetas):
         return None, None
 
 def pre_processar_imagem(arquivo_enviado):
-    # Corpo da função
-
-
-bytes_da_imagem = arquivo_enviado.getvalue()
-imagem = Image.open(io.BytesIO(bytes_da_imagem)).convert("RGB")
-tamanho = (224, 224)
-imagem = ImageOps.fit(imagem, tamanho, Image.Resampling.LANCZOS)
+    # Corpo da funçãodef pre_processar_imagem(arquivo_enviado):  # Function definition on line 91
+    bytes_da_imagem = arquivo_enviado.getvalue()  # Line 92 indented
+    imagem = Image.open(io.BytesIO(bytes_da_imagem)).convert("RGB")  # Line 93 indented
+    tamanho = (224, 224)  # Line 94 indented
+    imagem = ImageOps.fit(imagem, tamanho, Image.Resampling.LANCZOS)  #
 array_da_imagem = np.asarray(imagem)
 array_da_imagem_normalizado = (array_da_imagem.astype(np.float32) / 127.5) - 1
 dados = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
