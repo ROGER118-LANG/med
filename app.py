@@ -13,15 +13,26 @@ import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
+import os
+import requests
+
+# URL do webhook do Zapier
+zapier_webhook_url = "SUA_URL_DO_WEBHOOK_AQUI"
+
+# Função para carregar logins do arquivo JSON
 def load_logins():
     if not os.path.exists('logins.json'):
-        # Se o arquivo não existir, cria um novo arquivo com a estrutura inicial
         with open('logins.json', 'w') as file:
             json.dump({"logins": []}, file)
 
     with open('logins.json', 'r') as file:
         data = json.load(file)
     return data['logins']
+
+# Função para enviar dados para o Zapier
+def send_data_to_zapier(data):
+    response = requests.post(zapier_webhook_url, json=data)
+    return response.status_code
 
 # Lógica do seu aplicativo Streamlit
 st.title("Meu Aplicativo de Saúde")
@@ -34,6 +45,24 @@ if logins:
         st.write(f"Usuário: {login['username']}, Senha: {login['password']}")
 else:
     st.write("Nenhum login recebido ainda.")
+
+# Formulário para adicionar novo login
+username = st.text_input("Usuário")
+password = st.text_input("Senha", type='password')
+if st.button("Adicionar Login"):
+    new_login = {"username": username, "password": password}
+    
+    # Adiciona novo login ao arquivo
+    logins.append(new_login)
+    with open('logins.json', 'w') as file:
+        json.dump({"logins": logins}, file)
+
+    # Envia dados para o Zapier
+    response_code = send_data_to_zapier(new_login)
+    if response_code == 200:
+        st.success("Login enviado com sucesso para o Zapier!")
+    else:
+        st.error("Erro ao enviar o login para o Zapier.")
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
