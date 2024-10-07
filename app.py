@@ -206,11 +206,9 @@ def main():
         st.title("Medical Image Analysis using AI")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
 
-if st.sidebar.button("Logout"):
-    st.session_state.clear()  # Clear session state variables on logout
-    st.experimental_rerun()   # Force page rerun to show the login page
-
-
+        if st.sidebar.button("Logout"):
+            st.session_state.clear()  # Clear session state variables on logout
+            st.experimental_rerun()   # Force page rerun to show the login page
 
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
@@ -236,18 +234,6 @@ if st.sidebar.button("Logout"):
 
         elif menu_option == "User Management":
             manage_users()
-
-model_paths = {
-    "Pneumonia": "pneumonia_model.h5",
-    "Tuberculosis": "tuberculose_model.h5",
-    "Cancer": "cancer_model.h5"
-}
-
-label_paths = {
-    "Pneumonia": "pneumonia_labels.txt",
-    "Tuberculosis": "tuberculose_labels.txt",
-    "Cancer": "cancer_labels.txt"
-}
 
 if __name__ == "__main__":
     main()
