@@ -1,5 +1,4 @@
 import streamlit as st
-from flask import Flask, request, jsonify
 from keras.models import load_model
 from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
