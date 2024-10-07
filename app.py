@@ -11,241 +11,245 @@ from datetime import datetime
 from openpyxl import Workbook, load_workbook
 import hashlib
 
-# Disable scientific notation for clarity
+# Desativar notação científica para clareza
 np.set_printoptions(suppress=True)
 
-# Initialize session state
-if 'patient_history' not in st.session_state:
-    st.session_state.patient_history = {}
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'username' not in st.session_state:
-    st.session_state.username = None
+# Inicializar o estado da sessão
+if 'historico_pacientes' not in st.session_state:
+    st.session_state.historico_pacientes = {}
+if 'logado' not in st.session_state:
+    st.session_state.logado = False
+if 'nome_usuario' not in st.session_state:
+    st.session_state.nome_usuario = None
 
-# File to store login information
-LOGIN_FILE = 'login_info.xlsx'
+# Arquivo para armazenar informações de login
+ARQUIVO_LOGIN = 'login_info.xlsx'
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+def hash_senha(senha):
+    return hashlib.sha256(senha.encode()).hexdigest()
 
-def init_login_file():
-    if not os.path.exists(LOGIN_FILE):
+def inicializar_arquivo_login():
+    if not os.path.exists(ARQUIVO_LOGIN):
         wb = Workbook()
         ws = wb.active
-        ws.append(['Username', 'Password', 'Last Login'])
-        admin_password = hash_password('123')
-        ws.append(['admin', admin_password, ''])
-        wb.save(LOGIN_FILE)
+        ws.append(['Usuário', 'Senha', 'Último Login'])
+        senha_admin = hash_senha('123')
+        ws.append(['admin', senha_admin, ''])
+        wb.save(ARQUIVO_LOGIN)
 
-def check_login(username, password):
-    wb = load_workbook(LOGIN_FILE)
+def verificar_login(usuario, senha):
+    wb = load_workbook(ARQUIVO_LOGIN)
     ws = wb.active
     for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] == username and row[1] == hash_password(password):
+        if row[0] == usuario and row[1] == hash_senha(senha):
             return True
     return False
 
-def update_last_login(username):
-    wb = load_workbook(LOGIN_FILE)
+def atualizar_ultimo_login(usuario):
+    wb = load_workbook(ARQUIVO_LOGIN)
     ws = wb.active
     for row in ws.iter_rows(min_row=2):
-        if row[0].value == username:
+        if row[0].value == usuario:
             row[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             break
-    wb.save(LOGIN_FILE)
+    wb.save(ARQUIVO_LOGIN)
 
-def login_page():
+def pagina_login():
     st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if check_login(username, password):
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            update_last_login(username)
-            st.success("Logged in successfully!")
+    usuario = st.text_input("Usuário")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar"):
+        if verificar_login(usuario, senha):
+            st.session_state.logado = True
+            st.session_state.nome_usuario = usuario
+            atualizar_ultimo_login(usuario)
+            st.success("Login realizado com sucesso!")
         else:
-            st.error("Invalid username or password")
+            st.error("Usuário ou senha inválidos")
 
 def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
     return DepthwiseConv2D(*args, **kwargs)
 
-def load_model_and_labels(model_path, labels_path):
+def carregar_modelo_e_labels(caminho_modelo, caminho_labels):
     try:
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file not found: {model_path}")
-        if not os.path.exists(labels_path):
-            raise FileNotFoundError(f"Labels file not found: {labels_path}")
+        if not os.path.exists(caminho_modelo):
+            raise FileNotFoundError(f"Arquivo do modelo não encontrado: {caminho_modelo}")
+        if not os.path.exists(caminho_labels):
+            raise FileNotFoundError(f"Arquivo de labels não encontrado: {caminho_labels}")
         
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-            model = load_model(model_path, compile=False)
+            modelo = load_model(caminho_modelo, compile=False)
         
-        with open(labels_path, "r") as f:
-            class_names = f.readlines()
-        return model, class_names
+        with open(caminho_labels, "r") as f:
+            nomes_classes = f.readlines()
+        return modelo, nomes_classes
     except Exception as e:
-        st.error(f"Error loading model and labels: {str(e)}")
+        st.error(f"Erro ao carregar modelo e labels: {str(e)}")
         return None, None
 
-def preprocess_image(uploaded_file):
-    image_bytes = uploaded_file.getvalue()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    size = (224, 224)
-    image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
-    image_array = np.asarray(image)
-    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
-    data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-    data[0] = normalized_image_array
-    return data
+def preprocessar_imagem(arquivo_enviado):
+    imagem_bytes = arquivo_enviado.getvalue()
+    imagem = Image.open(io.BytesIO(imagem_bytes)).convert("RGB")
+    tamanho = (224, 224)
+    imagem = ImageOps.fit(imagem, tamanho, Image.Resampling.LANCZOS)
+    imagem_array = np.asarray(imagem)
+    imagem_normalizada = (imagem_array.astype(np.float32) / 127.5) - 1
+    dados = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
+    dados[0] = imagem_normalizada
+    return dados
 
-def predict(model, data, class_names):
+def prever(modelo, dados, nomes_classes):
     try:
-        prediction = model.predict(data)
-        index = np.argmax(prediction)
-        class_name = class_names[index]
-        confidence_score = prediction[0][index]
-        return class_name[2:], confidence_score
+        previsao = modelo.predict(dados)
+        indice = np.argmax(previsao)
+        nome_classe = nomes_classes[indice]
+        confianca = previsao[0][indice]
+        return nome_classe[2:], confianca
     except Exception as e:
-        st.error(f"Error during prediction: {str(e)}")
+        st.error(f"Erro durante a previsão: {str(e)}")
         return None, None
 
-def classify_exam(patient_id, model_option, uploaded_file):
-    if uploaded_file is not None:
-        st.write(f"Model option selected: {model_option}")
-        model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
+def classificar_exame(id_paciente, opcao_modelo, arquivo_enviado):
+    if arquivo_enviado is not None:
+        st.write(f"Modelo selecionado: {opcao_modelo}")
+        modelo, nomes_classes = carregar_modelo_e_labels(caminho_modelos[opcao_modelo], caminho_labels[opcao_modelo])
         
-        if model is not None and class_names is not None:
-            processed_image = preprocess_image(uploaded_file)
-            class_name, confidence_score = predict(model, processed_image, class_names)
+        se modelo é None ou nomes_classes são None:
+            st.error("Falha ao carregar o modelo e labels. Verifique os arquivos e tente novamente.")
+        else:
+            imagem_processada = preprocessar_imagem(arquivo_enviado)
+            nome_classe, confianca = prever(modelo, imagem_processada, nomes_classes)
             
-            if class_name is not None and confidence_score is not None:
-                result = {
-                    'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    'model': model_option,
-                    'class': class_name,
-                    'confidence': confidence_score
+            if nome_classe é não None e confianca é não None:
+                resultado = {
+                    'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'modelo': opcao_modelo,
+                    'classe': nome_classe,
+                    'confianca': confianca
                 }
                 
-                if patient_id not in st.session_state.patient_history:
-                    st.session_state.patient_history[patient_id] = []
-                st.session_state.patient_history[patient_id].append(result)
+                if id_paciente not in st.session_state.historico_pacientes:
+                    st.session_state.historico_pacientes[id_paciente] = []
+                st.session_state.historico_pacientes[id_paciente].append(resultado)
                 
-                st.success("Exam classified successfully!")
-                return result
+                st.success("Exame classificado com sucesso!")
+                return resultado
             else:
-                st.error("An error occurred during prediction. Please try again.")
-        else:
-            st.error("Failed to load the model and labels. Please check the files and try again.")
+                st.error("Ocorreu um erro durante a previsão. Tente novamente.")
     else:
-        st.error("Please upload an image first.")
+        st.error("Por favor, envie uma imagem primeiro.")
     return None
 
-def view_patient_history(patient_id):
-    if patient_id in st.session_state.patient_history:
-        history = st.session_state.patient_history[patient_id]
-        df = pd.DataFrame(history)
+def visualizar_historico_paciente(id_paciente):
+    if id_paciente in st.session_state.historico_pacientes:
+        historico = st.session_state.historico_pacientes[id_paciente]
+        df = pd.DataFrame(historico)
         st.dataframe(df)
     else:
-        st.info("No history found for this patient.")
+        st.info("Nenhum histórico encontrado para este paciente.")
 
-def manage_users():
-    st.header("User Management")
-    wb = load_workbook(LOGIN_FILE)
+def gerenciar_usuarios():
+    st.header("Gerenciamento de Usuários")
+    wb = load_workbook(ARQUIVO_LOGIN)
     ws = wb.active
 
-    # Show existing users
-    st.subheader("Existing Users")
-    user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-    user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login"])
-    st.dataframe(user_df)
+    # Mostrar usuários existentes
+    st.subheader("Usuários Existentes")
+    dados_usuarios = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
+    usuarios_df = pd.DataFrame(dados_usuarios.values(), columns=["Usuário", "Senha", "Último Login"])
+    st.dataframe(usuarios_df)
 
-    # Add new user
-    st.subheader("Add User")
-    new_username = st.text_input("New Username")
-    new_password = st.text_input("New Password", type="password")
-    if st.button("Add User"):
-        if new_username and new_password:
-            hashed_password = hash_password(new_password)
-            ws.append([new_username, hashed_password, ""])
-            wb.save(LOGIN_FILE)
-            st.success("User added successfully!")
+    # Adicionar novo usuário
+    st.subheader("Adicionar Usuário")
+    novo_usuario = st.text_input("Novo Usuário")
+    nova_senha = st.text_input("Nova Senha", type="password")
+    if st.button("Adicionar Usuário"):
+        if novo_usuario and nova_senha:
+            senha_hash = hash_senha(nova_senha)
+            ws.append([novo_usuario, senha_hash, ""])
+            wb.save(ARQUIVO_LOGIN)
+            st.success("Usuário adicionado com sucesso!")
         else:
-            st.error("Please provide both username and password.")
+            st.error("Por favor, insira tanto o nome de usuário quanto a senha.")
 
-    # Edit user
-    st.subheader("Edit User")
-    edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
-    edited_password = st.text_input("New Password for Selected User", type="password")
-    if st.button("Edit User"):
-        if edited_password:
-            hashed_password = hash_password(edited_password)
+    # Editar usuário
+    st.subheader("Editar Usuário")
+    usuario_para_editar = st.selectbox("Selecione o usuário para editar", list(dados_usuarios.keys()))
+    nova_senha_editar = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
+    if st.button("Editar Usuário"):
+        if nova_senha_editar:
+            senha_hash_editar = hash_senha(nova_senha_editar)
             for row in ws.iter_rows(min_row=2):
-                if row[0].value == edit_username:
-                    row[1].value = hashed_password
+                if row[0].value == usuario_para_editar:
+                    row[1].value = senha_hash_editar
                     break
-            wb.save(LOGIN_FILE)
-            st.success("User edited successfully!")
+            wb.save(ARQUIVO_LOGIN)
+            st.success("Usuário editado com sucesso!")
         else:
-            st.error("Please provide a new password.")
+            st.error("Por favor, insira uma nova senha.")
 
-    # Remove user
-    st.subheader("Remove User")
-    remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
-    if st.button("Remove User"):
-        ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
-        wb.save(LOGIN_FILE)
-        st.success("User removed successfully!")
+    # Remover usuário
+    st.subheader("Remover Usuário")
+    usuario_para_remover = st.selectbox("Selecione o usuário para remover", list(dados_usuarios.keys()))
+    if st.button("Remover Usuário"):
+        ws.delete_rows(list(dados_usuarios.keys()).index(usuario_para_remover) + 2)
+        wb.save(ARQUIVO_LOGIN)
+        st.success("Usuário removido com sucesso!")
 
 def main():
-    init_login_file()
+    inicializar_arquivo_login()
 
-    if not st.session_state.logged_in:
-        login_page()
+    if not st.session_state.logado:
+        pagina_login()
     else:
-        st.title("Medical Image Analysis using AI")
-        st.sidebar.title(f"Welcome, {st.session_state.username}")
+        st.title("Análise de Imagem Médica usando IA")
+        st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
 
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
+        if st.sidebar.button("Sair"):
+            st.session_state.logado = False
+            st.session_state.nome_usuario = None
             st.experimental_rerun()
 
-        # Sidebar menu
-        menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
+        # Menu lateral
+        opcao_menu = st.sidebar.radio("Escolha uma opção:", ("Classificar Exame", "Visualizar Histórico de Paciente"))
 
-        # Add "User Management" option for admin
-        if st.session_state.username == 'admin':
-            menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History", "User Management"))
+        # Adicionar a opção "Gerenciamento de Usuários" para o admin
+        if st.session_state.nome_usuario == 'admin':
+            opcao_menu = st.sidebar.radio("Escolha uma opção:", ("Classificar Exame", "Visualizar Histórico de Paciente", "Gerenciamento de Usuários"))
 
-        if menu_option == "Classify Exam":
-            st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+        if opcao_menu == "Classificar Exame":
+            st.header("Classificação de Imagem Médica")
 
-            if st.button("Classify"):
-                classify_exam(patient_id, model_option, uploaded_file)
+            id_paciente = st.text_input("ID do Paciente")
+            opcao_modelo = st.selectbox("Escolha o Modelo", ["Modelo 1", "Modelo 2"])
+            arquivo_enviado = st.file_uploader("Envie a Imagem do Exame", type=["jpg", "png", "jpeg"])
 
-        elif menu_option == "View Patient History":
-            st.header("Patient History")
-            patient_id = st.text_input("Enter Patient ID:")
-            if st.button("View History"):
-                view_patient_history(patient_id)
+            if st.button("Classificar Exame"):
+                resultado = classificar_exame(id_paciente, opcao_modelo, arquivo_enviado)
+                if resultado:
+                    st.write("Resultado da Classificação:")
+                    st.write(f"Classe: {resultado['classe']}")
+                    st.write(f"Confiança: {resultado['confianca'] * 100:.2f}%")
 
-        elif menu_option == "User Management":
-            manage_users()
+        elif opcao_menu == "Visualizar Histórico de Paciente":
+            st.header("Histórico de Paciente")
+            id_paciente = st.text_input("ID do Paciente")
+            if st.button("Visualizar Histórico"):
+                visualizar_historico_paciente(id_paciente)
 
-model_paths = {
-    "Pneumonia": "pneumonia_model.h5",
-    "Tuberculosis": "tuberculose_model.h5",
-    "Cancer": "cancer_model.h5"
+        elif opcao_menu == "Gerenciamento de Usuários" and st.session_state.nome_usuario == 'admin':
+            gerenciar_usuarios()
+
+# Caminhos para os arquivos do modelo e labels
+caminho_modelos = {
+    "Modelo 1": "modelo_cancer.h5",
+    "Modelo 2": "outro_modelo.h5"
 }
 
-label_paths = {
-    "Pneumonia": "pneumonia_labels.txt",
-    "Tuberculosis": "tuberculose_labels.txt",
-    "Cancer": "cancer_labels.txt"
+caminho_labels = {
+    "Modelo 1": "labels_cancer.txt",
+    "Modelo 2": "labels_cancer.txt"
 }
 
 if __name__ == "__main__":
