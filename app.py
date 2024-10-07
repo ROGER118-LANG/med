@@ -51,18 +51,33 @@ def init_login_file():
         admin_password = hash_password('123')
         ws.append(['admin', admin_password, '', '', 'True'])
         wb.save(LOGIN_FILE)
-
 def check_login(username, password):
-    wb = load_workbook(LOGIN_FILE)
-    ws = wb.active
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[0] == username and row[1] == hash_password(password):
-            valid_until = row[3]
-            if valid_until:
-                if datetime.now() > datetime.strptime(valid_until, "%Y-%m-%d %H:%M:%S"):
-                    return False, "Your account has expired. Please contact the admin."
-            return True, ""
-    return False, "Invalid username or password"
+    try:
+        # Abrindo o arquivo Excel
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+        
+        # Verificando se o usuário existe
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[0] == username:
+                hashed_password = row[1]
+                is_admin = row[2] if len(row) > 2 else False
+                valid_until = row[3] if len(row) > 3 else None
+                
+                # Verifica a senha
+                if check_password(password, hashed_password):
+                    # Verifica a data de validade da conta
+                    if valid_until:
+                        valid_until = datetime.strptime(valid_until, "%Y-%m-%d %H:%M:%S")
+                        if datetime.now() > valid_until:
+                            return False, "Account expired."
+                    return True, "Login successful."
+                else:
+                    return False, "Incorrect password."
+        return False, "Username not found."
+    except Exception as e:
+        return False, f"Error during login: {str(e)}"
+
 
 def update_last_login(username):
     wb = load_workbook(LOGIN_FILE)
