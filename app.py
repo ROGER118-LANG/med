@@ -146,7 +146,7 @@ def check_login(username, password):
                         if isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
                             return False, "Account expired"
                 
-                return True, "Successo
+                return True, "Successo"
         
         return False, "Credenciais Invalidas"
     except Exception as e:
