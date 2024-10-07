@@ -1,7 +1,8 @@
 import streamlit as st
-from keras.models import load_model
-from keras.layers import DepthwiseConv2D
-from keras.utils import custom_object_scope
+from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import DepthwiseConv2D
+from tensorflow.keras.utils import custom_object_scope
+from tensorflow.keras.preprocessing import image
 from PIL import Image, ImageOps
 import numpy as np
 import io
