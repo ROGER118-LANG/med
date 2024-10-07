@@ -306,7 +306,8 @@ def main():
                     st.write(result)
                     collect_feedback(result)
                     add_doctor_notes(patient_id, -1)  # Add notes to the last exam
-  elif st.session_state.menu_option == "View Patient History":
+
+        elif st.session_state.menu_option == "View Patient History":
             st.header("Patient History")
             patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
@@ -335,3 +336,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
