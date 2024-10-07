@@ -205,11 +205,10 @@ def main():
     else:
         st.title("Medical Image Analysis using AI")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
-
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.experimental_rerun()
+if st.sidebar.button("Logout"):
+    st.session_state.logged_in = False
+    st.session_state.username = None
+    st.experimental_set_query_params()  # Isso ajuda a simular a recarga da página
 
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
