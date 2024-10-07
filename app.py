@@ -29,15 +29,15 @@ LOGIN_FILE = 'login_info.xlsx'
 
 # Define model and label paths
 model_paths = {
-    "Pneumonia": "pneumonia_model.h5",
-    "Tuberculosis": "tuberculose_model.h5",
-    "Cancer": "cancer_model.h5"
+    "Pneumonia": "path/to/pneumonia_model.h5",
+    "Tuberculosis": "path/to/tuberculosis_model.h5",
+    "Cancer": "path/to/cancer_model.h5"
 }
 
 label_paths = {
-    "Pneumonia": "pneumonia_labels.txt",
-    "Tuberculosis": "tuberculose_labels.txt",
-    "Cancer": "cancer_labels.txt"
+    "Pneumonia": "path/to/pneumonia_labels.txt",
+    "Tuberculosis": "path/to/tuberculosis_labels.txt",
+    "Cancer": "path/to/cancer_labels.txt"
 }
 
 def hash_password(password):
@@ -211,6 +211,70 @@ def manage_users():
         wb.save(LOGIN_FILE)
         st.success("User removed successfully!")
 
+# New functions
+
+def display_image(uploaded_file):
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+        st.image(image, caption='Uploaded Image', use_column_width=True)
+
+def export_patient_history(patient_id):
+    if patient_id in st.session_state.patient_history:
+        df = pd.DataFrame(st.session_state.patient_history[patient_id])
+        csv = df.to_csv(index=False)
+        st.download_button(
+            label="Download Patient History",
+            data=csv,
+            file_name=f"{patient_id}_history.csv",
+            mime="text/csv",
+        )
+
+def compare_models(uploaded_file):
+    results = {}
+    for model_option in model_paths.keys():
+        result = classify_exam("", model_option, uploaded_file)
+        if result:
+            results[model_option] = result
+    
+    comparison_df = pd.DataFrame(results).T
+    st.dataframe(comparison_df)
+
+def display_usage_stats():
+    total_exams = sum(len(history) for history in st.session_state.patient_history.values())
+    model_usage = {}
+    for history in st.session_state.patient_history.values():
+        for exam in history:
+            model = exam['model']
+            model_usage[model] = model_usage.get(model, 0) + 1
+    
+    st.write(f"Total exams classified: {total_exams}")
+    st.bar_chart(model_usage)
+
+def collect_feedback(prediction_result):
+    st.write("Was this prediction helpful?")
+    if st.button("Yes"):
+        # Store positive feedback
+        st.success("Thank you for your feedback!")
+    if st.button("No"):
+        reason = st.text_input("Please tell us why:")
+        if st.button("Submit"):
+            # Store negative feedback with reason
+            st.success("Thank you for your feedback!")
+
+def add_doctor_notes(patient_id, exam_index):
+    notes = st.text_area("Doctor's Notes:")
+    if st.button("Save Notes"):
+        st.session_state.patient_history[patient_id][exam_index]['doctor_notes'] = notes
+        st.success("Notes saved successfully!")
+
+def filter_patient_history(patient_id):
+    if patient_id in st.session_state.patient_history:
+        df = pd.DataFrame(st.session_state.patient_history[patient_id])
+        start_date = st.date_input("Start Date")
+        end_date = st.date_input("End Date")
+        filtered_df = df[(df['date'] >= str(start_date)) & (df['date'] <= str(end_date))]
+        st.dataframe(filtered_df)
+
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
@@ -226,9 +290,7 @@ def main():
         # Sidebar menu
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
-        options = ["Classify Exam", "View Patient History"]
-        if st.session_state.username == 'admin':
-            options.append("User Management")
+        options = ["Classify Exam", "View Patient History", "Compare Models", "Usage Statistics", "User Management"]
         st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
 
         if st.session_state.menu_option == "Classify Exam":
@@ -236,17 +298,40 @@ def main():
             patient_id = st.text_input("Enter Patient ID:")
             model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+            if uploaded_file:
+                display_image(uploaded_file)
             if st.button("Classify"):
-                classify_exam(patient_id, model_option, uploaded_file)
-
-        elif st.session_state.menu_option == "View Patient History":
+                result = classify_exam(patient_id, model_option, uploaded_file)
+                if result:
+                    st.write(result)
+                    collect_feedback(result)
+                    add_doctor_notes(patient_id, -1)  # Add notes to the last exam
+  elif st.session_state.menu_option == "View Patient History":
             st.header("Patient History")
             patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
                 view_patient_history(patient_id)
+                export_patient_history(patient_id)
+            if st.button("Filter History"):
+                filter_patient_history(patient_id)
+
+        elif st.session_state.menu_option == "Compare Models":
+            st.header("Compare Models")
+            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+            if uploaded_file:
+                display_image(uploaded_file)
+                if st.button("Compare Models"):
+                    compare_models(uploaded_file)
+
+        elif st.session_state.menu_option == "Usage Statistics":
+            st.header("Usage Statistics")
+            display_usage_stats()
 
         elif st.session_state.menu_option == "User Management":
-            manage_users()
+            if st.session_state.username == 'admin':
+                manage_users()
+            else:
+                st.error("You don't have permission to access this page.")
 
 if __name__ == "__main__":
     main()
