@@ -206,10 +206,10 @@ def main():
         st.title("Medical Image Analysis using AI")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
 
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.experimental_rerun()
+       if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.experimental_rerun()
 
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
@@ -247,9 +247,6 @@ label_paths = {
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
- if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.username = None
-        st.experimental_rerun()
+
 if __name__ == "__main__":
     main()
