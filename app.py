@@ -411,11 +411,8 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
             st.write(f"Attempting to load labels from: {label_paths[model_option]}")
             model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
             
-           
-                   if model is not None and class_names is not None:
-                st.write("Model and labels loaded successfully")
-            
             if model is not None and class_names is not None:
+                st.write("Model and labels loaded successfully")
                 st.write("Model summary:")
                 model.summary(print_fn=lambda x: st.text(x))
                 
@@ -468,14 +465,16 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
                         
                         return result
                     else:
+                        st.error("An error occurred during prediction. Please try again.")
+                else:
+                    st.error("Failed to preprocess the image. Please try a different image.")
+            else:
                 st.error("Failed to load the model and labels. Please check the error messages above.")
         except Exception as e:
             st.error(f"An error occurred during classification: {str(e)}")
     else:
         st.error("Please upload an image first.")
     return None
-
-
 def manage_users():
     st.header("User Management")
     
