@@ -109,9 +109,10 @@ def predict(model, data, class_names):
     except Exception as e:
         st.error(f"Error during prediction: {str(e)}")
         return None, None
+
 def classify_exam(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
-        st.write(f"Model option selected: {model_option}")  # Depuração
+        st.write(f"Model option selected: {model_option}")
         model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
         
         if model is not None and class_names is not None:
@@ -216,18 +217,6 @@ def main():
         # Add "User Management" option for admin
         if st.session_state.username == 'admin':
             menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History", "User Management"))
-model_paths = {
-    "Pneumonia": "pneumonia_model.h5",
-    "Tuberculosis": "tuberculose_model.h5",
-    "Cancer": "cancer_model.h5"
-}
-
-label_paths = {
-    "Pneumonia": "pneumonia_labels.txt",
-    "Tuberculosis": "tuberculose_labels.txt",
-    "Cancer": "cancer_labels.txt"
-}
-
 
         if menu_option == "Classify Exam":
             st.header("Classify Exam")
@@ -246,6 +235,18 @@ label_paths = {
 
         elif menu_option == "User Management":
             manage_users()
+
+model_paths = {
+    "Pneumonia": "pneumonia_model.h5",
+    "Tuberculosis": "tuberculose_model.h5",
+    "Cancer": "cancer_model.h5"
+}
+
+label_paths = {
+    "Pneumonia": "pneumonia_labels.txt",
+    "Tuberculosis": "tuberculose_labels.txt",
+    "Cancer": "cancer_labels.txt"
+}
 
 if __name__ == "__main__":
     main()
