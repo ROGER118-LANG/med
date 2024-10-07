@@ -292,21 +292,22 @@ def app_layout():
         view_patient_history(patient_id)
 
 # Main entry point of the app
+# Main entry point of the app
 if __name__ == '__main__':
     init_login_file()
     
     if not st.session_state.logged_in:
         login_page()
     else:
-        if is_admin(st.session_state.username):
-            if st.sidebar.checkbox("Manage Users"):
-                manage_users()
-        
+        # Barra lateral - Menu
         st.sidebar.title("Menu")
         if st.sidebar.button("Log Out"):
             st.session_state.logged_in = False
             st.session_state.username = None
             st.success("Logged out successfully!")
         else:
-            app_layout()
-
+            if is_admin(st.session_state.username):
+                # Adiciona opção de gerenciamento de usuários apenas para admin
+                if st.sidebar.button("Manage Users"):
+                    manage_users()
+            app_layout()  # Layout principal
