@@ -25,6 +25,16 @@ if 'username' not in st.session_state:
 # File to store login information
 LOGIN_FILE = 'login_info.xlsx'
 
+   model_paths = {
+    "Pneumonia": "path/to/pneumonia_model.h5",
+    "Tuberculosis": "path/to/tuberculosis_model.h5",
+    "Cancer": "path/to/cancer_model.h5"
+}
+
+label_paths = {
+    "Pneumonia": "path/to/pneumonia_labels.txt",
+    "Tuberculosis": "path/to/tuberculosis_labels.txt",
+    "Cancer": "path/to/cancer_labels.txt"
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -233,16 +243,7 @@ def main():
                 view_patient_history(patient_id)
         elif st.session_state.menu_option == "User Management":
             manage_users()
-            model_paths = {
-    "Pneumonia": "path/to/pneumonia_model.h5",
-    "Tuberculosis": "path/to/tuberculosis_model.h5",
-    "Cancer": "path/to/cancer_model.h5"
-}
-
-label_paths = {
-    "Pneumonia": "path/to/pneumonia_labels.txt",
-    "Tuberculosis": "path/to/tuberculosis_labels.txt",
-    "Cancer": "path/to/cancer_labels.txt"
+         
 }
 if __name__ == "__main__":
     main()
