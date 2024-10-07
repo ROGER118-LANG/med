@@ -505,16 +505,11 @@ def main():
             st.rerun()
 
         # Sidebar menu
-  if st.session_state.menu_option == "Classify Exam":
-    st.header("Classify Exam")
-    patient_id = st.text_input("Enter Patient ID:")
-    model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-    uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
-    if st.button("Classify"):
-        classify_exam_with_heatmap(patient_id, model_option, uploaded_file)
+        if 'menu_option' not in st.session_state:
+            st.session_state.menu_option = "Classify Exam"
+        options = ["Classify Exam", "View Patient History", "Compare Patients"]
         if st.session_state.username == 'admin':
             options.append("User Management")
-
         st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
 
         if st.session_state.menu_option == "Classify Exam":
@@ -523,8 +518,7 @@ def main():
             model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
             if st.button("Classify"):
-                classify_exam(patient_id, model_option, uploaded_file)
-             
+                classify_exam_with_heatmap(patient_id, model_option, uploaded_file)
         elif st.session_state.menu_option == "View Patient History":
             st.header("Patient History")
             patient_id = st.text_input("Enter Patient ID:")
@@ -537,5 +531,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
