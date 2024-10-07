@@ -205,10 +205,11 @@ def main():
     else:
         st.title("Medical Image Analysis using AI")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.session_state.username = None
-    st.experimental_set_query_params()  # Isso ajuda a simular a recarga da página
+
+        if st.sidebar.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.experimental_rerun()
 
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
@@ -246,42 +247,6 @@ label_paths = {
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
-def main():
-    init_login_file()
 
-    if not st.session_state.logged_in:
-        login_page()
-    else:
-        st.title("Medical Image Analysis using AI")
-        st.sidebar.title(f"Welcome, {st.session_state.username}")
-
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.experimental_rerun()
-
-        # Sidebar menu
-        menu_options = ["Classify Exam", "View Patient History"]
-        if st.session_state.username == 'admin':
-            menu_options.append("User Management")
-        
-        menu_option = st.sidebar.radio("Choose an option:", menu_options)
-
-        if menu_option == "Classify Exam":
-            st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
-
-            if st.button("Classify"):
-                classify_exam(patient_id, model_option, uploaded_file)
-
-        elif menu_option == "View Patient History":
-            st.header("Patient History")
-            patient_id = st.text_input("Enter Patient ID:")
-            if st.button("View History"):
-                view_patient_history(patient_id)
-
-        elif menu_option == "User Management":
-            manage_users()
-
+if __name__ == "__main__":
+    main()
