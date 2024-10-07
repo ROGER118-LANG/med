@@ -210,9 +210,6 @@ def main():
             st.experimental_rerun()
 
 
-        if st.sidebar.button("Logout"):
-            st.session_state.clear()  # Clear session state variables on logout
-            st.experimental_rerun()   # Force page rerun to show the login page
 
         # Sidebar menu
         menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
