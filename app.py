@@ -1,9 +1,9 @@
 import streamlit as st
 import tensorflow as tf
-from tensorflow.keras.models import load_model
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+from keras.models import load_model
+from keras.applications.mobilenet_v2 import preprocess_input
 from keras.layers import DepthwiseConv2D
-from tensorflow.keras.utils import custom_object_scope
+from keras.utils import custom_object_scope
 from tensorflow.keras.preprocessing import image
 from PIL import Image, ImageOps
 import numpy as np
