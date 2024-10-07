@@ -305,59 +305,80 @@ def compare_patients():
 
 def manage_users():
     st.header("User Management")
-    wb = load_workbook(LOGIN_FILE)
-    ws = wb.active
+    
+    try:
+        # Load the Excel workbook and active sheet
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
 
-    # Show existing users
-    st.subheader("Existing Users")
-    user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-user_df = pd.DataFrame(user_data.values(), columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
+        # Prepare the data from Excel
+        user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
 
-    st.dataframe(user_df)
+        # Debugging: Check the content of user_data to identify any inconsistencies
+        st.write("Loaded User Data:", user_data)
 
-    # Add new user
-    st.subheader("Add User")
-    new_username = st.text_input("New Username")
-    new_password = st.text_input("New Password", type="password")
-    new_role = st.selectbox("Role", ["user", "admin"])
-    validity_days = st.number_input("Account Validity (days)", min_value=1, value=7, step=1)
-    if st.button("Add User"):
-        if new_username and new_password:
-            hashed_password = hash_password(new_password)
-            expiry_date = datetime.now() + timedelta(days=validity_days) if new_role != "admin" else None
-            ws.append([new_username, hashed_password, "", expiry_date, new_role])
+        # Ensure each row has exactly 5 elements, padding missing values with None
+        cleaned_user_data = [
+            (row if len(row) == 5 else row + (None,) * (5 - len(row))) 
+            for row in user_data.values()
+        ]
+
+        # Debugging: Show cleaned data
+        st.write("Cleaned User Data:", cleaned_user_data)
+
+        # Create DataFrame with the cleaned data
+        user_df = pd.DataFrame(cleaned_user_data, columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
+        
+        # Display the DataFrame
+        st.dataframe(user_df)
+
+        # Add new user form
+        st.subheader("Add User")
+        new_username = st.text_input("New Username")
+        new_password = st.text_input("New Password", type="password")
+        new_role = st.selectbox("Role", ["user", "admin"])
+        validity_days = st.number_input("Account Validity (days)", min_value=1, value=7, step=1)
+        if st.button("Add User"):
+            if new_username and new_password:
+                hashed_password = hash_password(new_password)
+                expiry_date = datetime.now() + timedelta(days=validity_days) if new_role != "admin" else None
+                ws.append([new_username, hashed_password, "", expiry_date, new_role])
+                wb.save(LOGIN_FILE)
+                st.success("User added successfully!")
+            else:
+                st.error("Please provide both username and password.")
+
+        # Edit user form
+        st.subheader("Edit User")
+        edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
+        edited_password = st.text_input("New Password for Selected User", type="password")
+        edited_role = st.selectbox("New Role", ["user", "admin"])
+        edited_validity = st.number_input("New Account Validity (days)", min_value=1, value=7, step=1)
+        if st.button("Edit User"):
+            if edited_password:
+                hashed_password = hash_password(edited_password)
+                for row in ws.iter_rows(min_row=2):
+                    if row[0].value == edit_username:
+                        row[1].value = hashed_password
+                        row[3].value = datetime.now() + timedelta(days=edited_validity) if edited_role != "admin" else None
+                        row[4].value = edited_role
+                        break
+                wb.save(LOGIN_FILE)
+                st.success("User edited successfully!")
+            else:
+                st.error("Please provide a new password.")
+
+        # Remove user form
+        st.subheader("Remove User")
+        remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
+        if st.button("Remove User"):
+            ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
             wb.save(LOGIN_FILE)
-            st.success("User added successfully!")
-        else:
-            st.error("Please provide both username and password.")
+            st.success("User removed successfully!")
+    
+    except Exception as e:
+        st.error(f"An error occurred during user management: {str(e)}")
 
-    # Edit user
-    st.subheader("Edit User")
-    edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
-    edited_password = st.text_input("New Password for Selected User", type="password")
-    edited_role = st.selectbox("New Role", ["user", "admin"])
-    edited_validity = st.number_input("New Account Validity (days)", min_value=1, value=7, step=1)
-    if st.button("Edit User"):
-        if edited_password:
-            hashed_password = hash_password(edited_password)
-            for row in ws.iter_rows(min_row=2):
-                if row[0].value == edit_username:
-                    row[1].value = hashed_password
-                    row[3].value = datetime.now() + timedelta(days=edited_validity) if edited_role != "admin" else None
-                    row[4].value = edited_role
-                    break
-            wb.save(LOGIN_FILE)
-            st.success("User edited successfully!")
-        else:
-            st.error("Please provide a new password.")
-
-    # Remove user
-    st.subheader("Remove User")
-    remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
-    if st.button("Remove User"):
-        ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
-        wb.save(LOGIN_FILE)
-        st.success("User removed successfully!")
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
