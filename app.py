@@ -261,8 +261,27 @@ def main():
             st.experimental_rerun()
 
         # Sidebar menu
-        menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History"))
-
-        # Adicionar "User Management" para o admin
+        menu_options = ["Classify Exam", "View Patient History"]
         if st.session_state.username == 'admin':
-            menu_option = st.sidebar.radio("Choose an option:", ("Classify Exam", "View Patient History", "User Management"))
+            menu_options.append("User Management")
+        
+        menu_option = st.sidebar.radio("Choose an option:", menu_options)
+
+        if menu_option == "Classify Exam":
+            st.header("Classify Exam")
+            patient_id = st.text_input("Enter Patient ID:")
+            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+
+            if st.button("Classify"):
+                classify_exam(patient_id, model_option, uploaded_file)
+
+        elif menu_option == "View Patient History":
+            st.header("Patient History")
+            patient_id = st.text_input("Enter Patient ID:")
+            if st.button("View History"):
+                view_patient_history(patient_id)
+
+        elif menu_option == "User Management":
+            manage_users()
+
