@@ -88,7 +88,8 @@ def carregar_modelo_e_etiquetas(caminho_do_modelo, caminho_das_etiquetas):
         st.error(f"Erro ao carregar modelo e etiquetas: {str(e)}")
         return None, None
 
-def pre processar_imagem(arquivo_enviado):
+def pre_processar_imagem(arquivo_enviado):
+    # Corpo da função
     bytes_da_imagem = arquivo_enviado.
 
 bytes_da_imagem = arquivo_enviado.getvalue()
