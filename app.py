@@ -259,6 +259,52 @@ def classify_exam(patient_id, model_option, uploaded_file):
     else:
         st.error("Please upload an image first.")
     return None
+def generate_heatmap(img_path, model):
+    img = image.load_img(img_path, target_size=(224, 224))
+    x = image.img_to_array(img)
+    x = np.expand_dims(x, axis=0)
+    x = keras.applications.mobilenet_v2.preprocess_input(x)
+    
+    last_conv_layer = model.get_layer('Conv_1')
+    grad_model = Model([model.inputs], [last_conv_layer.output, model.output])
+    
+    with tf.GradientTape() as tape:
+        conv_output, predictions = grad_model(x)
+        loss = predictions[:, np.argmax(predictions[0])]
+        
+    grads = tape.gradient(loss, conv_output)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+    
+    heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_output), axis=-1)
+    heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
+    heatmap = heatmap.reshape((7, 7))
+    heatmap = cv2.resize(heatmap, (img.size[1], img.size[0]))
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    
+    return heatmap
+
+# Add this to your main() function
+def display_heatmap():
+    st.header("Anomaly Heatmap")
+    uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
+    if uploaded_file is not None:
+        # Save the uploaded file temporarily
+        with open("temp.jpg", "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        # Load the model (you need to train this model using Teachable Machine)
+        model = load_model('path_to_your_teachable_machine_model.h5')
+        
+        # Generate heatmap
+        heatmap = generate_heatmap("temp.jpg", model)
+        
+        # Display original image and heatmap
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(uploaded_file, caption="Original Image")
+        with col2:
+            st.image(heatmap, caption="Anomaly Heatmap")
 
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
@@ -385,7 +431,7 @@ def main():
         login_page()
     else:
         st.title("MedVision")
-        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
+        st.sidebar.title(f"Bem Vindo username, {st.session_state.username}")
         if st.sidebar.button("Sair"):
             st.session_state.logged_in = False
             st.session_state.username = None
@@ -413,6 +459,8 @@ def main():
             patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
                 view_patient_history(patient_id)
+                  elif st.session_state.menu_option == "Anomaly Heatmap":
+            display_heatmap()
         elif st.session_state.menu_option == "Compare Patients":
             compare_patients()
         elif st.session_state.menu_option == "User Management":
