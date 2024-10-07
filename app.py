@@ -1,10 +1,7 @@
 import streamlit as st
-import tensorflow as tf
 from keras.models import load_model
-from keras.applications.mobilenet_v2 import preprocess_input
 from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
-from tensorflow.keras.preprocessing import image
 from PIL import Image, ImageOps
 import numpy as np
 import io
@@ -15,15 +12,7 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tensorflow.keras.layers import DepthwiseConv2D
 
-def custom_depthwise_conv2d(*args, **kwargs):
-    # Remove the 'groups' parameter if present
-    kwargs.pop('groups', None)
-    return DepthwiseConv2D(*args, **kwargs)
-
-# Use this custom function when loading the model
-from tensorflow.keras.utils import custom_object_scope
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
@@ -270,64 +259,7 @@ def classify_exam(patient_id, model_option, uploaded_file):
     else:
         st.error("Please upload an image first.")
     return None
-def generate_heatmap(img_array, model):
-    last_conv_layer = model.get_layer('Conv_1')  # Adjust this layer name if necessary
-    grad_model = tf.keras.models.Model([model.inputs], [last_conv_layer.output, model.output])
-    
-    with tf.GradientTape() as tape:
-        conv_output, predictions = grad_model(img_array)
-        loss = predictions[:, tf.argmax(predictions[0])]
-        
-    grads = tape.gradient(loss, conv_output)
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-    
-    heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_output), axis=-1)
-    heatmap = tf.maximum(heatmap, 0) / tf.reduce_max(heatmap)
-    heatmap = heatmap.numpy().reshape((7, 7))
-    heatmap = cv2.resize(heatmap, (224, 224))
-    heatmap = np.uint8(255 * heatmap)
-    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-    
-    return heatmap
 
-def display_heatmap():
-    st.header("Anomaly Heatmap")
-    
-    uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
-    if uploaded_file is not None:
-        # Load and preprocess the image
-        img = Image.open(uploaded_file).convert("RGB")
-        img = img.resize((224, 224))
-        img_array = np.array(img)
-        img_array = np.expand_dims(img_array, axis=0)
-        img_array = preprocess_input(img_array)
-        
-        # Display original image
-        st.image(img, caption="Original Image", use_column_width=True)
-        
-        # Generate heatmaps for each model
-        cols = st.columns(len(model_paths))
-        for i, (model_name, model_path) in enumerate(model_paths.items()):
-            try:
-                model = load_model(model_path)
-                heatmap = generate_heatmap(img_array, model)
-                
-                # Overlay heatmap on original image
-                heatmap = cv2.resize(heatmap, (img.size[0], img.size[1]))
-                superimposed_img = heatmap * 0.4 + np.array(img)
-                superimposed_img = np.clip(superimposed_img, 0, 255).astype(np.uint8)
-                
-                with cols[i]:
-                    st.image(superimposed_img, caption=f"{model_name} Heatmap", use_column_width=True)
-                    
-                    # Get prediction
-                    prediction = model.predict(img_array)
-                    confidence = np.max(prediction) * 100
-                    st.write(f"Confidence: {confidence:.2f}%")
-            except Exception as e:
-                st.error(f"Error processing {model_name} model: {str(e)}")
-    else:
-        st.warning("Please upload an X-ray image.")
 def view_patient_history(patient_id):
     if patient_id in st.session_state.patient_history:
         history = st.session_state.patient_history[patient_id]
@@ -370,6 +302,117 @@ def compare_patients():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
+def generate_heatmap(model, preprocessed_image, last_conv_layer_name, pred_index=None):
+    # Create a model that maps the input image to the activations
+    # of the last conv layer as well as the output predictions
+    grad_model = Model(
+        [model.inputs], 
+        [model.get_layer(last_conv_layer_name).output, model.output]
+    )
+
+    # Then, we compute the gradient of the top predicted class for our input image
+    # with respect to the activations of the last conv layer
+    with tf.GradientTape() as tape:
+        last_conv_layer_output, preds = grad_model(preprocessed_image)
+        if pred_index is None:
+            pred_index = tf.argmax(preds[0])
+        class_channel = preds[:, pred_index]
+
+    # This is the gradient of the output neuron (top predicted or chosen)
+    # with regard to the output feature map of the last conv layer
+    grads = tape.gradient(class_channel, last_conv_layer_output)
+
+    # This is a vector where each entry is the mean intensity of the gradient
+    # over a specific feature map channel
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+
+    # We multiply each channel in the feature map array
+    # by "how important this channel is" with regard to the top predicted class
+    # then sum all the channels to obtain the heatmap class activation
+    last_conv_layer_output = last_conv_layer_output[0]
+    heatmap = last_conv_layer_output @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
+
+    # For visualization purpose, we will also normalize the heatmap between 0 & 1
+    heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+    return heatmap.numpy()
+
+def apply_heatmap(image, heatmap):
+    # Resize the heatmap to match the image size
+    heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+    
+    # Convert heatmap to RGB
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    
+    # Superimpose the heatmap on original image
+    superimposed_img = heatmap * 0.4 + image
+    superimposed_img = np.clip(superimposed_img, 0, 255).astype('uint8')
+    
+    return superimposed_img
+
+def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
+    if uploaded_file is not None:
+        st.write(f"Model option selected: {model_option}")
+        
+        if model_option not in model_paths or model_option not in label_paths:
+            st.error(f"Model option '{model_option}' not found in available models.")
+            return None
+        
+        try:
+            model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
+            
+            if model is not None and class_names is not None:
+                processed_image = preprocess_image(uploaded_file)
+                
+                if processed_image is not None:
+                    class_name, confidence_score = predict(model, processed_image, class_names)
+                    
+                    if class_name is not None and confidence_score is not None:
+                        result = {
+                            'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'model': model_option,
+                            'class': class_name,
+                            'confidence': confidence_score
+                        }
+                        
+                        if patient_id not in st.session_state.patient_history:
+                            st.session_state.patient_history[patient_id] = []
+                        st.session_state.patient_history[patient_id].append(result)
+                        
+                        st.success("Exam classified successfully!")
+                        
+                        # Generate heatmap
+                        last_conv_layer_name = "Conv_1" # You might need to adjust this based on your model architecture
+                        heatmap = generate_heatmap(model, processed_image, last_conv_layer_name)
+                        
+                        # Load the original image
+                        original_image = Image.open(uploaded_file).convert("RGB")
+                        original_image = np.array(original_image)
+                        
+                        # Apply heatmap to the original image
+                        heatmap_image = apply_heatmap(original_image, heatmap)
+                        
+                        # Display the original and heatmap images side by side
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.image(original_image, caption="Original Image", use_column_width=True)
+                        with col2:
+                            st.image(heatmap_image, caption="Anomaly Heatmap", use_column_width=True)
+                        
+                        return result
+                    else:
+                        st.error("An error occurred during prediction. Please try again.")
+                else:
+                    st.error("Failed to preprocess the image. Please try a different image.")
+            else:
+                st.error("Failed to load the model and labels. Please check the files and try again.")
+        except Exception as e:
+            st.error(f"An error occurred during classification: {str(e)}")
+    else:
+        st.error("Please upload an image first.")
+    return None
+
 
 def manage_users():
     st.header("User Management")
@@ -463,7 +506,7 @@ def main():
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
 
-        options = ["Classify Exam", "View Patient History", "Compare Patients", "Anomaly Heatmap"]
+        options = ["Classify Exam", "View Patient History", "Compare Patients"]
         if st.session_state.username == 'admin':
             options.append("User Management")
 
@@ -476,6 +519,13 @@ def main():
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
             if st.button("Classify"):
                 classify_exam(patient_id, model_option, uploaded_file)
+                if st.session_state.menu_option == "Classify Exam":
+    st.header("Classify Exam")
+    patient_id = st.text_input("Enter Patient ID:")
+    model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+    uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+    if st.button("Classify"):
+        classify_exam_with_heatmap(patient_id, model_option, uploaded_file)
         elif st.session_state.menu_option == "View Patient History":
             st.header("Patient History")
             patient_id = st.text_input("Enter Patient ID:")
@@ -483,10 +533,10 @@ def main():
                 view_patient_history(patient_id)
         elif st.session_state.menu_option == "Compare Patients":
             compare_patients()
-        elif st.session_state.menu_option == "Anomaly Heatmap":
-            display_heatmap()
         elif st.session_state.menu_option == "User Management":
             manage_users()
 
 if __name__ == "__main__":
     main()
+
+
