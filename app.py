@@ -361,6 +361,12 @@ def apply_heatmap(image, heatmap):
     
     return Image.fromarray(superimposed_img)
 
+def find_last_conv_layer(model):
+    for layer in reversed(model.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            return layer.name
+    return None
+
 def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
         st.write(f"Model option selected: {model_option}")
@@ -392,22 +398,26 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
                         
                         st.success("Exam classified successfully!")
                         
-                        # Generate heatmap
-                        last_conv_layer_name = "Conv_1" # You might need to adjust this based on your model architecture
-                        heatmap = generate_heatmap(model, processed_image, last_conv_layer_name)
-                        
-                        # Load the original image
-                        original_image = Image.open(uploaded_file).convert("RGB")
-                        
-                        # Apply heatmap to the original image
-                        heatmap_image = apply_heatmap(original_image, heatmap)
-                        
-                        # Display the original and heatmap images side by side
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.image(original_image, caption="Original Image", use_column_width=True)
-                        with col2:
-                            st.image(heatmap_image, caption="Anomaly Heatmap", use_column_width=True)
+                        # Find the last convolutional layer
+                        last_conv_layer_name = find_last_conv_layer(model)
+                        if last_conv_layer_name is None:
+                            st.warning("Could not find a convolutional layer in the model. Heatmap generation is not possible.")
+                        else:
+                            # Generate heatmap
+                            heatmap = generate_heatmap(model, processed_image, last_conv_layer_name)
+                            
+                            # Load the original image
+                            original_image = Image.open(uploaded_file).convert("RGB")
+                            
+                            # Apply heatmap to the original image
+                            heatmap_image = apply_heatmap(original_image, heatmap)
+                            
+                            # Display the original and heatmap images side by side
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.image(original_image, caption="Original Image", use_column_width=True)
+                            with col2:
+                                st.image(heatmap_image, caption="Anomaly Heatmap", use_column_width=True)
                         
                         return result
                     else:
@@ -418,6 +428,7 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
                 st.error("Failed to load the model and labels. Please check the files and try again.")
         except Exception as e:
             st.error(f"An error occurred during classification: {str(e)}")
+            st.error(f"Model summary: {model.summary()}")  # This will help debug the model structure
     else:
         st.error("Please upload an image first.")
     return None
