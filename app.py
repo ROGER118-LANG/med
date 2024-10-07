@@ -1,5 +1,7 @@
 import streamlit as st
+import tensorflow as tf
 from tensorflow.keras.models import load_model
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from tensorflow.keras.layers import DepthwiseConv2D
 from tensorflow.keras.utils import custom_object_scope
 from tensorflow.keras.preprocessing import image
@@ -288,7 +290,7 @@ def display_heatmap():
         # Load and preprocess the image
         img = Image.open(uploaded_file).convert("RGB")
         img = img.resize((224, 224))
-        img_array = img_to_array(img)
+        img_array = np.array(img)
         img_array = np.expand_dims(img_array, axis=0)
         img_array = preprocess_input(img_array)
         
