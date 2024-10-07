@@ -26,6 +26,78 @@ if 'username' not in st.session_state:
 
 # File to store login information
 LOGIN_FILE = 'login_info.xlsx'
+# Definição dos caminhos dos modelos e rótulos
+model_paths = {
+    "Pneumonia": "path/to/pneumonia_model.h5",
+    "Tuberculosis": "path/to/tuberculosis_model.h5",
+    "Cancer": "path/to/cancer_model.h5"
+}
+
+label_paths = {
+    "Pneumonia": "path/to/pneumonia_labels.txt",
+    "Tuberculosis": "path/to/tuberculosis_labels.txt",
+    "Cancer": "path/to/cancer_labels.txt"
+}
+
+def custom_depthwise_conv2d(*args, **kwargs):
+    kwargs.pop('groups', None)
+    return DepthwiseConv2D(*args, **kwargs)
+
+def load_model_and_labels(model_path, labels_path):
+    try:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        if not os.path.exists(labels_path):
+            raise FileNotFoundError(f"Labels file not found: {labels_path}")
+        
+        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+            model = load_model(model_path, compile=False)
+        
+        with open(labels_path, "r") as f:
+            class_names = f.readlines()
+        return model, class_names
+    except Exception as e:
+        st.error(f"Error loading model and labels: {str(e)}")
+        return None, None
+
+def classify_exam(patient_id, model_option, uploaded_file):
+    if uploaded_file is not None:
+        st.write(f"Model option selected: {model_option}")
+        
+        if model_option not in model_paths or model_option not in label_paths:
+            st.error(f"Model option '{model_option}' not found in available models.")
+            return None
+        
+        try:
+            model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
+            
+            if model is not None and class_names is not None:
+                processed_image = preprocess_image(uploaded_file)
+                class_name, confidence_score = predict(model, processed_image, class_names)
+                
+                if class_name is not None and confidence_score is not None:
+                    result = {
+                        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'model': model_option,
+                        'class': class_name,
+                        'confidence': confidence_score
+                    }
+                    
+                    if patient_id not in st.session_state.patient_history:
+                        st.session_state.patient_history[patient_id] = []
+                    st.session_state.patient_history[patient_id].append(result)
+                    
+                    st.success("Exam classified successfully!")
+                    return result
+                else:
+                    st.error("An error occurred during prediction. Please try again.")
+            else:
+                st.error("Failed to load the model and labels. Please check the files and try again.")
+        except Exception as e:
+            st.error(f"An error occurred during classification: {str(e)}")
+    else:
+        st.error("Please upload an image first.")
+    return None
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
