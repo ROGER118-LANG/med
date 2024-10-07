@@ -30,7 +30,7 @@ LOGIN_FILE = 'login_info.xlsx'
 # Define model and label paths
 model_paths = {
     "Pneumonia": "pneumonia_model.h5",
-    "Tuberculosis": "tuberculosis_model.h5",
+    "Tuberculosis": "tuberculose_model.h5",
     "Cancer": "cancer_model.h5"
 }
 
