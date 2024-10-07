@@ -46,9 +46,9 @@ def custom_depthwise_conv2d(*args, **kwargs):
 def load_model_and_labels(model_path, labels_path):
     try:
         if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+            raise FileNotFoundError(f"Arquivo de modelo não funciona: {model_path}")
         if not os.path.exists(labels_path):
-            raise FileNotFoundError(f"Labels file not found: {labels_path}")
+            raise FileNotFoundError(f"Labels não funciona: {labels_path}")
         
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             model = load_model(model_path, compile=False)
@@ -105,7 +105,7 @@ def classify_exam(patient_id, model_option, uploaded_file):
                         st.session_state.patient_history[patient_id] = []
                     st.session_state.patient_history[patient_id].append(result)
                     
-                    st.success("Exam classified successfully!")
+                    st.success("Exame classificado com sucesso!")
                     return result
                 else:
                     st.error("An error occurred during prediction. Please try again.")
@@ -114,7 +114,7 @@ def classify_exam(patient_id, model_option, uploaded_file):
         except Exception as e:
             st.error(f"An error occurred during classification: {str(e)}")
     else:
-        st.error("Please upload an image first.")
+        st.error("Por favor faça upload primeiro")
     return None
 
 def hash_password(password):
@@ -146,9 +146,9 @@ def check_login(username, password):
                         if isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
                             return False, "Account expired"
                 
-                return True, "Success"
+                return True, "Successo
         
-        return False, "Invalid credentials"
+        return False, "Credenciais Invalidas"
     except Exception as e:
         st.error(f"An error occurred while checking login: {str(e)}")
         return False, "Login check failed"
