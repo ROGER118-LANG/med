@@ -24,8 +24,7 @@ if 'logged_in' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state.username = None
 
-# File to store login information
-LOGIN_FILE = 'login_info.xlsx'
+# Fi
 # Definição dos caminhos dos modelos e rótulos
 model_paths = {
     "Pneumonia": "pneumonia_model.h5",
@@ -117,8 +116,83 @@ def classify_exam(patient_id, model_option, uploaded_file):
         st.error("Por favor faça upload primeiro")
     return None
 
+LOGIN_FILE = 'login_info.xlsx'
+
+# Função para criar o hash da senha
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+def add_user_to_excel(username, password, expiry_date, role='user'):
+    try:
+        if not os.path.exists(LOGIN_FILE):
+            return {"error": "Login file does not exist."}
+
+        # Abre o arquivo e carrega a planilha ativa
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+
+        # Verifica se o usuário já existe
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[0] == username:
+                return {"error": "User already exists."}
+
+        # Insere o novo usuário
+        hashed_password = hash_password(password)
+        ws.append([username, hashed_password, '', expiry_date, role])
+        wb.save(LOGIN_FILE)
+
+        return {"success": "User added successfully."}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Flask app
+app = Flask(__name__)
+
+# Webhook para receber novos usuários via Zapier
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    
+    username = data.get('username')
+    password = data.get('password')
+    expiry_date = data.get('expiry_date')  # Ex: '2024-12-31'
+    role = data.get('role', 'user')  # Papel do usuário, padrão é 'user'
+    
+    if not username or not password or not expiry_date:
+        return jsonify({"error": "Missing required fields."}), 400
+    
+    result = add_user_to_excel(username, password, expiry_date, role)
+    
+    return jsonify(result)
+
+# Função para rodar o Flask em um thread separado
+def run_flask():
+    app.run(port=5000)
+
+# Rodando o Flask em um thread separado
+Thread(target=run_flask).start()
+
+# Interface Streamlit
+st.title('Sistema de Automação de Usuários')
+
+st.write("Webhook rodando no endpoint `/webhook`. Use esse URL no Zapier.")
+
+# Exibir os usuários na interface do Streamlit (opcional)
+if st.button('Exibir Usuários'):
+    if not os.path.exists(LOGIN_FILE):
+        st.error("Arquivo de login não encontrado.")
+    else:
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+        
+        users = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            users.append({
+                "username": row[0],
+                "expiry_date": row[3],
+                "role": row[4]
+            })
+        
+        st.write(users)
 
 
 def init_login_file():
