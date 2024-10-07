@@ -362,10 +362,21 @@ def apply_heatmap(image, heatmap):
     return Image.fromarray(superimposed_img)
 
 def find_last_conv_layer(model):
-    for layer in reversed(model.layers):
+    conv_layers = []
+    for idx, layer in enumerate(model.layers):
         if isinstance(layer, tf.keras.layers.Conv2D):
-            return layer.name
-    return None
+            conv_layers.append((idx, layer.name))
+        elif isinstance(layer, tf.keras.models.Sequential):
+            for sub_idx, sub_layer in enumerate(layer.layers):
+                if isinstance(sub_layer, tf.keras.layers.Conv2D):
+                    conv_layers.append((idx, sub_idx, sub_layer.name))
+    
+    if conv_layers:
+        st.write("Convolutional layers found:", conv_layers)
+        return conv_layers[-1][-1]  # Return the name of the last convolutional layer
+    else:
+        st.write("No convolutional layers found in the model.")
+        return None
 
 def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
     if uploaded_file is not None:
@@ -379,6 +390,16 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
             model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
             
             if model is not None and class_names is not None:
+                st.write("Model summary:")
+                model.summary(print_fn=lambda x: st.text(x))
+                
+                st.write("Model layers:")
+                for idx, layer in enumerate(model.layers):
+                    st.write(f"{idx}: {layer.name} - {type(layer).__name__}")
+                    if isinstance(layer, tf.keras.models.Sequential):
+                        for sub_idx, sub_layer in enumerate(layer.layers):
+                            st.write(f"  {sub_idx}: {sub_layer.name} - {type(sub_layer).__name__}")
+                
                 processed_image = preprocess_image(uploaded_file)
                 
                 if processed_image is not None:
@@ -428,11 +449,9 @@ def classify_exam_with_heatmap(patient_id, model_option, uploaded_file):
                 st.error("Failed to load the model and labels. Please check the files and try again.")
         except Exception as e:
             st.error(f"An error occurred during classification: {str(e)}")
-            st.error(f"Model summary: {model.summary()}")  # This will help debug the model structure
     else:
         st.error("Please upload an image first.")
     return None
-
 
 
 def manage_users():
