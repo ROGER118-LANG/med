@@ -99,18 +99,16 @@ array_da_imagem_normalizado = (array_da_imagem.astype(np.float32) / 127.5) - 1
 dados = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
 dados[0] = array_da_imagem_normalizado
 return dados
-
-def prever(modelo, dados, nomes_das_classes):
-try:
-previsao = modelo.predict(dados)
-indice = np.argmax(previsao)
-nome_da_classe = nomes_das_classes[indice]
-pontuacao_de_confianca = previsao[0][indice]
-return nome_da_classe[2:], pontuacao_de_confianca
-except Exception as e:
-st.error(f"Erro durante a previsão: {str(e)}")
-return None, None
-
+def prever(modelo, dados, nomes_das_classes):  # Function definition on line 103
+    try:
+        previsao = modelo.predict(dados)  # Line 104 indented
+        indice = np.argmax(previsao)  # Line 105 indented
+        nome_da_classe = nomes_das_classes[indice]  # Line 106 indented
+        pontuacao_de_confianca = previsao[0][indice] # Line 107 indented
+        return nome_da_classe[2:], pontuacao_de_confianca  # Line 108 indented
+    except Exception as e:
+        st.error(f"Erro durante a previsão: {str(e)}")  # Line 109 indented (part of the try-except block)
+        return None, None  # Line 110 indented (part of the try-except block)
 def classificar_exame(id_do_paciente, opcao_do_modelo, arquivo_enviado):
 if arquivo_enviado is not None:
 st.write(f"Opção de modelo selecionada: {opcao_do_modelo}")
