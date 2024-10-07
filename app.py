@@ -247,6 +247,9 @@ label_paths = {
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
-
+ if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.experimental_rerun()
 if __name__ == "__main__":
     main()
