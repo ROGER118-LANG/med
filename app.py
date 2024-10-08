@@ -15,7 +15,7 @@ import seaborn as sns
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
-ZAPIER_SECRET = "seu_segredo_forte_e_unico_aqui""
+ZAPIER_SECRET = "seu_segredo_forte_e_unico_aqui"
 
 # Initialize session state
 if 'patient_history' not in st.session_state:
