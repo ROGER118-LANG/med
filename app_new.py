@@ -323,7 +323,7 @@ def main():
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
-        st.title("Fractured Arm Detection using AI")
+        st.title("MedVision Bone")
         st.sidebar.title(f"Welcome, {st.session_state.username}")
         if st.sidebar.button("Logout"):
             st.session_state.logged_in = False
