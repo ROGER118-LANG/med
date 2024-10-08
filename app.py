@@ -375,7 +375,7 @@ def add_user_from_zapier(data):
     except Exception as e:
         st.error(f"Error adding user from Zapier: {str(e)}")
 
-
+def main()
     # Adicione esta seção para lidar com dados do Zapier
     zapier_data = st.experimental_get_query_params()
     if 'zapier' in zapier_data:
