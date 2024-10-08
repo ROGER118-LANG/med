@@ -317,7 +317,8 @@ def manage_users():
         history = st.session_state.patient_history[patient_id]
         df = pd.DataFrame(history)
         
-        st.subheader(f"Report for Patient {patient_id}")
+        if patient_id:
+        print("Gerando relatório para o paciente:", patient_id)
         
         # Summary statistics
         st.write("Summary Statistics:")
