@@ -309,13 +309,13 @@ db = firestore.client()
 
 # Initialize Pyrebase for authentication
 firebase_config = {
-    "apiKey": "your_api_key",
-    "authDomain": "your_project_id.firebaseapp.com",
-    "databaseURL": "https://your_project_id.firebaseio.com",
-    "projectId": "your_project_id",
-    "storageBucket": "your_project_id.appspot.com",
-    "messagingSenderId": "your_messaging_sender_id",
-    "appId": "your_app_id"
+    "apiKey": "AIzaSyCor1j9wkLa8Qaui6h1K59ZR600AxuIMLk",
+    "authDomain": "medvision-709d4.firebaseapp.com",
+    "databaseURL": "https://console.firebase.google.com/u/0/project/medvision-709d4/",
+    "projectId": "medvision-709d4",
+    "storageBucket": "medvision-709d4.appspot.com",
+    "messagingSenderId": "G-N4T47W9DPQ",
+    "appId": "1:421657299200:web:52f532b7a85fecb3108be5"
 }
 firebase = pyrebase.initialize_app(firebase_config)
 auth = firebase.auth()
