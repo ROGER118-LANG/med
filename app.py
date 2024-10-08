@@ -311,39 +311,6 @@ def manage_users():
         logging.error(f"An error occurred during user management: {str(e)}")
         st.error(f"An error occurred during user management: {str(e)}")
 
-def generate_report(patient_id):
-    if patient_id in st.session_state.patient_history:
-        history = st.session_state.patient_history[patient_id]
-        df = pd.DataFrame(history)
-        
-        st.subheader(f"Report for Patient {patient_id}")
-        
-        # Summary statistics
-        st.write("Summary Statistics:")
-        st.write(df.describe())
-        
-        # Most recent exam
-        st.write("Most Recent Exam:")
-        st.write(df.iloc[-1])
-        
-        # Visualization
-        st.subheader("Exam History Visualization")
-        fig = go.Figure()
-        for model in df['model'].unique():
-            model_data = df[df['model'] == model]
-            fig.add_trace(go.Scatter(x=model_data['date'], y=model_data['confidence'],
-                                     mode='markers+lines', name=model))
-        fig.update_layout(title=f"Exam Confidence Over Time for Patient {patient_id}",
-                          xaxis_title="Date", yaxis_title="Confidence Score")
-        st.plotly_chart(fig)
-        
-        # Class distribution
-        st.subheader("Class Distribution")
-        class_dist = df['class'].value_counts()
-        fig = go.Figure(data=[go.Pie(labels=class_dist.index, values=class_dist.values)])
-        fig.update_layout(title="Distribution of Exam Classifications")
-        st.plotly_chart(fig)
-        
 
     def generate_report(patient_id):
     if patient_id in st.session_state.patient_history:
