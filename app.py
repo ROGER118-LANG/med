@@ -313,7 +313,8 @@ def gerenciar_usuarios():
             st.success("Usuário removido com sucesso!")
     
     except Exception as e:
-        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")e)}")
+        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
+
 
 def main():
     inicializar_arquivo_login()
