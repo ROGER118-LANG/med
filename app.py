@@ -1,8 +1,4 @@
 import streamlit as st
-from pyngrok import ngrok
-import json
-from threading import Thread
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from keras.models import load_model
 from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
@@ -30,6 +26,7 @@ if 'username' not in st.session_state:
 
 # File to store login information
 LOGIN_FILE = 'login_info.xlsx'
+
 # Definição dos caminhos dos modelos e rótulos
 model_paths = {
     "Pneumonia": "pneumonia_model.h5",
@@ -63,67 +60,20 @@ def load_model_and_labels(model_path, labels_path):
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
+
 def predict(model, data, class_names):
     try:
-        # Faz a predição
         prediction = model.predict(data)
-        
-        # Obtém o índice da classe com maior probabilidade
         index = np.argmax(prediction)
-        
-        # Obtém o nome da classe
         class_name = class_names[index]
-        
-        # Obtém a pontuação de confiança
         confidence_score = float(prediction[0][index])
-        
         return class_name.strip(), confidence_score
     except Exception as e:
         st.error(f"Error during prediction: {str(e)}")
         return None, None
 
-def classify_exam(patient_id, model_option, uploaded_file):
-    if uploaded_file is not None:
-        st.write(f"Model option selected: {model_option}")
-        
-        if model_option not in model_paths or model_option not in label_paths:
-            st.error(f"Model option '{model_option}' not found in available models.")
-            return None
-        
-        try:
-            model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
-            
-            if model is not None and class_names is not None:
-                processed_image = preprocess_image(uploaded_file)
-                class_name, confidence_score = predict(model, processed_image, class_names)
-                
-                if class_name is not None and confidence_score is not None:
-                    result = {
-                        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'model': model_option,
-                        'class': class_name,
-                        'confidence': confidence_score
-                    }
-                    
-                    if patient_id not in st.session_state.patient_history:
-                        st.session_state.patient_history[patient_id] = []
-                    st.session_state.patient_history[patient_id].append(result)
-                    
-                    st.success("Exame classificado com sucesso!")
-                    return result
-                else:
-                    st.error("An error occurred during prediction. Please try again.")
-            else:
-                st.error("Failed to load the model and labels. Please check the files and try again.")
-        except Exception as e:
-            st.error(f"An error occurred during classification: {str(e)}")
-    else:
-        st.error("Por favor faça upload primeiro")
-    return None
-
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
-
 
 def init_login_file():
     if not os.path.exists(LOGIN_FILE):
@@ -140,11 +90,9 @@ def check_login(username, password):
         ws = wb.active
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row[0] == username and row[1] == hash_password(password):
-                # Verifica se a coluna de role existe e se o usuário é admin
                 is_admin = len(row) > 4 and row[4] == 'admin'
                 
                 if not is_admin:
-                    # Se não for admin, verifica a data de expiração (se existir)
                     if len(row) > 3 and row[3]:
                         expiry_date = row[3]
                         if isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
@@ -156,21 +104,6 @@ def check_login(username, password):
     except Exception as e:
         st.error(f"An error occurred while checking login: {str(e)}")
         return False, "Login check failed"
-
-
-def login_page():
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        login_success, message = check_login(username, password)
-        if login_success:
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            update_last_login(username)
-            st.success("Logged in successfully!")
-        else:
-            st.error(message)
 
 def update_last_login(username):
     wb = load_workbook(LOGIN_FILE)
@@ -197,26 +130,14 @@ def login_page():
 
 def preprocess_image(uploaded_file):
     try:
-        # Lê o arquivo carregado como bytes
         image_bytes = uploaded_file.getvalue()
-        
-        # Abre a imagem usando PIL
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        
-        # Redimensiona a imagem para 224x224 pixels
         size = (224, 224)
         image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
-        
-        # Converte a imagem para um array numpy
         image_array = np.asarray(image)
-        
-        # Normaliza os valores dos pixels
         normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
-        
-        # Cria um array 4D para entrada no modelo
         data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
         data[0] = normalized_image_array
-        
         return data
     except Exception as e:
         st.error(f"Error preprocessing image: {str(e)}")
@@ -271,7 +192,6 @@ def view_patient_history(patient_id):
         df = pd.DataFrame(history)
         st.dataframe(df)
         
-        # Visualization of patient history
         st.subheader("Patient Exam History Visualization")
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.scatterplot(data=df, x='date', y='confidence', hue='model', size='confidence', ax=ax)
@@ -307,68 +227,22 @@ def compare_patients():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
-class WebhookHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        self.send_response(200)
-        self.end_headers()
-        
-        data = json.loads(post_data.decode('utf-8'))
-        
-        # Processa os dados recebidos do Zapier
-        process_zapier_data(data)
 
-def process_zapier_data(data):
-    # Aqui você pode implementar a lógica para processar os dados recebidos do Zapier
-    # Por exemplo, adicionar um novo usuário ao seu arquivo Excel
-    st.session_state.new_user_from_zapier = data
-    print(f"Received data from Zapier: {data}")
-
-# Função para iniciar o servidor HTTP
-def run_webhook_server():
-    server_address = ('', 8000)
-    httpd = HTTPServer(server_address, WebhookHandler)
-    print('Starting webhook server...')
-    httpd.serve_forever()
-
-# Inicia o servidor webhook em uma thread separada
-webhook_thread = Thread(target=run_webhook_server)
-webhook_thread.start()
-
-# Configura o túnel ngrok
-public_url = ngrok.connect(8000)
-print(f'Public URL: {public_url}')
 def manage_users():
     st.header("User Management")
     
     try:
-        # Load the Excel workbook and active sheet
         wb = load_workbook(LOGIN_FILE)
         ws = wb.active
-
-        # Prepare the data from Excel
         user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-
-        # Debugging: Check the content of user_data to identify any inconsistencies
-        st.write("Loaded User Data:", user_data)
-
-        # Ensure each row has exactly 5 elements, padding missing values with None
         cleaned_user_data = [
             (row if len(row) == 5 else row + (None,) * (5 - len(row))) 
             for row in user_data.values()
         ]
-
-        # Debugging: Show cleaned data
-        st.write("Cleaned User Data:", cleaned_user_data)
-
-        # Create DataFrame with the cleaned data
         user_df = pd.DataFrame(cleaned_user_data, columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
         
-        # Display the DataFrame
         st.dataframe(user_df)
 
-        # Add new user form
         st.subheader("Add User")
         new_username = st.text_input("New Username")
         new_password = st.text_input("New Password", type="password")
@@ -384,7 +258,6 @@ def manage_users():
             else:
                 st.error("Please provide both username and password.")
 
-        # Edit user form
         st.subheader("Edit User")
         edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
         edited_password = st.text_input("New Password for Selected User", type="password")
@@ -404,7 +277,6 @@ def manage_users():
             else:
                 st.error("Please provide a new password.")
 
-        # Remove user form
         st.subheader("Remove User")
         remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
         if st.button("Remove User"):
@@ -414,14 +286,48 @@ def manage_users():
     
     except Exception as e:
         st.error(f"An error occurred during user management: {str(e)}")
+def process_zapier_data():
+    if st.request_json:
+        data = st.request_json
+        st.session_state.new_user_from_zapier = data
+        
+        # Adiciona o novo usuário ao arquivo Excel
+        add_user_from_zapier(data)
+        
+        return {"status": "success", "message": "User added successfully"}
+    return {"status": "error", "message": "No data received"}
+
+def add_user_from_zapier(data):
+    try:
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+        
+        username = data.get('username')
+        password = hash_password(data.get('password', 'default_password'))
+        role = data.get('role', 'user')
+        validity_days = int(data.get('validity_days', 7))
+        expiry_date = datetime.now() + timedelta(days=validity_days) if role != "admin" else None
+        
+        ws.append([username, password, "", expiry_date, role])
+        wb.save(LOGIN_FILE)
+        st.success(f"User {username} added successfully from Zapier!")
+    except Exception as e:
+        st.error(f"Error adding user from Zapier: {str(e)}")
 
 def main():
     init_login_file()
+    
+    # Processa os dados do Zapier se houver uma solicitação POST
+    if st.request_method == "POST":
+        result = process_zapier_data()
+        st.json(result)
+        return
+
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
         st.title("MedVision")
-        st.sidebar.title(f"Bem Vindo username, {st.session_state.username}")
+        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
         if st.sidebar.button("Sair"):
             st.session_state.logged_in = False
             st.session_state.username = None
@@ -430,15 +336,9 @@ def main():
         # Sidebar menu
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
-    
-    if 'new_user_from_zapier' in st.session_state:
-        st.sidebar.subheader("New User from Zapier")
-        st.sidebar.json(st.session_state.new_user_from_zapier)
-
         options = ["Classify Exam", "View Patient History", "Compare Patients"]
         if st.session_state.username == 'admin':
             options.append("User Management")
-
         st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
 
         if st.session_state.menu_option == "Classify Exam":
@@ -448,17 +348,24 @@ def main():
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
             if st.button("Classify"):
                 classify_exam(patient_id, model_option, uploaded_file)
+
         elif st.session_state.menu_option == "View Patient History":
             st.header("Patient History")
             patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
                 view_patient_history(patient_id)
+
         elif st.session_state.menu_option == "Compare Patients":
             compare_patients()
+
         elif st.session_state.menu_option == "User Management":
             manage_users()
 
+        # Adicione esta parte para exibir novos usuários do Zapier
+        if 'new_user_from_zapier' in st.session_state:
+            st.sidebar.subheader("New User from Zapier")
+            st.sidebar.json(st.session_state.new_user_from_zapier)
+
 if __name__ == "__main__":
     main()
-
 
