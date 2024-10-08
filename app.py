@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import sqlite3
 
+DB_FILE = 'users.db'
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
