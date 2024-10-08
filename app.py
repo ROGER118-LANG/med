@@ -1,4 +1,8 @@
 import streamlit as st
+from pyngrok import ngrok
+import json
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from keras.models import load_model
 from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
@@ -153,6 +157,7 @@ def check_login(username, password):
         st.error(f"An error occurred while checking login: {str(e)}")
         return False, "Login check failed"
 
+
 def login_page():
     st.title("Login")
     username = st.text_input("Username")
@@ -302,7 +307,38 @@ def compare_patients():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
+class WebhookHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        self.send_response(200)
+        self.end_headers()
+        
+        data = json.loads(post_data.decode('utf-8'))
+        
+        # Processa os dados recebidos do Zapier
+        process_zapier_data(data)
 
+def process_zapier_data(data):
+    # Aqui você pode implementar a lógica para processar os dados recebidos do Zapier
+    # Por exemplo, adicionar um novo usuário ao seu arquivo Excel
+    st.session_state.new_user_from_zapier = data
+    print(f"Received data from Zapier: {data}")
+
+# Função para iniciar o servidor HTTP
+def run_webhook_server():
+    server_address = ('', 8000)
+    httpd = HTTPServer(server_address, WebhookHandler)
+    print('Starting webhook server...')
+    httpd.serve_forever()
+
+# Inicia o servidor webhook em uma thread separada
+webhook_thread = Thread(target=run_webhook_server)
+webhook_thread.start()
+
+# Configura o túnel ngrok
+public_url = ngrok.connect(8000)
+print(f'Public URL: {public_url}')
 def manage_users():
     st.header("User Management")
     
@@ -394,6 +430,10 @@ def main():
         # Sidebar menu
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
+    
+    if 'new_user_from_zapier' in st.session_state:
+        st.sidebar.subheader("New User from Zapier")
+        st.sidebar.json(st.session_state.new_user_from_zapier)
 
         options = ["Classify Exam", "View Patient History", "Compare Patients"]
         if st.session_state.username == 'admin':
