@@ -338,25 +338,41 @@ def gerenciar_usuarios():
 def dashboard_estatisticas():
     st.subheader("Dashboard de Estatísticas")
     
+    # Verificar se o arquivo existe e criar se não existir
+    if not os.path.exists(ARQUIVO_EXAMES):
+        with open(ARQUIVO_EXAMES, 'w') as f:
+            json.dump([], f)
+    
     # Carregar dados dos exames
-    with open(ARQUIVO_EXAMES, 'r') as f:
-        exames = json.load(f)
+    try:
+        with open(ARQUIVO_EXAMES, 'r') as f:
+            conteudo = f.read()
+            if not conteudo:
+                exames = []
+            else:
+                exames = json.loads(conteudo)
+    except json.JSONDecodeError:
+        st.error("Erro ao ler o arquivo de exames. O arquivo pode estar corrompido.")
+        exames = []
     
     # Calcular estatísticas
     total_exames = len(exames)
     exames_por_setor = {}
     for exame in exames:
-        setor = exame['setor']
+        setor = exame.get('setor', 'Desconhecido')
         exames_por_setor[setor] = exames_por_setor.get(setor, 0) + 1
     
     # Exibir estatísticas
     st.write(f"Total de exames realizados: {total_exames}")
     
-    # Gráfico de distribuição de exames por setor
-    fig, ax = plt.subplots()
-    ax.pie(exames_por_setor.values(), labels=exames_por_setor.keys(), autopct='%1.1f%%')
-    ax.set_title("Distribuição de Exames por Setor")
-    st.pyplot(fig)
+    if total_exames > 0:
+        # Gráfico de distribuição de exames por setor
+        fig, ax = plt.subplots()
+        ax.pie(exames_por_setor.values(), labels=exames_por_setor.keys(), autopct='%1.1f%%')
+        ax.set_title("Distribuição de Exames por Setor")
+        st.pyplot(fig)
+    else:
+        st.info("Não há exames registrados ainda.")
 
 def agendar_exame():
     st.subheader("Agendamento de Exame")
