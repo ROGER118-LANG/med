@@ -477,6 +477,7 @@ def comparar_imagens():
         
         st.write("Aqui você pode adicionar análises comparativas entre as duas imagens.")
 
+
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
@@ -504,8 +505,9 @@ def main():
         if opcao_menu == "Dashboard":
             dashboard_estatisticas()
         elif opcao_menu == "Classificar Exame":
-            # ... (manter o código existente para classificar exame)
-
+            classificar_exame()  # Você precisa implementar esta função
+        elif opcao_menu == "Agendar Exame":
+            agendar_exame()
         elif opcao_menu == "Visualizar Histórico do Paciente":
             visualizar_historico_paciente(st.text_input("Digite o ID do Paciente:"))
         elif opcao_menu == "Comparar Pacientes":
@@ -530,4 +532,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
