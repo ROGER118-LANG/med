@@ -12,6 +12,14 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import logging
+import json
+from sklearn.metrics import confusion_matrix
+import plotly.graph_objects as go
+
+# Configure logging
+logging.basicConfig(filename='medvision.log', level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
@@ -26,18 +34,30 @@ if 'username' not in st.session_state:
 
 # File to store login information
 LOGIN_FILE = 'login_info.xlsx'
-# Definição dos caminhos dos modelos e rótulos
-model_paths = {
+CONFIG_FILE = 'config.json'
+
+# Load configuration
+def load_config():
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+config = load_config()
+
+# Model and label paths
+model_paths = config.get('model_paths', {
     "Pneumonia": "pneumonia_model.h5",
     "Tuberculosis": "tuberculose_model.h5",
     "Cancer": "cancer_model.h5"
-}
+})
 
-label_paths = {
+label_paths = config.get('label_paths', {
     "Pneumonia": "pneumonia_labels.txt",
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
-}
+})
 
 def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
@@ -46,9 +66,9 @@ def custom_depthwise_conv2d(*args, **kwargs):
 def load_model_and_labels(model_path, labels_path):
     try:
         if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Arquivo de modelo não funciona: {model_path}")
+            raise FileNotFoundError(f"Model file not found: {model_path}")
         if not os.path.exists(labels_path):
-            raise FileNotFoundError(f"Labels não funciona: {labels_path}")
+            raise FileNotFoundError(f"Labels file not found: {labels_path}")
         
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             model = load_model(model_path, compile=False)
@@ -57,69 +77,24 @@ def load_model_and_labels(model_path, labels_path):
             class_names = f.readlines()
         return model, class_names
     except Exception as e:
+        logging.error(f"Error loading model and labels: {str(e)}")
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
+
 def predict(model, data, class_names):
     try:
-        # Faz a predição
         prediction = model.predict(data)
-        
-        # Obtém o índice da classe com maior probabilidade
         index = np.argmax(prediction)
-        
-        # Obtém o nome da classe
         class_name = class_names[index]
-        
-        # Obtém a pontuação de confiança
         confidence_score = float(prediction[0][index])
-        
         return class_name.strip(), confidence_score
     except Exception as e:
+        logging.error(f"Error during prediction: {str(e)}")
         st.error(f"Error during prediction: {str(e)}")
         return None, None
 
-def classify_exam(patient_id, model_option, uploaded_file):
-    if uploaded_file is not None:
-        st.write(f"Model option selected: {model_option}")
-        
-        if model_option not in model_paths or model_option not in label_paths:
-            st.error(f"Model option '{model_option}' not found in available models.")
-            return None
-        
-        try:
-            model, class_names = load_model_and_labels(model_paths[model_option], label_paths[model_option])
-            
-            if model is not None and class_names is not None:
-                processed_image = preprocess_image(uploaded_file)
-                class_name, confidence_score = predict(model, processed_image, class_names)
-                
-                if class_name is not None and confidence_score is not None:
-                    result = {
-                        'date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'model': model_option,
-                        'class': class_name,
-                        'confidence': confidence_score
-                    }
-                    
-                    if patient_id not in st.session_state.patient_history:
-                        st.session_state.patient_history[patient_id] = []
-                    st.session_state.patient_history[patient_id].append(result)
-                    
-                    st.success("Exame classificado com sucesso!")
-                    return result
-                else:
-                    st.error("An error occurred during prediction. Please try again.")
-            else:
-                st.error("Failed to load the model and labels. Please check the files and try again.")
-        except Exception as e:
-            st.error(f"An error occurred during classification: {str(e)}")
-    else:
-        st.error("Por favor faça upload primeiro")
-    return None
-
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
-
 
 def init_login_file():
     if not os.path.exists(LOGIN_FILE):
@@ -136,36 +111,20 @@ def check_login(username, password):
         ws = wb.active
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row[0] == username and row[1] == hash_password(password):
-                # Verifica se a coluna de role existe e se o usuário é admin
                 is_admin = len(row) > 4 and row[4] == 'admin'
                 
                 if not is_admin:
-                    # Se não for admin, verifica a data de expiração (se existir)
                     if len(row) > 3 and row[3]:
                         expiry_date = row[3]
                         if isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
                             return False, "Account expired"
                 
-                return True, "Successo"
+                return True, "Success"
         
-        return False, "Credenciais Invalidas"
+        return False, "Invalid credentials"
     except Exception as e:
-        st.error(f"An error occurred while checking login: {str(e)}")
+        logging.error(f"An error occurred while checking login: {str(e)}")
         return False, "Login check failed"
-
-def login_page():
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        login_success, message = check_login(username, password)
-        if login_success:
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            update_last_login(username)
-            st.success("Logged in successfully!")
-        else:
-            st.error(message)
 
 def update_last_login(username):
     wb = load_workbook(LOGIN_FILE)
@@ -192,28 +151,17 @@ def login_page():
 
 def preprocess_image(uploaded_file):
     try:
-        # Lê o arquivo carregado como bytes
         image_bytes = uploaded_file.getvalue()
-        
-        # Abre a imagem usando PIL
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        
-        # Redimensiona a imagem para 224x224 pixels
         size = (224, 224)
         image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
-        
-        # Converte a imagem para um array numpy
         image_array = np.asarray(image)
-        
-        # Normaliza os valores dos pixels
         normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
-        
-        # Cria um array 4D para entrada no modelo
         data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
         data[0] = normalized_image_array
-        
         return data
     except Exception as e:
+        logging.error(f"Error preprocessing image: {str(e)}")
         st.error(f"Error preprocessing image: {str(e)}")
         return None
 
@@ -255,6 +203,7 @@ def classify_exam(patient_id, model_option, uploaded_file):
             else:
                 st.error("Failed to load the model and labels. Please check the files and try again.")
         except Exception as e:
+            logging.error(f"An error occurred during classification: {str(e)}")
             st.error(f"An error occurred during classification: {str(e)}")
     else:
         st.error("Please upload an image first.")
@@ -266,14 +215,15 @@ def view_patient_history(patient_id):
         df = pd.DataFrame(history)
         st.dataframe(df)
         
-        # Visualization of patient history
         st.subheader("Patient Exam History Visualization")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.scatterplot(data=df, x='date', y='confidence', hue='model', size='confidence', ax=ax)
-        ax.set_title(f"Exam Confidence Over Time for Patient {patient_id}")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Confidence Score")
-        st.pyplot(fig)
+        fig = go.Figure()
+        for model in df['model'].unique():
+            model_data = df[df['model'] == model]
+            fig.add_trace(go.Scatter(x=model_data['date'], y=model_data['confidence'],
+                                     mode='markers+lines', name=model))
+        fig.update_layout(title=f"Exam Confidence Over Time for Patient {patient_id}",
+                          xaxis_title="Date", yaxis_title="Confidence Score")
+        st.plotly_chart(fig)
     else:
         st.info("No history found for this patient.")
 
@@ -291,48 +241,31 @@ def compare_patients():
         df1 = pd.DataFrame(st.session_state.patient_history[patient1])
         df2 = pd.DataFrame(st.session_state.patient_history[patient2])
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        
-        sns.boxplot(data=df1, x='model', y='confidence', ax=ax1)
-        ax1.set_title(f"Patient {patient1}")
-        ax1.set_ylim(0, 1)
-        
-        sns.boxplot(data=df2, x='model', y='confidence', ax=ax2)
-        ax2.set_title(f"Patient {patient2}")
-        ax2.set_ylim(0, 1)
-        
-        st.pyplot(fig)
+        fig = go.Figure()
+        fig.add_trace(go.Box(y=df1['confidence'], name=f"Patient {patient1}"))
+        fig.add_trace(go.Box(y=df2['confidence'], name=f"Patient {patient2}"))
+        fig.update_layout(title="Comparison of Exam Confidences",
+                          yaxis_title="Confidence Score")
+        st.plotly_chart(fig)
 
 def manage_users():
     st.header("User Management")
     
     try:
-        # Load the Excel workbook and active sheet
         wb = load_workbook(LOGIN_FILE)
         ws = wb.active
 
-        # Prepare the data from Excel
         user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
 
-        # Debugging: Check the content of user_data to identify any inconsistencies
-        st.write("Loaded User Data:", user_data)
-
-        # Ensure each row has exactly 5 elements, padding missing values with None
         cleaned_user_data = [
             (row if len(row) == 5 else row + (None,) * (5 - len(row))) 
             for row in user_data.values()
         ]
 
-        # Debugging: Show cleaned data
-        st.write("Cleaned User Data:", cleaned_user_data)
-
-        # Create DataFrame with the cleaned data
         user_df = pd.DataFrame(cleaned_user_data, columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
         
-        # Display the DataFrame
         st.dataframe(user_df)
 
-        # Add new user form
         st.subheader("Add User")
         new_username = st.text_input("New Username")
         new_password = st.text_input("New Password", type="password")
@@ -348,7 +281,6 @@ def manage_users():
             else:
                 st.error("Please provide both username and password.")
 
-        # Edit user form
         st.subheader("Edit User")
         edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
         edited_password = st.text_input("New Password for Selected User", type="password")
@@ -368,7 +300,6 @@ def manage_users():
             else:
                 st.error("Please provide a new password.")
 
-        # Remove user form
         st.subheader("Remove User")
         remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
         if st.button("Remove User"):
@@ -377,48 +308,161 @@ def manage_users():
             st.success("User removed successfully!")
     
     except Exception as e:
+        logging.error(f"An error occurred during user management: {str(e)}")
         st.error(f"An error occurred during user management: {str(e)}")
+
+def generate_report(patient_id):
+    if patient_id in st.session_state.patient_history:
+        history = st.session_state.patient_history[patient_id]
+        df = pd.DataFrame(history)
+        
+        st.subheader(f"Report for Patient {patient_id}")
+        
+        # Summary statistics
+        st.write("Summary Statistics:")
+        st.write(df.describe())
+        
+        # Most recent exam
+        st.write("Most Recent Exam:")
+        st.write(df.iloc[-1])
+        
+        # Visualization
+        st.subheader("Exam History Visualization")
+        fig = go.Figure()
+        for model in df['model'].unique():
+            model_data = df[df['model'] == model]
+            fig.add_trace(go.Scatter(x=model_data['date'], y=model_data['confidence'],
+                                     mode='markers+lines', name=model))
+        fig.update_layout(title=f"Exam Confidence Over Time for Patient {patient_id}",
+                          xaxis_title="Date", yaxis_title="Confidence Score")
+        st.plotly_chart(fig)
+        
+        # Class distribution
+        st.subheader("Class Distribution")
+        class_dist = df['class'].value_counts()
+        fig = go.Figure(data=[go.Pie(labels=class_dist.index, values=class_dist.values)])
+        fig.update_layout(title="Distribution of Exam Classifications")
+        st.plotly_chart(fig)
+        
+    else
+    def generate_report(patient_id):
+    if patient_id in st.session_state.patient_history:
+        history = st.session_state.patient_history[patient_id]
+        df = pd.DataFrame(history)
+        
+        st.subheader(f"Report for Patient {patient_id}")
+        
+        # Summary statistics
+        st.write("Summary Statistics:")
+        st.write(df.describe())
+        
+        # Most recent exam
+        st.write("Most Recent Exam:")
+        st.write(df.iloc[-1])
+        
+        # Visualization
+        st.subheader("Exam History Visualization")
+        fig = go.Figure()
+        for model in df['model'].unique():
+            model_data = df[df['model'] == model]
+            fig.add_trace(go.Scatter(x=model_data['date'], y=model_data['confidence'],
+                                     mode='markers+lines', name=model))
+        fig.update_layout(title=f"Exam Confidence Over Time for Patient {patient_id}",
+                          xaxis_title="Date", yaxis_title="Confidence Score")
+        st.plotly_chart(fig)
+        
+        # Class distribution
+        st.subheader("Class Distribution")
+        class_dist = df['class'].value_counts()
+        fig = go.Figure(data=[go.Pie(labels=class_dist.index, values=class_dist.values)])
+        fig.update_layout(title="Distribution of Exam Classifications")
+        st.plotly_chart(fig)
+        
+    else:
+        st.info("No history found for this patient.")
+
+def analyze_model_performance():
+    st.subheader("Model Performance Analysis")
+    
+    all_exams = []
+    for patient_exams in st.session_state.patient_history.values():
+        all_exams.extend(patient_exams)
+    
+    df = pd.DataFrame(all_exams)
+    
+    if df.empty:
+        st.warning("No exam data available for analysis.")
+        return
+    
+    # Model-wise performance
+    st.write("Model-wise Performance:")
+    model_performance = df.groupby('model')['confidence'].mean().sort_values(ascending=False)
+    st.bar_chart(model_performance)
+    
+    # Confusion Matrix
+    st.write("Confusion Matrix:")
+    confusion_mat = confusion_matrix(df['class'], df['model'])
+    fig = go.Figure(data=go.Heatmap(z=confusion_mat, x=df['model'].unique(), y=df['class'].unique()))
+    fig.update_layout(title="Confusion Matrix", xaxis_title="Predicted", yaxis_title="Actual")
+    st.plotly_chart(fig)
+    
+    # Time-based analysis
+    st.write("Performance Over Time:")
+    df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+    monthly_performance = df.resample('M')['confidence'].mean()
+    st.line_chart(monthly_performance)
 
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
-        st.title(" Painel MedVision")
-        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
-        if st.sidebar.button("Sair"):
+        st.title("MedVision Dashboard")
+        st.sidebar.title(f"Welcome, {st.session_state.username}")
+        if st.sidebar.button("Logout"):
             st.session_state.logged_in = False
             st.session_state.username = None
-            st.rerun()
+            st.experimental_rerun()
 
         # Sidebar menu
-        if 'menu_option' not in st.session_state:
-            st.session_state.menu_option = "Classify Exam"
-
-        options = ["Classify Exam", "View Patient History", "Compare Patients"]
+        menu_options = ["Classify Exam", "View Patient History", "Compare Patients", "Generate Report", "Model Performance Analysis"]
         if st.session_state.username == 'admin':
-            options.append("User Management")
+            menu_options.append("User Management")
 
-        st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
+        menu_choice = st.sidebar.selectbox("Choose an option:", menu_options)
 
-        if st.session_state.menu_option == "Classify Exam":
+        if menu_choice == "Classify Exam":
             st.header("Classify Exam")
             patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+            model_option = st.selectbox("Choose a model for analysis:", list(model_paths.keys()))
             uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
             if st.button("Classify"):
-                classify_exam(patient_id, model_option, uploaded_file)
-        elif st.session_state.menu_option == "View Patient History":
+                result = classify_exam(patient_id, model_option, uploaded_file)
+                if result:
+                    st.write("Classification Result:")
+                    st.json(result)
+        
+        elif menu_choice == "View Patient History":
             st.header("Patient History")
             patient_id = st.text_input("Enter Patient ID:")
             if st.button("View History"):
                 view_patient_history(patient_id)
-        elif st.session_state.menu_option == "Compare Patients":
+        
+        elif menu_choice == "Compare Patients":
             compare_patients()
-        elif st.session_state.menu_option == "User Management":
+        
+        elif menu_choice == "Generate Report":
+            st.header("Generate Patient Report")
+            patient_id = st.text_input("Enter Patient ID:")
+            if st.button("Generate Report"):
+                generate_report(patient_id)
+        
+        elif menu_choice == "Model Performance Analysis":
+            analyze_model_performance()
+        
+        elif menu_choice == "User Management" and st.session_state.username == 'admin':
             manage_users()
 
 if __name__ == "__main__":
     main()
-
-
