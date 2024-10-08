@@ -433,22 +433,17 @@ def main():
 
         opcao_menu = st.sidebar.selectbox("Escolha uma opção:", opcoes)
 
-        if opcao_menu == "Dashboard":
-            dashboard_estatisticas()
         elif opcao_menu == "Classificar Exame":
             classificar_exame()  # Você precisa implementar esta função
-        elif opcao_menu == "Agendar Exame":
-            agendar_exame()
+     
         elif opcao_menu == "Visualizar Histórico do Paciente":
             visualizar_historico_paciente(st.text_input("Digite o ID do Paciente:"))
         elif opcao_menu == "Comparar Pacientes":
             comparar_pacientes()
         elif opcao_menu == "Notificações":
             visualizar_notificacoes()
-        elif opcao_menu == "Histórico de Atividades":
-            historico_atividades()
-        elif opcao_menu == "Exportar Dados":
-            exportar_dados()
+      
+      
         elif opcao_menu == "Perfil do Paciente":
             perfil_paciente()
         elif opcao_menu == "Sistema de Feedback":
