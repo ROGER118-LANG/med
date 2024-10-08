@@ -376,52 +376,39 @@ def add_user_from_zapier(data):
     except Exception as e:
         st.error(f"Error adding user from Zapier: {str(e)}")
 
-def main()
-    # Adicione esta seção para lidar com dados do Zapier
-    zapier_data = st.experimental_get_query_params()
-    if 'zapier' in zapier_data:
-        result = process_zapier_data(zapier_data)
-        st.json(result)
-        return
+def main():
+    init_login_file()
 
-    if not st.session_state.get('logged_in', False):
+    st.sidebar.title("Navigation")
+    if st.session_state.logged_in:
+        st.sidebar.write(f"Welcome, {st.session_state.username}!")
+        selected_option = st.sidebar.radio("Select Option", ["Classify Exam", "View Patient History", "Compare Patients", "Manage Users"])
+        patient_id = st.text_input("Patient ID")
+    else:
+        selected_option = "Login"
+
+    if selected_option == "Login":
         login_page()
     else:
-        st.title("MedVision")
-        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
-        if st.sidebar.button("Sair"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.rerun()
+        if not st.session_state.logged_in:
+            st.error("Please log in to access this page.")
+        else:
+            if selected_option == "Classify Exam":
+                model_option = st.selectbox("Select Model", model_paths.keys())
+                uploaded_file = st.file_uploader("Upload Exam Image", type=["png", "jpg", "jpeg"])
+                if st.button("Classify"):
+                    result = classify_exam(patient_id, model_option, uploaded_file)
+                    if result:
+                        st.write(f"Result: {result['class']} with confidence {result['confidence']:.2f}")
 
-        # Sidebar menu
-        if 'menu_option' not in st.session_state:
-            st.session_state.menu_option = "Classify Exam"
-        options = ["Classify Exam", "View Patient History", "Compare Patients"]
-        if st.session_state.username == 'admin':
-            options.append("User Management")
-        st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
-
-        if st.session_state.menu_option == "Classify Exam":
-            st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
-            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
-            if st.button("Classify"):
-                classify_exam(patient_id, model_option, uploaded_file)
-
-        elif st.session_state.menu_option == "View Patient History":
-            st.header("Patient History")
-            patient_id = st.text_input("Enter Patient ID:")
-            if st.button("View History"):
+            elif selected_option == "View Patient History":
                 view_patient_history(patient_id)
 
-        elif st.session_state.menu_option == "Compare Patients":
-            compare_patients()
+            elif selected_option == "Compare Patients":
+                compare_patients()
 
-        elif st.session_state.menu_option == "User Management":
-            manage_users()
+            elif selected_option == "Manage Users" and st.session_state.username == 'admin':
+                manage_users()
 
 if __name__ == "__main__":
     main()
-      app.run(port=5000) 
