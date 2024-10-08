@@ -73,8 +73,7 @@ def custom_depthwise_conv2d(*args, **kwargs):
     return DepthwiseConv2D(*args, **kwargs)
 
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
-    # ... (manter o código existente)
-       try:
+    try:
         if not os.path.exists(caminho_modelo):
             raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
         if not os.path.exists(caminho_rotulos):
@@ -89,6 +88,8 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
+
+
 def prever(modelo, dados, nomes_classes):
     try:
         previsao = modelo.predict(dados)
