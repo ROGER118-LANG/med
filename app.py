@@ -130,6 +130,7 @@ def load_model_and_labels(model_path, labels_path):
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
+
 def predict(model, data, class_names):
     try:
         # Faz a predição
