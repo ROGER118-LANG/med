@@ -337,4 +337,28 @@ def main():
 
         if menu_option == "Classify Exam":
             st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient
+            patient_id = st.text_input("Enter Patient ID:")
+            uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
+            if st.button("Classify"):
+                classify_exam(patient_id, uploaded_file)
+
+        elif menu_option == "View Patient History":
+            st.header("Patient History")
+            patient_id = st.text_input("Enter Patient ID:")
+            if st.button("View History"):
+                view_patient_history(patient_id)
+
+        elif menu_option == "View All Patient Data":
+            view_all_patient_data()
+
+        elif menu_option == "Generate Patient Report":
+            st.header("Generate Patient Report")
+            patient_id = st.text_input("Enter Patient ID:")
+            if st.button("Generate Report"):
+                generate_report(patient_id)
+
+        elif menu_option == "User Management":
+            manage_users()
+
+if __name__ == "__main__":
+    main()
