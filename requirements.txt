@@ -6,5 +6,4 @@ seaborn
 plotly
 firebase-admin
 pyrebase4
-ngrok
 pyngrok
