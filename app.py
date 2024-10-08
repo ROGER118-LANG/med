@@ -116,49 +116,56 @@ def preprocessar_imagem(arquivo_carregado):
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
 
-def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
-    if arquivo_carregado is not None:
-        st.write(f"Opção de modelo selecionada: {opcao_modelo}")
+def classificar_exame():
+    st.header("Classificar Exame")
+    
+    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+    
+    if setor:
+        id_paciente = st.text_input("Digite o ID do Paciente:")
+        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+        arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
         
-        setor, modelo = opcao_modelo.split('_', 1)
-        if setor not in caminhos_modelos or modelo not in caminhos_modelos[setor]:
-            st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
-            return None
-        
-        try:
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
-            
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
+        if st.button("Classificar"):
+            if arquivo_carregado is not None:
+                # Carregar o modelo e os rótulos
+                modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][opcao_modelo], caminhos_rotulos[setor][opcao_modelo])
                 
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
+                if modelo is not None and nomes_classes is not None:
+                    # Pré-processar a imagem
+                    imagem_processada = preprocessar_imagem(arquivo_carregado)
                     
-                    if nome_classe is not None and pontuacao_confianca is not None:
-                        resultado = {
-                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'modelo': opcao_modelo,
-                            'classe': nome_classe,
-                            'confianca': pontuacao_confianca
-                        }
+                    if imagem_processada is not None:
+                        # Fazer a previsão
+                        nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
                         
-                        if id_paciente not in st.session_state.historico_paciente:
-                            st.session_state.historico_paciente[id_paciente] = []
-                        st.session_state.historico_paciente[id_paciente].append(resultado)
-                        
-                        st.success("Exame classificado com sucesso!")
-                        return resultado
+                        if nome_classe is not None and pontuacao_confianca is not None:
+                            st.success(f"Classificação: {nome_classe}")
+                            st.info(f"Confiança: {pontuacao_confianca:.2f}")
+                            
+                            # Salvar o resultado no histórico do paciente
+                            resultado = {
+                                'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'modelo': opcao_modelo,
+                                'classe': nome_classe,
+                                'confianca': pontuacao_confianca
+                            }
+                            
+                            if id_paciente not in st.session_state.historico_paciente:
+                                st.session_state.historico_paciente[id_paciente] = []
+                            st.session_state.historico_paciente[id_paciente].append(resultado)
+                        else:
+                            st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
                     else:
-                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
+                        st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
                 else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
+                    st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
             else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
-        except Exception as e:
-            st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
+                st.error("Por favor, faça o upload de uma imagem primeiro.")
     else:
-        st.error("Por favor, faça o upload de uma imagem primeiro.")
-    return None
+        st.warning("Você não tem acesso a nenhum setor.")
+
+
 
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
