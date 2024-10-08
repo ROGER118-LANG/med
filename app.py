@@ -285,16 +285,15 @@ def manage_users():
             st.success("User removed successfully!")
     
     except Exception as e:
-        st.error(f"An error occurred during user management: {str(e)}")
 def process_zapier_data(data):
     try:
-        if 'secret' not in data or data['secret'] != ZAPIER_SECRET:
+        if 'secret' not in data or data['secret'][0] != ZAPIER_SECRET:
             return {"status": "error", "message": "Invalid secret"}
         
-        username = data.get('username')
-        password = data.get('password', 'default_password')
-        role = data.get('role', 'user')
-        validity_days = int(data.get('validity_days', 7))
+        username = data.get('username', [''])[0]
+        password = data.get('password', ['default_password'])[0]
+        role = data.get('role', ['user'])[0]
+        validity_days = int(data.get('validity_days', ['7'])[0])
         
         add_user_from_zapier({
             'username': username,
@@ -306,6 +305,54 @@ def process_zapier_data(data):
         return {"status": "success", "message": f"User {username} added successfully"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# Remova a função main() e coloque o código principal aqui
+init_login_file()
+
+# Adicione esta seção para lidar com dados do Zapier
+zapier_data = st.experimental_get_query_params()
+if 'zapier' in zapier_data:
+    result = process_zapier_data(zapier_data)
+    st.json(result)
+else:
+    if not st.session_state.get('logged_in', False):
+        login_page()
+    else:
+        st.title("MedVision")
+        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
+        if st.sidebar.button("Sair"):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.rerun()
+
+        # Sidebar menu
+        if 'menu_option' not in st.session_state:
+            st.session_state.menu_option = "Classify Exam"
+        options = ["Classify Exam", "View Patient History", "Compare Patients"]
+        if st.session_state.username == 'admin':
+            options.append("User Management")
+        st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
+
+        if st.session_state.menu_option == "Classify Exam":
+            st.header("Classify Exam")
+            patient_id = st.text_input("Enter Patient ID:")
+            model_option = st.selectbox("Choose a model for analysis:", ("Pneumonia", "Tuberculosis", "Cancer"))
+            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+            if st.button("Classify"):
+                classify_exam(patient_id, model_option, uploaded_file)
+
+        elif st.session_state.menu_option == "View Patient History":
+            st.header("Patient History")
+            patient_id = st.text_input("Enter Patient ID:")
+            if st.button("View History"):
+                view_patient_history(patient_id)
+
+        elif st.session_state.menu_option == "Compare Patients":
+            compare_patients()
+
+        elif st.session_state.menu_option == "User Management":
+            manage_users()
+
 
 
 def add_user_from_zapier(data):
