@@ -344,7 +344,7 @@ def generate_report(patient_id):
         fig.update_layout(title="Distribution of Exam Classifications")
         st.plotly_chart(fig)
         
-    else
+
     def generate_report(patient_id):
     if patient_id in st.session_state.patient_history:
         history = st.session_state.patient_history[patient_id]
