@@ -285,6 +285,8 @@ def manage_users():
             st.success("User removed successfully!")
     
     except Exception as e:
+        st.error(f"An error occurred: {str(e)}")  # Adicionando um bloco após o except
+
 def process_zapier_data(data):
     try:
         if 'secret' not in data or data['secret'][0] != ZAPIER_SECRET:
@@ -302,9 +304,10 @@ def process_zapier_data(data):
             'validity_days': validity_days
         })
         
-        return {"status": "success", "message": f"User {username} added successfully"}
+        return {"status": "success", "message": "User added successfully!"}
+    
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": f"An error occurred: {str(e)}"}  # Corrigindo também aqui
 
 # Remova a função main() e coloque o código principal aqui
 init_login_file()
