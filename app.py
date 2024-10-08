@@ -312,7 +312,7 @@ def manage_users():
         st.error(f"An error occurred during user management: {str(e)}")
 
 
-    def generate_report(patient_id):
+   def generate_report(patient_id):
     if patient_id in st.session_state.patient_history:
         history = st.session_state.patient_history[patient_id]
         df = pd.DataFrame(history)
