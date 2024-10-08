@@ -384,8 +384,8 @@ def main():
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
-        st.title("MedVision")
-        st.sidebar.title(f"Bem Vindo username, {st.session_state.username}")
+        st.title(" Painel MedVision")
+        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
         if st.sidebar.button("Sair"):
             st.session_state.logged_in = False
             st.session_state.username = None
