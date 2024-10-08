@@ -335,66 +335,6 @@ def gerenciar_usuarios():
 
 # Novas funções
 
-def dashboard_estatisticas():
-    st.subheader("Dashboard de Estatísticas")
-    
-    # Verificar se o arquivo existe e criar se não existir
-    if not os.path.exists(ARQUIVO_EXAMES):
-        with open(ARQUIVO_EXAMES, 'w') as f:
-            json.dump([], f)
-    
-    # Carregar dados dos exames
-    try:
-        with open(ARQUIVO_EXAMES, 'r') as f:
-            conteudo = f.read()
-            if not conteudo:
-                exames = []
-            else:
-                exames = json.loads(conteudo)
-    except json.JSONDecodeError:
-        st.error("Erro ao ler o arquivo de exames. O arquivo pode estar corrompido.")
-        exames = []
-    
-    # Calcular estatísticas
-    total_exames = len(exames)
-    exames_por_setor = {}
-    for exame in exames:
-        setor = exame.get('setor', 'Desconhecido')
-        exames_por_setor[setor] = exames_por_setor.get(setor, 0) + 1
-    
-    # Exibir estatísticas
-    st.write(f"Total de exames realizados: {total_exames}")
-    
-    if total_exames > 0:
-        # Gráfico de distribuição de exames por setor
-        fig, ax = plt.subplots()
-        ax.pie(exames_por_setor.values(), labels=exames_por_setor.keys(), autopct='%1.1f%%')
-        ax.set_title("Distribuição de Exames por Setor")
-        st.pyplot(fig)
-    else:
-        st.info("Não há exames registrados ainda.")
-
-def agendar_exame():
-    st.subheader("Agendamento de Exame")
-    
-    id_paciente = st.text_input("ID do Paciente")
-    setor = st.selectbox("Setor", ["Pneumologia", "Neurologia", "Ortopedia"])
-    data_exame = st.date_input("Data do Exame")
-    hora_exame = st.time_input("Hora do Exame")
-    
-    if st.button("Agendar"):
-        novo_agendamento = {
-            "id_paciente": id_paciente,
-            "setor": setor,
-            "data_exame": data_exame.strftime("%Y-%m-%d"),
-            "hora_exame": hora_exame.strftime("%H:%M")
-        }
-        
-        # Salvar o agendamento (aqui você pode salvar em um arquivo ou banco de dados)
-        st.success("Exame agendado com sucesso!")
-        
-        # Adicionar notificação
-        st.session_state.notificacoes.append(f"Novo exame agendado para o paciente {id_paciente} em {data_exame}")
 
 def visualizar_notificacoes():
     st.subheader("Notificações")
@@ -409,38 +349,6 @@ def visualizar_notificacoes():
             st.session_state.notificacoes = []
             st.success("Notificações limpas com sucesso!")
 
-def historico_atividades():
-    st.subheader("Histórico de Atividades")
-    
-    if not st.session_state.historico_atividades:
-        st.info("Não há atividades registradas.")
-    else:
-        for atividade in st.session_state.historico_atividades:
-            st.write(atividade)
-
-def exportar_dados():
-    st.subheader("Exportação de Dados")
-    
-    tipo_dados = st.selectbox("Selecione o tipo de dados para exportar:", ["Pacientes", "Exames"])
-    formato = st.selectbox("Selecione o formato de exportação:", ["CSV", "JSON"])
-    
-    if st.button("Exportar"):
-        if tipo_dados == "Pacientes":
-            dados = st.session_state.historico_paciente
-        else:  # Exames
-            with open(ARQUIVO_EXAMES, 'r') as f:
-                dados = json.load(f)
-        
-        if formato == "CSV":
-            csv = pd.DataFrame(dados).to_csv(index=False)
-            b64 = base64.b64encode(csv.encode()).decode()
-            href = f'<a href="data:file/csv;base64,{b64}" download="dados_exportados.csv">Download CSV</a>'
-        else:  # JSON
-            json_str = json.dumps(dados, indent=2)
-            b64 = base64.b64encode(json_str.encode()).decode()
-            href = f'<a href="data:file/json;base64,{b64}" download="dados_exportados.json">Download JSON</a>'
-        
-        st.markdown(href, unsafe_allow_html=True)
 
 def perfil_paciente():
     st.subheader("Perfil do Paciente")
