@@ -40,7 +40,7 @@ caminhos_modelos = {
         "Tumor Cerebral": "tumor_cerebral_model.h5"
     },
     "Ortopedia": {
-        "Braço Fraturado": "braco_fraturado_model.h5"
+        "Braço Fraturado": "fractured_arm_model.h5"
     }
 }
 
@@ -54,7 +54,7 @@ caminhos_rotulos = {
         "Tumor Cerebral": "tumor_cerebral_labels.txt"
     },
     "Ortopedia": {
-        "Braço Fraturado": "braco_fraturado_labels.txt"
+        "Braço Fraturado": "fractured_arm_labels.txt"
     }
 }
 
