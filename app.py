@@ -286,16 +286,27 @@ def manage_users():
     
     except Exception as e:
         st.error(f"An error occurred during user management: {str(e)}")
-def process_zapier_data():
-    if st.request_json:
-        data = st.request_json
-        st.session_state.new_user_from_zapier = data
+def process_zapier_data(data):
+    try:
+        if 'secret' not in data or data['secret'] != ZAPIER_SECRET:
+            return {"status": "error", "message": "Invalid secret"}
         
-        # Adiciona o novo usuário ao arquivo Excel
-        add_user_from_zapier(data)
+        username = data.get('username')
+        password = data.get('password', 'default_password')
+        role = data.get('role', 'user')
+        validity_days = int(data.get('validity_days', 7))
         
-        return {"status": "success", "message": "User added successfully"}
-    return {"status": "error", "message": "No data received"}
+        add_user_from_zapier({
+            'username': username,
+            'password': password,
+            'role': role,
+            'validity_days': validity_days
+        })
+        
+        return {"status": "success", "message": f"User {username} added successfully"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 def add_user_from_zapier(data):
     try:
@@ -314,12 +325,11 @@ def add_user_from_zapier(data):
     except Exception as e:
         st.error(f"Error adding user from Zapier: {str(e)}")
 
-def main():
-    init_login_file()
-    
-    # Processa os dados do Zapier se houver uma solicitação POST
-    if st.request_method == "POST":
-        result = process_zapier_data()
+
+    # Adicione esta seção para lidar com dados do Zapier
+    zapier_data = st.experimental_get_query_params()
+    if 'zapier' in zapier_data:
+        result = process_zapier_data(zapier_data)
         st.json(result)
         return
 
@@ -361,11 +371,5 @@ def main():
         elif st.session_state.menu_option == "User Management":
             manage_users()
 
-        # Adicione esta parte para exibir novos usuários do Zapier
-        if 'new_user_from_zapier' in st.session_state:
-            st.sidebar.subheader("New User from Zapier")
-            st.sidebar.json(st.session_state.new_user_from_zapier)
-
 if __name__ == "__main__":
     main()
-
