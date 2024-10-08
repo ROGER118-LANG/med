@@ -292,8 +292,7 @@ def gerenciar_usuarios():
         
         if st.button("Editar Usuário"):
             if senha_editada:
-
-       senha_hash = hash_senha(senha_editada)
+                senha_hash = hash_senha(senha_editada)
                 for linha in ws.iter_rows(min_row=2):
                     if linha[0].value == editar_nome_usuario:
                         linha[1].value = senha_hash
@@ -314,7 +313,7 @@ def gerenciar_usuarios():
             st.success("Usuário removido com sucesso!")
     
     except Exception as e:
-        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
+        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")e)}")
 
 def main():
     inicializar_arquivo_login()
