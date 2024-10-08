@@ -8,11 +8,10 @@ import io
 import os
 import pandas as pd
 from datetime import datetime, timedelta
+from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import sqlite3
-
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
@@ -25,9 +24,8 @@ if 'logged_in' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state.username = None
 
-# Database file
-DB_FILE = 'users.db'
-
+# File to store login information
+LOGIN_FILE = 'login_info.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 model_paths = {
     "Pneumonia": "pneumonia_model.h5",
@@ -40,69 +38,6 @@ label_paths = {
     "Tuberculosis": "tuberculose_labels.txt",
     "Cancer": "cancer_labels.txt"
 }
-
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def init_database():
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS users
-                     (username TEXT PRIMARY KEY, password TEXT, last_login TEXT, expiry_date TEXT, role TEXT)''')
-        
-        c.execute("SELECT * FROM users WHERE username='admin'")
-        if c.fetchone() is None:
-            admin_password = hash_password('123')
-            c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
-                      ('admin', admin_password, '', '', 'admin'))
-        
-        conn.commit()
-        print("Database initialized successfully")
-    except sqlite3.Error as e:
-        print(f"An error occurred: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-def check_login(username, password):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username=?", (username,))
-    user = c.fetchone()
-    conn.close()
-
-    if user and user[1] == hash_password(password):
-        is_admin = user[4] == 'admin'
-        if not is_admin and user[3]:
-            expiry_date = datetime.strptime(user[3], "%Y-%m-%d %H:%M:%S")
-            if datetime.now() > expiry_date:
-                return False, "Account expired"
-        return True, "Success"
-    return False, "Invalid credentials"
-
-def update_last_login(username):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE users SET last_login=? WHERE username=?", 
-              (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), username))
-    conn.commit()
-    conn.close()
-
-def login_page():
-    st.title("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        login_success, message = check_login(username, password)
-        if login_success:
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            update_last_login(username)
-            st.success("Logged in successfully!")
-        else:
-            st.error(message)
 
 def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
@@ -124,7 +59,6 @@ def load_model_and_labels(model_path, labels_path):
     except Exception as e:
         st.error(f"Error loading model and labels: {str(e)}")
         return None, None
-
 def predict(model, data, class_names):
     try:
         # Faz a predição
@@ -183,6 +117,78 @@ def classify_exam(patient_id, model_option, uploaded_file):
         st.error("Por favor faça upload primeiro")
     return None
 
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def init_login_file():
+    if not os.path.exists(LOGIN_FILE):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['Username', 'Password', 'Last Login', 'Expiry Date', 'Role'])
+        admin_password = hash_password('123')
+        ws.append(['admin', admin_password, '', '', 'admin'])
+        wb.save(LOGIN_FILE)
+
+def check_login(username, password):
+    try:
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[0] == username and row[1] == hash_password(password):
+                # Verifica se a coluna de role existe e se o usuário é admin
+                is_admin = len(row) > 4 and row[4] == 'admin'
+                
+                if not is_admin:
+                    # Se não for admin, verifica a data de expiração (se existir)
+                    if len(row) > 3 and row[3]:
+                        expiry_date = row[3]
+                        if isinstance(expiry_date, datetime) and datetime.now() > expiry_date:
+                            return False, "Account expired"
+                
+                return True, "Successo"
+        
+        return False, "Credenciais Invalidas"
+    except Exception as e:
+        st.error(f"An error occurred while checking login: {str(e)}")
+        return False, "Login check failed"
+
+def login_page():
+    st.title("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        login_success, message = check_login(username, password)
+        if login_success:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            update_last_login(username)
+            st.success("Logged in successfully!")
+        else:
+            st.error(message)
+
+def update_last_login(username):
+    wb = load_workbook(LOGIN_FILE)
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2):
+        if row[0].value == username:
+            row[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+    wb.save(LOGIN_FILE)
+
+def login_page():
+    st.title("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        login_success, message = check_login(username, password)
+        if login_success:
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            update_last_login(username)
+            st.success("Logged in successfully!")
+        else:
+            st.error(message)
 
 def preprocess_image(uploaded_file):
     try:
@@ -296,69 +302,90 @@ def compare_patients():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
+
 def manage_users():
     st.header("User Management")
     
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    try:
+        # Load the Excel workbook and active sheet
+        wb = load_workbook(LOGIN_FILE)
+        ws = wb.active
+
+        # Prepare the data from Excel
+        user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
+
+        # Debugging: Check the content of user_data to identify any inconsistencies
+        st.write("Loaded User Data:", user_data)
+
+        # Ensure each row has exactly 5 elements, padding missing values with None
+        cleaned_user_data = [
+            (row if len(row) == 5 else row + (None,) * (5 - len(row))) 
+            for row in user_data.values()
+        ]
+
+        # Debugging: Show cleaned data
+        st.write("Cleaned User Data:", cleaned_user_data)
+
+        # Create DataFrame with the cleaned data
+        user_df = pd.DataFrame(cleaned_user_data, columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
+        
+        # Display the DataFrame
+        st.dataframe(user_df)
+
+        # Add new user form
+        st.subheader("Add User")
+        new_username = st.text_input("New Username")
+        new_password = st.text_input("New Password", type="password")
+        new_role = st.selectbox("Role", ["user", "admin"])
+        validity_days = st.number_input("Account Validity (days)", min_value=1, value=7, step=1)
+        if st.button("Add User"):
+            if new_username and new_password:
+                hashed_password = hash_password(new_password)
+                expiry_date = datetime.now() + timedelta(days=validity_days) if new_role != "admin" else None
+                ws.append([new_username, hashed_password, "", expiry_date, new_role])
+                wb.save(LOGIN_FILE)
+                st.success("User added successfully!")
+            else:
+                st.error("Please provide both username and password.")
+
+        # Edit user form
+        st.subheader("Edit User")
+        edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
+        edited_password = st.text_input("New Password for Selected User", type="password")
+        edited_role = st.selectbox("New Role", ["user", "admin"])
+        edited_validity = st.number_input("New Account Validity (days)", min_value=1, value=7, step=1)
+        if st.button("Edit User"):
+            if edited_password:
+                hashed_password = hash_password(edited_password)
+                for row in ws.iter_rows(min_row=2):
+                    if row[0].value == edit_username:
+                        row[1].value = hashed_password
+                        row[3].value = datetime.now() + timedelta(days=edited_validity) if edited_role != "admin" else None
+                        row[4].value = edited_role
+                        break
+                wb.save(LOGIN_FILE)
+                st.success("User edited successfully!")
+            else:
+                st.error("Please provide a new password.")
+
+        # Remove user form
+        st.subheader("Remove User")
+        remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
+        if st.button("Remove User"):
+            ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
+            wb.save(LOGIN_FILE)
+            st.success("User removed successfully!")
     
-    # Fetch all users
-    c.execute("SELECT username, last_login, expiry_date, role FROM users")
-    users = c.fetchall()
-    user_df = pd.DataFrame(users, columns=["Username", "Last Login", "Expiry Date", "Role"])
-    st.dataframe(user_df)
-
-    # Add new user form
-    st.subheader("Add User")
-    new_username = st.text_input("New Username")
-    new_password = st.text_input("New Password", type="password")
-    new_role = st.selectbox("Role", ["user", "admin"])
-    validity_days = st.number_input("Account Validity (days)", min_value=1, value=7, step=1)
-    if st.button("Add User"):
-        if new_username and new_password:
-            hashed_password = hash_password(new_password)
-            expiry_date = (datetime.now() + timedelta(days=validity_days)).strftime("%Y-%m-%d %H:%M:%S") if new_role != "admin" else None
-            c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
-                      (new_username, hashed_password, '', expiry_date, new_role))
-            conn.commit()
-            st.success("User added successfully!")
-        else:
-            st.error("Please provide both username and password.")
-
-    # Edit user form
-    st.subheader("Edit User")
-    edit_username = st.selectbox("Select User to Edit", [user[0] for user in users])
-    edited_password = st.text_input("New Password for Selected User", type="password")
-    edited_role = st.selectbox("New Role", ["user", "admin"])
-    edited_validity = st.number_input("New Account Validity (days)", min_value=1, value=7, step=1)
-    if st.button("Edit User"):
-        if edited_password:
-            hashed_password = hash_password(edited_password)
-            expiry_date = (datetime.now() + timedelta(days=edited_validity)).strftime("%Y-%m-%d %H:%M:%S") if edited_role != "admin" else None
-            c.execute("UPDATE users SET password=?, expiry_date=?, role=? WHERE username=?", 
-                      (hashed_password, expiry_date, edited_role, edit_username))
-            conn.commit()
-            st.success("User edited successfully!")
-        else:
-            st.error("Please provide a new password.")
-
-    # Remove user form
-    st.subheader("Remove User")
-    remove_username = st.selectbox("Select User to Remove", [user[0] for user in users if user[0] != 'admin'])
-    if st.button("Remove User"):
-        c.execute("DELETE FROM users WHERE username=?", (remove_username,))
-        conn.commit()
-        st.success("User removed successfully!")
-
-    conn.close()
+    except Exception as e:
+        st.error(f"An error occurred during user management: {str(e)}")
 
 def main():
-    init_database()
+    init_login_file()
     if not st.session_state.get('logged_in', False):
         login_page()
     else:
         st.title("MedVision")
-        st.sidebar.title(f"Bem Vindo, {st.session_state.username}")
+        st.sidebar.title(f"Bem Vindo username, {st.session_state.username}")
         if st.sidebar.button("Sair"):
             st.session_state.logged_in = False
             st.session_state.username = None
@@ -367,9 +394,11 @@ def main():
         # Sidebar menu
         if 'menu_option' not in st.session_state:
             st.session_state.menu_option = "Classify Exam"
+
         options = ["Classify Exam", "View Patient History", "Compare Patients"]
         if st.session_state.username == 'admin':
             options.append("User Management")
+
         st.session_state.menu_option = st.sidebar.radio("Choose an option:", options, key="menu_radio")
 
         if st.session_state.menu_option == "Classify Exam":
@@ -391,4 +420,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
