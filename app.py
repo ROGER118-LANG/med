@@ -302,7 +302,121 @@ def compare_patients():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
+ # Initialize Firebase Admin SDK
+cred = credentials.Certificate("firebase_key.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
+# Initialize Pyrebase for authentication
+firebase_config = {
+    "apiKey": "your_api_key",
+    "authDomain": "your_project_id.firebaseapp.com",
+    "databaseURL": "https://your_project_id.firebaseio.com",
+    "projectId": "your_project_id",
+    "storageBucket": "your_project_id.appspot.com",
+    "messagingSenderId": "your_messaging_sender_id",
+    "appId": "your_app_id"
+}
+firebase = pyrebase.initialize_app(firebase_config)
+auth = firebase.auth()
+
+# Helper function to get user data
+def get_user(username):
+    return db.collection('users').document(username).get()
+
+# User management functions
+def init_login_file():
+    admin_ref = db.collection('users').document('admin')
+    if not admin_ref.get().exists:
+        admin_password = hash_password('123')
+        admin_ref.set({
+            'password': admin_password,
+            'role': 'admin',
+            'last_login': None,
+            'expiry_date': None
+        })
+
+def check_login(username, password):
+    user = get_user(username)
+    if user.exists:
+        user_data = user.to_dict()
+        if user_data['password'] == hash_password(password):
+            if user_data['role'] != 'admin' and user_data['expiry_date']:
+                expiry_date = user_data['expiry_date'].replace(tzinfo=None)
+                if datetime.now() > expiry_date:
+                    return False, "Account expired"
+            return True, "Success"
+    return False, "Invalid credentials"
+
+def update_last_login(username):
+    db.collection('users').document(username).update({
+        'last_login': datetime.now()
+    })
+
+def manage_users():
+    st.header("User Management")
+    
+    users = db.collection('users').get()
+    user_data = [(user.id, user.to_dict()) for user in users]
+    
+    user_df = pd.DataFrame([
+        {
+            'Username': u[0],
+            'Password': u[1]['password'],
+            'Last Login': u[1].get('last_login'),
+            'Expiry Date': u[1].get('expiry_date'),
+            'Role': u[1]['role']
+        } for u in user_data
+    ])
+    st.dataframe(user_df)
+    
+    # Add new user form
+    st.subheader("Add User")
+    new_username = st.text_input("New Username")
+    new_password = st.text_input("New Password", type="password")
+    new_role = st.selectbox("Role", ["user", "admin"])
+    validity_days = st.number_input("Account Validity (days)", min_value=1, value=7, step=1)
+    
+    if st.button("Add User"):
+        if new_username and new_password:
+            hashed_password = hash_password(new_password)
+            expiry_date = datetime.now() + timedelta(days=validity_days) if new_role != "admin" else None
+            db.collection('users').document(new_username).set({
+                'password': hashed_password,
+                'role': new_role,
+                'last_login': None,
+                'expiry_date': expiry_date
+            })
+            st.success("User added successfully!")
+        else:
+            st.error("Please provide both username and password.")
+    
+    # Edit user form
+    st.subheader("Edit User")
+    edit_username = st.selectbox("Select User to Edit", [user.id for user in users])
+    edited_password = st.text_input("New Password for Selected User", type="password")
+    edited_role = st.selectbox("New Role", ["user", "admin"])
+    edited_validity = st.number_input("New Account Validity (days)", min_value=1, value=7, step=1)
+    
+    if st.button("Edit User"):
+        if edited_password:
+            user_ref = db.collection('users').document(edit_username)
+            user_ref.update({
+                'password': hash_password(edited_password),
+                'role': edited_role,
+                'expiry_date': datetime.now() + timedelta(days=edited_validity) if edited_role != "admin" else None
+            })
+            st.success("User edited successfully!")
+        else:
+            st.error("Please provide a new password.")
+    
+    # Remove user form
+    st.subheader("Remove User")
+    remove_username = st.selectbox("Select User to Remove", [user.id for user in users])
+    
+    if st.button("Remove User"):
+        db.collection('users').document(remove_username).delete()
+        st.success("User removed successfully!")
 def manage_users():
     st.header("User Management")
     
@@ -378,7 +492,6 @@ def manage_users():
     
     except Exception as e:
         st.error(f"An error occurred during user management: {str(e)}")
-
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
