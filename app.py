@@ -290,7 +290,7 @@ def compare_patients():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
-=def manage_users():
+def manage_users():
     st.header("User Management")
     
     conn = sqlite3.connect(DB_FILE)
