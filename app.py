@@ -10,11 +10,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 import hashlib
-import matplotlib.pyplot as plt
-import seaborn as sns
-import logging
 import json
-from sklearn.metrics import confusion_matrix
+import logging
 import plotly.graph_objects as go
 
 # Configure logging
@@ -242,195 +239,57 @@ def compare_patients():
         df2 = pd.DataFrame(st.session_state.patient_history[patient2])
         
         fig = go.Figure()
-        fig.add_trace(go.Box(y=df1['confidence'], name=f"Patient {patient1}"))
-        fig.add_trace(go.Box(y=df2['confidence'], name=f"Patient {patient2}"))
-        fig.update_layout(title="Comparison of Exam Confidences",
-                          yaxis_title="Confidence Score")
-        st.plotly_chart(fig)
-
-def manage_users():
-    st.header("User Management")
-    
-    try:
-        wb = load_workbook(LOGIN_FILE)
-        ws = wb.active
-
-        user_data = {row[0]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-
-        cleaned_user_data = [
-            (row if len(row) == 5 else row + (None,) * (5 - len(row))) 
-            for row in user_data.values()
-        ]
-
-        user_df = pd.DataFrame(cleaned_user_data, columns=["Username", "Password", "Last Login", "Expiry Date", "Role"])
+        fig.add_trace(go.Scatter(x=df1['date'], y=df1['confidence'], mode='lines+markers', name=patient1))
+        fig.add_trace(go.Scatter(x=df2['date'], y=df2['confidence'], mode='lines+markers', name=patient2))
         
-        st.dataframe(user_df)
-
-        st.subheader("Add User")
-        new_username = st.text_input("New Username")
-        new_password = st.text_input("New Password", type="password")
-        new_role = st.selectbox("Role", ["user", "admin"])
-        validity_days = st.number_input("Account Validity (days)", min_value=1, value=7, step=1)
-        if st.button("Add User"):
-            if new_username and new_password:
-                hashed_password = hash_password(new_password)
-                expiry_date = datetime.now() + timedelta(days=validity_days) if new_role != "admin" else None
-                ws.append([new_username, hashed_password, "", expiry_date, new_role])
-                wb.save(LOGIN_FILE)
-                st.success("User added successfully!")
-            else:
-                st.error("Please provide both username and password.")
-
-        st.subheader("Edit User")
-        edit_username = st.selectbox("Select User to Edit", list(user_data.keys()))
-        edited_password = st.text_input("New Password for Selected User", type="password")
-        edited_role = st.selectbox("New Role", ["user", "admin"])
-        edited_validity = st.number_input("New Account Validity (days)", min_value=1, value=7, step=1)
-        if st.button("Edit User"):
-            if edited_password:
-                hashed_password = hash_password(edited_password)
-                for row in ws.iter_rows(min_row=2):
-                    if row[0].value == edit_username:
-                        row[1].value = hashed_password
-                        row[3].value = datetime.now() + timedelta(days=edited_validity) if edited_role != "admin" else None
-                        row[4].value = edited_role
-                        break
-                wb.save(LOGIN_FILE)
-                st.success("User edited successfully!")
-            else:
-                st.error("Please provide a new password.")
-
-        st.subheader("Remove User")
-        remove_username = st.selectbox("Select User to Remove", list(user_data.keys()))
-        if st.button("Remove User"):
-            ws.delete_rows(list(user_data.keys()).index(remove_username) + 2)
-            wb.save(LOGIN_FILE)
-            st.success("User removed successfully!")
-    
-    except Exception as e:
-        logging.error(f"An error occurred during user management: {str(e)}")
-        st.error(f"An error occurred during user management: {str(e)}")
-
-
-   def generate_report(patient_id):
-    if patient_id in st.session_state.patient_history:
-        history = st.session_state.patient_history[patient_id]
-        df = pd.DataFrame(history)
-        
-        if patient_id:
-        print("Gerando relatório para o paciente:", patient_id)
-        
-        # Summary statistics
-        st.write("Summary Statistics:")
-        st.write(df.describe())
-        
-        # Most recent exam
-        st.write("Most Recent Exam:")
-        st.write(df.iloc[-1])
-        
-        # Visualization
-        st.subheader("Exam History Visualization")
-        fig = go.Figure()
-        for model in df['model'].unique():
-            model_data = df[df['model'] == model]
-            fig.add_trace(go.Scatter(x=model_data['date'], y=model_data['confidence'],
-                                     mode='markers+lines', name=model))
-        fig.update_layout(title=f"Exam Confidence Over Time for Patient {patient_id}",
+        fig.update_layout(title=f"Comparison of Exam Confidence Between {patient1} and {patient2}",
                           xaxis_title="Date", yaxis_title="Confidence Score")
         st.plotly_chart(fig)
+
+def generate_report(patient_id):
+    report_file = f"{patient_id}_report.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(['Date', 'Model', 'Class', 'Confidence'])
+    
+    if patient_id in st.session_state.patient_history:
+        for entry in st.session_state.patient_history[patient_id]:
+            ws.append([entry['date'], entry['model'], entry['class'], entry['confidence']])
         
-        # Class distribution
-        st.subheader("Class Distribution")
-        class_dist = df['class'].value_counts()
-        fig = go.Figure(data=[go.Pie(labels=class_dist.index, values=class_dist.values)])
-        fig.update_layout(title="Distribution of Exam Classifications")
-        st.plotly_chart(fig)
-        
+        wb.save(report_file)
+        st.success(f"Report generated: {report_file}")
     else:
-        st.info("No history found for this patient.")
+        st.error("No history found for this patient.")
 
-def analyze_model_performance():
-    st.subheader("Model Performance Analysis")
-    
-    all_exams = []
-    for patient_exams in st.session_state.patient_history.values():
-        all_exams.extend(patient_exams)
-    
-    df = pd.DataFrame(all_exams)
-    
-    if df.empty:
-        st.warning("No exam data available for analysis.")
-        return
-    
-    # Model-wise performance
-    st.write("Model-wise Performance:")
-    model_performance = df.groupby('model')['confidence'].mean().sort_values(ascending=False)
-    st.bar_chart(model_performance)
-    
-    # Confusion Matrix
-    st.write("Confusion Matrix:")
-    confusion_mat = confusion_matrix(df['class'], df['model'])
-    fig = go.Figure(data=go.Heatmap(z=confusion_mat, x=df['model'].unique(), y=df['class'].unique()))
-    fig.update_layout(title="Confusion Matrix", xaxis_title="Predicted", yaxis_title="Actual")
-    st.plotly_chart(fig)
-    
-    # Time-based analysis
-    st.write("Performance Over Time:")
-    df['date'] = pd.to_datetime(df['date'])
-    df.set_index('date', inplace=True)
-    monthly_performance = df.resample('M')['confidence'].mean()
-    st.line_chart(monthly_performance)
-
+# Main application logic
 def main():
+    st.title("MedVision: Image Classification for Medical Exams")
     init_login_file()
-    if not st.session_state.get('logged_in', False):
-        login_page()
-    else:
-        st.title("MedVision Dashboard")
-        st.sidebar.title(f"Welcome, {st.session_state.username}")
-        if st.sidebar.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.experimental_rerun()
-
-        # Sidebar menu
-        menu_options = ["Classify Exam", "View Patient History", "Compare Patients", "Generate Report", "Model Performance Analysis"]
-        if st.session_state.username == 'admin':
-            menu_options.append("User Management")
-
-        menu_choice = st.sidebar.selectbox("Choose an option:", menu_options)
-
-        if menu_choice == "Classify Exam":
-            st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient ID:")
-            model_option = st.selectbox("Choose a model for analysis:", list(model_paths.keys()))
-            uploaded_file = st.file_uploader("Upload X-ray or CT scan image", type=["jpg", "jpeg", "png"])
+    
+    if st.session_state.logged_in:
+        st.sidebar.title("Menu")
+        patient_id = st.sidebar.text_input("Patient ID")
+        
+        menu_option = st.sidebar.selectbox("Select action", ["Classify Exam", "View Patient History", "Compare Patients", "Generate Report"])
+        
+        if menu_option == "Classify Exam":
+            model_option = st.sidebar.selectbox("Select Model", list(model_paths.keys()))
+            uploaded_file = st.file_uploader("Upload Medical Image", type=["jpg", "jpeg", "png"])
             if st.button("Classify"):
-                result = classify_exam(patient_id, model_option, uploaded_file)
-                if result:
-                    st.write("Classification Result:")
-                    st.json(result)
+                classify_exam(patient_id, model_option, uploaded_file)
         
-        elif menu_choice == "View Patient History":
-            st.header("Patient History")
-            patient_id = st.text_input("Enter Patient ID:")
-            if st.button("View History"):
-                view_patient_history(patient_id)
+        elif menu_option == "View Patient History":
+            view_patient_history(patient_id)
         
-        elif menu_choice == "Compare Patients":
+        elif menu_option == "Compare Patients":
             compare_patients()
         
-        elif menu_choice == "Generate Report":
-            st.header("Generate Patient Report")
-            patient_id = st.text_input("Enter Patient ID:")
+        elif menu_option == "Generate Report":
             if st.button("Generate Report"):
                 generate_report(patient_id)
-        
-        elif menu_choice == "Model Performance Analysis":
-            analyze_model_performance()
-        
-        elif menu_choice == "User Management" and st.session_state.username == 'admin':
-            manage_users()
+                
+    else:
+        login_page()
 
 if __name__ == "__main__":
     main()
