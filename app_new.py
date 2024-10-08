@@ -12,6 +12,8 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import base64
+from io import BytesIO
 
 # Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
@@ -26,6 +28,7 @@ if 'username' not in st.session_state:
 
 # File to store login information
 LOGIN_FILE = 'login_info.xlsx'
+PATIENT_DATA_FILE = 'patient_data.xlsx'
 
 # Define the path for the fractured arm model and labels
 MODEL_PATH = "fractured_arm_model.h5"
@@ -82,6 +85,8 @@ def classify_exam(patient_id, uploaded_file):
                     if patient_id not in st.session_state.patient_history:
                         st.session_state.patient_history[patient_id] = []
                     st.session_state.patient_history[patient_id].append(result)
+                    
+                    save_patient_exam(patient_id, result)
                     
                     st.success("Exam classified successfully!")
                     return result
@@ -243,6 +248,76 @@ def manage_users():
     except Exception as e:
         st.error(f"An error occurred during user management: {str(e)}")
 
+def save_patient_exam(patient_id, exam_data):
+    try:
+        if not os.path.exists(PATIENT_DATA_FILE):
+            wb = Workbook()
+            ws = wb.active
+            ws.append(['Patient ID', 'Exam Date', 'Classification', 'Confidence'])
+        else:
+            wb = load_workbook(PATIENT_DATA_FILE)
+            ws = wb.active
+        
+        ws.append([patient_id, exam_data['date'], exam_data['class'], exam_data['confidence']])
+        wb.save(PATIENT_DATA_FILE)
+    except Exception as e:
+        st.error(f"Error saving patient exam data: {str(e)}")
+
+def view_all_patient_data():
+    st.header("All Patient Data")
+    try:
+        if os.path.exists(PATIENT_DATA_FILE):
+            df = pd.read_excel(PATIENT_DATA_FILE)
+            st.dataframe(df)
+            
+            st.subheader("Export Data")
+            csv = df.to_csv(index=False)
+            b64 = base64.b64encode(csv.encode()).decode()
+            href = f'<a href="data:file/csv;base64,{b64}" download="patient_data.csv">Download CSV File</a>'
+            st.markdown(href, unsafe_allow_html=True)
+        else:
+            st.info("No patient data available.")
+    except Exception as e:
+        st.error(f"Error viewing patient data: {str(e)}")
+
+def generate_report(patient_id):
+    st.header(f"Report for Patient {patient_id}")
+    try:
+        if os.path.exists(PATIENT_DATA_FILE):
+            df = pd.read_excel(PATIENT_DATA_FILE)
+            patient_data = df[df['Patient ID'] == patient_id]
+            
+            if not patient_data.empty:
+                st.subheader("Exam History")
+                st.dataframe(patient_data)
+                
+                st.subheader("Exam Trend")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                sns.lineplot(data=patient_data, x='Exam Date', y='Confidence', ax=ax)
+                ax.set_title(f"Exam Confidence Trend for Patient {patient_id}")
+                ax.set_xlabel("Exam Date")
+                ax.set_ylabel("Confidence Score")
+                st.pyplot(fig)
+                
+                st.subheader("Classification Distribution")
+                class_dist = patient_data['Classification'].value_counts()
+                fig, ax = plt.subplots(figsize=(8, 8))
+                ax.pie(class_dist.values, labels=class_dist.index, autopct='%1.1f%%')
+                ax.set_title("Classification Distribution")
+                st.pyplot(fig)
+                
+                st.subheader("Export Report")
+                report = patient_data.to_csv(index=False)
+                b64 = base64.b64encode(report.encode()).decode()
+                href = f'<a href="data:file/csv;base64,{b64}" download="patient_{patient_id}_report.csv">Download Patient Report</a>'
+                st.markdown(href, unsafe_allow_html=True)
+            else:
+                st.info(f"No data found for Patient {patient_id}")
+        else:
+            st.info("No patient data available.")
+    except Exception as e:
+        st.error(f"Error generating report: {str(e)}")
+
 def main():
     init_login_file()
     if not st.session_state.get('logged_in', False):
@@ -255,26 +330,11 @@ def main():
             st.session_state.username = None
             st.rerun()
 
-        options = ["Classify Exam", "View Patient History"]
+        options = ["Classify Exam", "View Patient History", "View All Patient Data", "Generate Patient Report"]
         if st.session_state.username == 'admin':
             options.append("User Management")
         menu_option = st.sidebar.radio("Choose an option:", options)
 
         if menu_option == "Classify Exam":
             st.header("Classify Exam")
-            patient_id = st.text_input("Enter Patient ID:")
-            uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
-            if st.button("Classify"):
-                classify_exam(patient_id, uploaded_file)
-
-        elif menu_option == "View Patient History":
-            st.header("Patient History")
-            patient_id = st.text_input("Enter Patient ID:")
-            if st.button("View History"):
-                view_patient_history(patient_id)
-
-        elif menu_option == "User Management":
-            manage_users()
-
-if __name__ == "__main__":
-    main()
+            patient_id = st.text_input("Enter Patient
