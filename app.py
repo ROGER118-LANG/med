@@ -40,18 +40,6 @@ label_paths = {
     "Cancer": "cancer_labels.txt"
 }
 
-def custom_depthwise_conv2d(*args, **kwargs):
-    kwargs.pop('groups', None)
-    return DepthwiseConv2D(*args, **kwargs)
-
-def load_model_and_labels(model_path, labels_path):
-    # ... (unchanged)
-
-def predict(model, data, class_names):
-    # ... (unchanged)
-
-def classify_exam(patient_id, model_option, uploaded_file):
-    # ... (unchanged)
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
