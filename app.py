@@ -12,10 +12,8 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import base64
-import json
 
-# Configurações iniciais
+# Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
 # Inicializar estado da sessão
@@ -27,15 +25,9 @@ if 'nome_usuario' not in st.session_state:
     st.session_state.nome_usuario = None
 if 'setores_usuario' not in st.session_state:
     st.session_state.setores_usuario = []
-if 'notificacoes' not in st.session_state:
-    st.session_state.notificacoes = []
-if 'historico_atividades' not in st.session_state:
-    st.session_state.historico_atividades = []
 
 # Arquivo para armazenar informações de login
 ARQUIVO_LOGIN = 'info_login.xlsx'
-ARQUIVO_EXAMES = 'exames.json'
-ARQUIVO_FEEDBACK = 'feedback.json'
 
 # Definição dos caminhos dos modelos e rótulos
 caminhos_modelos = {
@@ -48,7 +40,7 @@ caminhos_modelos = {
         "Tumor Cerebral": "tumor_cerebral_model.h5"
     },
     "Ortopedia": {
-        "Braço Fraturado": "braco_fraturado_model.h5"
+        "Braço Fraturado": "fractured_arm_model.h5"
     }
 }
 
@@ -62,11 +54,9 @@ caminhos_rotulos = {
         "Tumor Cerebral": "tumor_cerebral_labels.txt"
     },
     "Ortopedia": {
-        "Braço Fraturado": "braco_fraturado_labels.txt"
+        "Braço Fraturado": "fractured_arm_labels.txt"
     }
 }
-
-# Funções existentes (manter as funções anteriores)
 
 def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
@@ -88,7 +78,6 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
-
 
 def prever(modelo, dados, nomes_classes):
     try:
@@ -116,56 +105,49 @@ def preprocessar_imagem(arquivo_carregado):
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
 
-def classificar_exame():
-    st.header("Classificar Exame")
-    
-    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-    
-    if setor:
-        id_paciente = st.text_input("Digite o ID do Paciente:")
-        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-        arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
+    if arquivo_carregado is not None:
+        st.write(f"Opção de modelo selecionada: {opcao_modelo}")
         
-        if st.button("Classificar"):
-            if arquivo_carregado is not None:
-                # Carregar o modelo e os rótulos
-                modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][opcao_modelo], caminhos_rotulos[setor][opcao_modelo])
+        setor, modelo = opcao_modelo.split('_', 1)
+        if setor not in caminhos_modelos or modelo not in caminhos_modelos[setor]:
+            st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
+            return None
+        
+        try:
+            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
+            
+            if modelo is not None and nomes_classes is not None:
+                imagem_processada = preprocessar_imagem(arquivo_carregado)
                 
-                if modelo is not None and nomes_classes is not None:
-                    # Pré-processar a imagem
-                    imagem_processada = preprocessar_imagem(arquivo_carregado)
+                if imagem_processada is not None:
+                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
                     
-                    if imagem_processada is not None:
-                        # Fazer a previsão
-                        nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
+                    if nome_classe is not None and pontuacao_confianca is not None:
+                        resultado = {
+                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'modelo': opcao_modelo,
+                            'classe': nome_classe,
+                            'confianca': pontuacao_confianca
+                        }
                         
-                        if nome_classe is not None and pontuacao_confianca is not None:
-                            st.success(f"Classificação: {nome_classe}")
-                            st.info(f"Confiança: {pontuacao_confianca:.2f}")
-                            
-                            # Salvar o resultado no histórico do paciente
-                            resultado = {
-                                'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                'modelo': opcao_modelo,
-                                'classe': nome_classe,
-                                'confianca': pontuacao_confianca
-                            }
-                            
-                            if id_paciente not in st.session_state.historico_paciente:
-                                st.session_state.historico_paciente[id_paciente] = []
-                            st.session_state.historico_paciente[id_paciente].append(resultado)
-                        else:
-                            st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
+                        if id_paciente not in st.session_state.historico_paciente:
+                            st.session_state.historico_paciente[id_paciente] = []
+                        st.session_state.historico_paciente[id_paciente].append(resultado)
+                        
+                        st.success("Exame classificado com sucesso!")
+                        return resultado
                     else:
-                        st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
+                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
                 else:
-                    st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
             else:
-                st.error("Por favor, faça o upload de uma imagem primeiro.")
+                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+        except Exception as e:
+            st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
-        st.warning("Você não tem acesso a nenhum setor.")
-
-
+        st.error("Por favor, faça o upload de uma imagem primeiro.")
+    return None
 
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
@@ -240,6 +222,7 @@ def visualizar_historico_paciente(id_paciente):
         st.pyplot(fig)
     else:
         st.info("Nenhum histórico encontrado para este paciente.")
+
 def comparar_pacientes():
     st.subheader("Comparar Pacientes")
     ids_pacientes = list(st.session_state.historico_paciente.keys())
@@ -333,82 +316,6 @@ def gerenciar_usuarios():
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
 
-# Novas funções
-
-
-def visualizar_notificacoes():
-    st.subheader("Notificações")
-    
-    if not st.session_state.notificacoes:
-        st.info("Não há notificações no momento.")
-    else:
-        for notificacao in st.session_state.notificacoes:
-            st.write(notificacao)
-        
-        if st.button("Limpar Notificações"):
-            st.session_state.notificacoes = []
-            st.success("Notificações limpas com sucesso!")
-
-
-def perfil_paciente():
-    st.subheader("Perfil do Paciente")
-    
-    id_paciente = st.text_input("Digite o ID do Paciente:")
-    if st.button("Buscar"):
-        if id_paciente in st.session_state.historico_paciente:
-            dados_paciente = st.session_state.historico_paciente[id_paciente]
-            st.write(f"Histórico de Exames para o Paciente {id_paciente}:")
-            st.dataframe(pd.DataFrame(dados_paciente))
-            
-            # Aqui você pode adicionar mais informações do paciente, como dados pessoais, próximas consultas, etc.
-        else:
-            st.warning("Paciente não encontrado.")
-
-def sistema_feedback():
-    st.subheader("Sistema de Feedback")
-    
-    id_exame = st.text_input("ID do Exame:")
-    precisao = st.slider("Precisão da Classificação", 0.0, 1.0, 0.5)
-    comentario = st.text_area("Comentários:")
-    
-    if st.button("Enviar Feedback"):
-        novo_feedback = {
-            "id_exame": id_exame,
-            "precisao": precisao,
-            "comentario": comentario,
-            "data": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        
-        # Salvar o feedback
-        try:
-            with open(ARQUIVO_FEEDBACK, 'r') as f:
-                feedbacks = json.load(f)
-        except FileNotFoundError:
-            feedbacks = []
-        
-        feedbacks.append(novo_feedback)
-        
-        with open(ARQUIVO_FEEDBACK, 'w') as f:
-            json.dump(feedbacks, f, indent=2)
-        
-        st.success("Feedback enviado com sucesso!")
-
-def comparar_imagens():
-    st.subheader("Comparação de Imagens")
-    
-    imagem1 = st.file_uploader("Carregar primeira imagem", type=["jpg", "jpeg", "png"])
-    imagem2 = st.file_uploader("Carregar segunda imagem", type=["jpg", "jpeg", "png"])
-    
-    if imagem1 and imagem2:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(imagem1, caption="Imagem 1", use_column_width=True)
-        with col2:
-            st.image(imagem2, caption="Imagem 2", use_column_width=True)
-        
-        st.write("Aqui você pode adicionar análises comparativas entre as duas imagens.")
-
-
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
@@ -423,37 +330,41 @@ def main():
             st.rerun()
 
         # Menu lateral
-        opcoes = [
-            "Dashboard", "Classificar Exame", "Agendar Exame", "Visualizar Histórico do Paciente",
-            "Comparar Pacientes", "Notificações", "Histórico de Atividades", "Exportar Dados",
-            "Perfil do Paciente", "Sistema de Feedback", "Comparar Imagens"
-        ]
+        if 'opcao_menu' not in st.session_state:
+            st.session_state.opcao_menu = "Classificar Exame"
+
+        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
 
-        opcao_menu = st.sidebar.selectbox("Escolha uma opção:", opcoes)
+        st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
 
-         elif opcao_menu == "Classificar Exame":
-            classificar_exame()
-        elif opcao_menu == "Visualizar Histórico do Paciente":
-            visualizar_historico_paciente(st.text_input("Digite o ID do Paciente:"))
-        elif opcao_menu == "Comparar Pacientes":
+        if st.session_state.opcao_menu == "Classificar Exame":
+            st.header("Classificar Exame")
+            
+            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+            
+            if setor:
+                id_paciente = st.text_input("Digite o ID do Paciente:")
+                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+                arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+                
+                if st.button("Classificar"):
+                    classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
+            else:
+                st.warning("Você não tem acesso a nenhum setor.")
+
+        elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
+            st.header("Histórico do Paciente")
+            id_paciente = st.text_input("Digite o ID do Paciente:")
+            if st.button("Visualizar Histórico"):
+                visualizar_historico_paciente(id_paciente)
+
+        elif st.session_state.opcao_menu == "Comparar Pacientes":
             comparar_pacientes()
-        elif opcao_menu == "Notificações":
-            visualizar_notificacoes()
-        elif opcao_menu == "Perfil do Paciente":
-            perfil_paciente()
-        elif opcao_menu == "Sistema de Feedback":
-            sistema_feedback()
-        elif opcao_menu == "Comparar Imagens":
-            comparar_imagens()
-        elif opcao_menu == "Gerenciamento de Usuários":
-            gerenciar_usuarios()
 
-        # Registrar atividade
-        st.session_state.historico_atividades.append(f"{datetime.now()}: {st.session_state.nome_usuario} acessou {opcao_menu}")
+        elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
+            gerenciar_usuarios()
 
 if __name__ == "__main__":
     main()
-
-
