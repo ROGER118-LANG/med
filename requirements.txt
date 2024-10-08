@@ -4,3 +4,5 @@ keras
 matplotlib
 seaborn
 plotly
+firebase-admin
+pyrebase4
