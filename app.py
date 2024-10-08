@@ -46,20 +46,25 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def init_database():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (username TEXT PRIMARY KEY, password TEXT, last_login TEXT, expiry_date TEXT, role TEXT)''')
-    
-    # Check if admin user exists, if not create one
-    c.execute("SELECT * FROM users WHERE username='admin'")
-    if c.fetchone() is None:
-        admin_password = hash_password('123')
-        c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
-                  ('admin', admin_password, '', '', 'admin'))
-    
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS users
+                     (username TEXT PRIMARY KEY, password TEXT, last_login TEXT, expiry_date TEXT, role TEXT)''')
+        
+        c.execute("SELECT * FROM users WHERE username='admin'")
+        if c.fetchone() is None:
+            admin_password = hash_password('123')
+            c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
+                      ('admin', admin_password, '', '', 'admin'))
+        
+        conn.commit()
+        print("Database initialized successfully")
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def check_login(username, password):
     conn = sqlite3.connect(DB_FILE)
