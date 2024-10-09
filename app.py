@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
 import seaborn as sns
 
 # Desabilitar notação científica para clareza
@@ -316,50 +315,7 @@ def gerenciar_usuarios():
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
-def generate_heatmap(image, prediction_score):
-    # Create a basic heatmap
-    heatmap = np.random.rand(224, 224)  # Random heatmap for demonstration
-    heatmap = gaussian_filter(heatmap, sigma=10)  # Smooth the heatmap
-    
-    # Normalize the heatmap
-    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
-    
-    # Scale the heatmap based on the prediction score
-    heatmap *= prediction_score
-    
-    return heatmap
 
-def visualize_heatmap(image, heatmap):
-    plt.figure(figsize=(10, 5))
-    
-    plt.subplot(1, 2, 1)
-    plt.imshow(image, cmap='gray')
-    plt.title('Original X-ray')
-    plt.axis('off')
-    
-    plt.subplot(1, 2, 2)
-    plt.imshow(image, cmap='gray')
-    plt.imshow(heatmap, cmap='jet', alpha=0.5)
-    plt.title('Anomaly Heatmap')
-    plt.axis('off')
-    
-    plt.tight_layout()
-    return plt
-
-def process_xray_with_heatmap(model, image_data, class_names):
-    # Make prediction
-    prediction = model.predict(image_data)
-    class_index = np.argmax(prediction)
-    class_name = class_names[class_index].strip()
-    confidence_score = float(prediction[0][class_index])
-    
-    # Generate heatmap
-    heatmap = generate_heatmap(image_data[0], confidence_score)
-    
-    # Visualize
-    fig = visualize_heatmap(image_data[0], heatmap)
-    
-    return class_name, confidence_score, fig
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
@@ -371,92 +327,44 @@ def main():
             st.session_state.logado = False
             st.session_state.nome_usuario = None
             st.session_state.setores_usuario = []
-            st.experimental_rerun()
+            st.rerun()
 
         # Menu lateral
-        opcoes = [
-            "Classificar Exame",
-            "Visualizar Heatmap de Raio-X",  # Certifique-se de que esta opção está incluída
-            "Visualizar Histórico do Paciente",
-            "Comparar Pacientes"
-        ]
+        if 'opcao_menu' not in st.session_state:
+            st.session_state.opcao_menu = "Classificar Exame"
+
+        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
 
-        opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes)
+        st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
 
-        if opcao_menu == "Classificar Exame":
-            classificar_exame_page()
-        elif opcao_menu == "Visualizar Heatmap de Raio-X":
-            visualizar_heatmap_page()
-        elif opcao_menu == "Visualizar Histórico do Paciente":
-            visualizar_historico_page()
-        elif opcao_menu == "Comparar Pacientes":
-            comparar_pacientes_page()
-        elif opcao_menu == "Gerenciamento de Usuários":
-            gerenciar_usuarios_page()
-
-def classificar_exame_page():
-    st.header("Classificar Exame")
-    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-    if setor:
-        id_paciente = st.text_input("Digite o ID do Paciente:")
-        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-        arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
-        if st.button("Classificar"):
-            classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
-    else:
-        st.warning("Você não tem acesso a nenhum setor.")
-
-def visualizar_heatmap_page():
-    st.header("Visualizar Heatmap de Raio-X")
-    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-    if setor:
-        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-        arquivo_carregado = st.file_uploader("Faça upload da imagem de raio-X", type=["jpg", "jpeg", "png"])
-        if arquivo_carregado is not None and st.button("Gerar Heatmap"):
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][opcao_modelo], caminhos_rotulos[setor][opcao_modelo])
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca, fig_heatmap = process_xray_with_heatmap(modelo, imagem_processada, nomes_classes)
-                    st.write(f"Classe prevista: {nome_classe}")
-                    st.write(f"Pontuação de confiança: {pontuacao_confianca:.2f}")
-                    st.pyplot(fig_heatmap)
-                else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
+        if st.session_state.opcao_menu == "Classificar Exame":
+            st.header("Classificar Exame")
+            
+            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+            
+            if setor:
+                id_paciente = st.text_input("Digite o ID do Paciente:")
+                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+                arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+                
+                if st.button("Classificar"):
+                    classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
             else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+                st.warning("Você não tem acesso a nenhum setor.")
 
-def visualizar_historico_page():
-    st.header("Histórico do Paciente")
-    id_paciente = st.text_input("Digite o ID do Paciente:")
-    if st.button("Visualizar Histórico"):
-        visualizar_historico_paciente(id_paciente)
+        elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
+            st.header("Histórico do Paciente")
+            id_paciente = st.text_input("Digite o ID do Paciente:")
+            if st.button("Visualizar Histórico"):
+                visualizar_historico_paciente(id_paciente)
 
+        elif st.session_state.opcao_menu == "Comparar Pacientes":
+            comparar_pacientes()
 
+        elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
+            gerenciar_usuarios()
 
-def gerenciar_usuarios_page():
-    gerenciar_usuarios()
-        st.subheader("Adicionar Usuário")
-        novo_nome_usuario = st.text_input("Novo Nome de Usuário")
-        nova_senha = st.text_input("Nova Senha", type="password")
-        nova_funcao = st.selectbox("Função", ["usuário", "admin"])
-        dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
-        novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-
-        if st.button("Criar Usuário"):
-            if novo_nome_usuario and nova_senha:
-                # Lógica para adicionar novo usuário
-                st.success("Usuário criado com sucesso!")
-            else:
-                st.error("Por favor, preencha todos os campos obrigatórios.")
-
-# Adicionar mais seções conforme necessário
-
-# Se o usuário estiver logado, mostre o painel principal
-if st.session_state.logado:
-    # Adicionar painel principal aqui
-    pass
-else:
-    pagina_login()
+if __name__ == "__main__":
+    main()
