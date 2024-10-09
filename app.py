@@ -365,7 +365,8 @@ def main():
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
 
-          if 'opcao_menu' not in st.session_state:
+ # Menu lateral
+        if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
         opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Gerar Laudo Médico"]
         if st.session_state.nome_usuario == 'admin':
