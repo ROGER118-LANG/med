@@ -6,7 +6,6 @@ from PIL import Image, ImageOps
 import numpy as np
 import io
 from transformers import pipeline
-import tensorflow as tf
 import os
 import pandas as pd
 from datetime import datetime, timedelta
@@ -254,8 +253,10 @@ def comparar_pacientes():
 tf.get_logger().setLevel('ERROR')
 
 @st.cache_resource
+
+@st.cache_resource
 def load_model():
-    return pipeline('text-generation', model='gpt2', framework="tf")
+    return pipeline('text-generation', model='gpt2')
 
 def gerar_laudo_medico(problema, generator):
     try:
@@ -296,14 +297,6 @@ def pagina_gerar_laudo():
             st.subheader("Laudo Gerado:")
             st.text(laudo)
         else:
-            st.warning("Por favor, descreva o problema do paciente.")
-
-# O resto do seu código permanece o mesmo
-
-
-    except Exception as e:
-        return f"Erro ao gerar laudo: {str(e)}"
-
 
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
