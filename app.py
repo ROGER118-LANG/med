@@ -5,7 +5,7 @@ from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
 import io
-
+import random
 import os
 import pandas as pd
 from datetime import datetime, timedelta
