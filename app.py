@@ -5,8 +5,8 @@ from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
 import io
-from transformers import pipeline, set_seed
-import torch
+from transformers import pipeline
+import tensorflow as tf
 import os
 import pandas as pd
 from datetime import datetime, timedelta
@@ -250,15 +250,18 @@ def comparar_pacientes():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
+# Desativar avisos do TensorFlow
+tf.get_logger().setLevel('ERROR')
+
+@st.cache_resource
 def load_model():
-    return pipeline('text-generation', model='gpt2')
+    return pipeline('text-generation', model='gpt2', framework="tf")
 
 def gerar_laudo_medico(problema, generator):
     try:
         prompt = f"Laudo médico para o seguinte problema: {problema}\n\nApós avaliação clínica, constatou-se que o paciente apresenta"
         
         # Gerar o texto
-        set_seed(42)  # Para resultados reproduzíveis
         generated_texts = generator(prompt, max_length=300, num_return_sequences=1, temperature=0.7)
         
         laudo = generated_texts[0]['generated_text']
@@ -294,6 +297,14 @@ def pagina_gerar_laudo():
             st.text(laudo)
         else:
             st.warning("Por favor, descreva o problema do paciente.")
+
+# O resto do seu código permanece o mesmo
+
+
+    except Exception as e:
+        return f"Erro ao gerar laudo: {str(e)}"
+
+
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
     
