@@ -8,16 +8,15 @@ import io
 import os
 import pandas as pd
 from datetime import datetime, timedelta
+from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import psycopg2
-from psycopg2 import sql
 
-# Disable scientific notation for clarity
+# Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
-# Initialize session state
+# Inicializar estado da sessão
 if 'historico_paciente' not in st.session_state:
     st.session_state.historico_paciente = {}
 if 'logado' not in st.session_state:
@@ -27,16 +26,10 @@ if 'nome_usuario' not in st.session_state:
 if 'setores_usuario' not in st.session_state:
     st.session_state.setores_usuario = []
 
-# PostgreSQL connection parameters
-DB_PARAMS = {
-    'dbname': 'your_database_name',
-    'user': 'your_username',
-    'password': 'your_password',
-    'host': 'your_host',
-    'port': 'your_port'
-}
+# Arquivo para armazenar informações de login
+ARQUIVO_LOGIN = 'info_login.xlsx'
 
-# Definition of model and label paths
+# Definição dos caminhos dos modelos e rótulos
 caminhos_modelos = {
     "Pneumologia": {
         "Pneumonia": "pneumonia_model.h5",
@@ -64,164 +57,6 @@ caminhos_rotulos = {
         "Braço Fraturado": "fractured_arm_labels.txt"
     }
 }
-
-def get_db_connection():
-    return psycopg2.connect(**DB_PARAMS)
-
-def initialize_database():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id SERIAL PRIMARY KEY,
-        nome_usuario VARCHAR(50) UNIQUE NOT NULL,
-        senha VARCHAR(64) NOT NULL,
-        ultimo_login TIMESTAMP,
-        data_expiracao TIMESTAMP,
-        funcao VARCHAR(20) NOT NULL,
-        setores TEXT
-    )
-    """)
-    
-    cur.execute("SELECT * FROM usuarios WHERE nome_usuario = 'admin'")
-    if cur.fetchone() is None:
-        senha_admin = hash_senha('123')
-        cur.execute("""
-        INSERT INTO usuarios (nome_usuario, senha, funcao, setores)
-        VALUES ('admin', %s, 'admin', 'Pneumologia,Neurologia,Ortopedia')
-        """, (senha_admin,))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def hash_senha(senha):
-    return hashlib.sha256(senha.encode()).hexdigest()
-
-def verificar_login(nome_usuario, senha):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    cur.execute("""
-    SELECT * FROM usuarios WHERE nome_usuario = %s
-    """, (nome_usuario,))
-    
-    user = cur.fetchone()
-    
-    if user and user[2] == hash_senha(senha):
-        eh_admin = user[5] == 'admin'
-        
-        if not eh_admin and user[4]:
-            if datetime.now() > user[4]:
-                cur.close()
-                conn.close()
-                return False, "Conta expirada", []
-        
-        setores = user[6].split(',') if user[6] else []
-        
-        cur.close()
-        conn.close()
-        return True, "Sucesso", setores
-    
-    cur.close()
-    conn.close()
-    return False, "Credenciais inválidas", []
-
-def atualizar_ultimo_login(nome_usuario):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    cur.execute("""
-    UPDATE usuarios SET ultimo_login = %s WHERE nome_usuario = %s
-    """, (datetime.now(), nome_usuario))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def adicionar_usuario(nome_usuario, senha, funcao, dias_validade, setores):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    senha_hash = hash_senha(senha)
-    data_expiracao = datetime.now() + timedelta(days=dias_validade) if funcao != "admin" else None
-    
-    try:
-        cur.execute("""
-        INSERT INTO usuarios (nome_usuario, senha, data_expiracao, funcao, setores)
-        VALUES (%s, %s, %s, %s, %s)
-        """, (nome_usuario, senha_hash, data_expiracao, funcao, ",".join(setores)))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True, "Usuário adicionado com sucesso!"
-    except psycopg2.IntegrityError:
-        conn.rollback()
-        cur.close()
-        conn.close()
-        return False, "Nome de usuário já existe."
-    except Exception as e:
-        conn.rollback()
-        cur.close()
-        conn.close()
-        return False, f"Erro ao adicionar usuário: {str(e)}"
-
-def editar_usuario(nome_usuario, nova_senha, nova_funcao, nova_validade, novos_setores):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    senha_hash = hash_senha(nova_senha)
-    nova_data_expiracao = datetime.now() + timedelta(days=nova_validade) if nova_funcao != "admin" else None
-    
-    try:
-        cur.execute("""
-        UPDATE usuarios 
-        SET senha = %s, data_expiracao = %s, funcao = %s, setores = %s
-        WHERE nome_usuario = %s
-        """, (senha_hash, nova_data_expiracao, nova_funcao, ",".join(novos_setores), nome_usuario))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True, "Usuário editado com sucesso!"
-    except Exception as e:
-        conn.rollback()
-        cur.close()
-        conn.close()
-        return False, f"Erro ao editar usuário: {str(e)}"
-
-def remover_usuario(nome_usuario):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    try:
-        cur.execute("""
-        DELETE FROM usuarios WHERE nome_usuario = %s
-        """, (nome_usuario,))
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        return True, "Usuário removido com sucesso!"
-    except Exception as e:
-        conn.rollback()
-        cur.close()
-        conn.close()
-        return False, f"Erro ao remover usuário: {str(e)}"
-
-def obter_todos_usuarios():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    cur.execute("SELECT nome_usuario, ultimo_login, data_expiracao, funcao, setores FROM usuarios")
-    usuarios = cur.fetchall()
-    
-    cur.close()
-    conn.close()
-    
-    return usuarios
 
 def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
@@ -314,6 +149,49 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
         st.error("Por favor, faça o upload de uma imagem primeiro.")
     return None
 
+def hash_senha(senha):
+    return hashlib.sha256(senha.encode()).hexdigest()
+
+def inicializar_arquivo_login():
+    if not os.path.exists(ARQUIVO_LOGIN):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores'])
+        senha_admin = hash_senha('123')
+        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia'])
+        wb.save(ARQUIVO_LOGIN)
+
+def verificar_login(nome_usuario, senha):
+    try:
+        wb = load_workbook(ARQUIVO_LOGIN)
+        ws = wb.active
+        for linha in ws.iter_rows(min_row=2, values_only=True):
+            if linha[0] == nome_usuario and linha[1] == hash_senha(senha):
+                eh_admin = len(linha) > 4 and linha[4] == 'admin'
+                
+                if not eh_admin:
+                    if len(linha) > 3 and linha[3]:
+                        data_expiracao = linha[3]
+                        if isinstance(data_expiracao, datetime) and datetime.now() > data_expiracao:
+                            return False, "Conta expirada", []
+                
+                setores = linha[5].split(',') if len(linha) > 5 and linha[5] else []
+                return True, "Sucesso", setores
+        
+        return False, "Credenciais inválidas", []
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao verificar o login: {str(e)}")
+        return False, "Falha na verificação do login", []
+
+def atualizar_ultimo_login(nome_usuario):
+    wb = load_workbook(ARQUIVO_LOGIN)
+    ws = wb.active
+    for linha in ws.iter_rows(min_row=2):
+        if linha[0].value == nome_usuario:
+            linha[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+    wb.save(ARQUIVO_LOGIN)
+
 def pagina_login():
     st.title("Login")
     nome_usuario = st.text_input("Nome de Usuário")
@@ -358,7 +236,8 @@ def comparar_pacientes():
     if st.button("Comparar"):
         df1 = pd.DataFrame(st.session_state.historico_paciente[paciente1])
         df2 = pd.DataFrame(st.session_state.historico_paciente[paciente2])
-           fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
         
         sns.boxplot(data=df1, x='modelo', y='confianca', ax=ax1)
         ax1.set_title(f"Paciente {paciente1}")
@@ -373,55 +252,72 @@ def comparar_pacientes():
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
     
-    usuarios = obter_todos_usuarios()
-    df_usuario = pd.DataFrame(usuarios, columns=["Nome de Usuário", "Último Login", "Data de Expiração", "Função", "Setores"])
-    st.dataframe(df_usuario)
-    
-    st.subheader("Adicionar Usuário")
-    novo_nome_usuario = st.text_input("Novo Nome de Usuário")
-    nova_senha = st.text_input("Nova Senha", type="password")
-    nova_funcao = st.selectbox("Função", ["usuário", "admin"])
-    dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
-    novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-    
-    if st.button("Adicionar Usuário"):
-        if novo_nome_usuario and nova_senha:
-            sucesso, mensagem = adicionar_usuario(novo_nome_usuario, nova_senha, nova_funcao, dias_validade, novos_setores)
-            if sucesso:
-                st.success(mensagem)
+    try:
+        wb = load_workbook(ARQUIVO_LOGIN)
+        ws = wb.active
+        dados_usuario = {linha[0]: linha for linha in ws.iter_rows(min_row=2, values_only=True)}
+        
+        dados_usuario_limpos = [
+            (linha if len(linha) == 6 else linha + (None,) * (6 - len(linha))) 
+            for linha in dados_usuario.values()
+        ]
+        
+        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores"])
+        
+        st.dataframe(df_usuario)
+
+        st.subheader("Adicionar Usuário")
+        novo_nome_usuario = st.text_input("Novo Nome de Usuário")
+        nova_senha = st.text_input("Nova Senha", type="password")
+        nova_funcao = st.selectbox("Função", ["usuário", "admin"])
+        dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
+        novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
+        
+        if st.button("Adicionar Usuário"):
+            if novo_nome_usuario and nova_senha:
+                senha_hash = hash_senha(nova_senha)
+                data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
+                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
+                wb.save(ARQUIVO_LOGIN)
+                st.success("Usuário adicionado com sucesso!")
             else:
-                st.error(mensagem)
-        else:
-            st.error("Por favor, forneça nome de usuário e senha.")
-    
-    st.subheader("Editar Usuário")
-    editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", [user[0] for user in usuarios])
-    senha_editada = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
-    funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
-    validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
-    setores_editados = st.multiselect("Novos Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-    
-    if st.button("Editar Usuário"):
-        if senha_editada:
-            sucesso, mensagem = editar_usuario(editar_nome_usuario, senha_editada, funcao_editada, validade_editada, setores_editados)
-            if sucesso:
-                st.success(mensagem)
+                st.error("Por favor, forneça nome de usuário e senha.")
+
+        st.subheader("Editar Usuário")
+        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", list(dados_usuario.keys()))
+        senha_editada = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
+        funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
+        validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
+        setores_editados = st.multiselect("Novos Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
+        
+        if st.button("Editar Usuário"):
+            if senha_editada:
+                senha_hash = hash_senha(senha_editada)
+                for linha in ws.iter_rows(min_row=2):
+                    if linha[0].value == editar_nome_usuario:
+                        linha[1].value = senha_hash
+                        linha[3].value = datetime.now() + timedelta(days=validade_editada) if funcao_editada != "admin" else None
+                        linha[4].value = funcao_editada
+                        linha[5].value = ",".join(setores_editados)
+                        break
+                wb.save(ARQUIVO_LOGIN)
+                st.success("Usuário editado com sucesso!")
             else:
-                st.error(mensagem)
-        else:
-            st.error("Por favor, forneça uma nova senha.")
+                st.error("Por favor, forneça uma nova senha.")
+
+        st.subheader("Remover Usuário")
+        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", list(dados_usuario.keys()))
+        if st.button("Remover Usuário"):
+            ws.delete_rows(list(dados_usuario.keys()).index(remover_nome_usuario) + 2)
+            wb.save(ARQUIVO_LOGIN)
+            st.success("Usuário removido com sucesso!")
     
-    st.subheader("Remover Usuário")
-    remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", [user[0] for user in usuarios])
-    if st.button("Remover Usuário"):
-        sucesso, mensagem = remover_usuario(remover_nome_usuario)
-        if sucesso:
-            st.success(mensagem)
-        else:
-            st.error(mensagem)
+    except Exception as e:
+        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
+
 
 def main():
-    initialize_database()
+    inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
         pagina_login()
     else:
@@ -432,15 +328,17 @@ def main():
             st.session_state.nome_usuario = None
             st.session_state.setores_usuario = []
             st.rerun()
-        
+
         # Menu lateral
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
+
         opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
+
         st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
-        
+
         if st.session_state.opcao_menu == "Classificar Exame":
             st.header("Classificar Exame")
             
@@ -455,18 +353,19 @@ def main():
                     classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
             else:
                 st.warning("Você não tem acesso a nenhum setor.")
-        
+
         elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
             st.header("Histórico do Paciente")
             id_paciente = st.text_input("Digite o ID do Paciente:")
             if st.button("Visualizar Histórico"):
                 visualizar_historico_paciente(id_paciente)
-        
+
         elif st.session_state.opcao_menu == "Comparar Pacientes":
             comparar_pacientes()
-        
+
         elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
             gerenciar_usuarios()
 
 if __name__ == "__main__":
     main()
+
