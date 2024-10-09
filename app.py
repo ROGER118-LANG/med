@@ -315,6 +315,7 @@ def gerenciar_usuarios():
         
         st.dataframe(df_usuario)
 
+
         st.subheader("Adicionar Usuário")
         novo_nome_usuario = st.text_input("Novo Nome de Usuário")
         nova_senha = st.text_input("Nova Senha", type="password")
