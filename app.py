@@ -5,6 +5,8 @@ from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
 import io
+import openai
+from dotenv import load_dotenv
 import os
 import pandas as pd
 from datetime import datetime, timedelta
@@ -248,6 +250,37 @@ def comparar_pacientes():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
+def gerar_laudo_medico(problema):
+    try:
+        # Load API key from .env file
+        load_dotenv()
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+
+        # Generate report using GPT-3
+        response = openai.Completion.create(
+            engine="text-davinci-002",
+            prompt=f"Gere um laudo médico detalhado para o seguinte problema: {problema}",
+            max_tokens=500,
+            n=1,
+            stop=None,
+            temperature=0.7,
+        )
+
+        return response.choices[0].text.strip()
+    except Exception as e:
+        return f"Erro ao gerar laudo: {str(e)}"
+        def pagina_gerar_laudo():
+    st.header("Gerar Laudo Médico")
+    problema = st.text_area("Descreva o problema do paciente:", height=150)
+    
+    if st.button("Gerar Laudo"):
+        if problema:
+            with st.spinner("Gerando laudo..."):
+                laudo = gerar_laudo_medico(problema)
+            st.subheader("Laudo Gerado:")
+            st.write(laudo)
+        else:
+            st.warning("Por favor, descreva o problema do paciente.")
 
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
@@ -333,7 +366,7 @@ def main():
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
 
-        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
+        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Gerar Laudo Médico"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
 
@@ -353,7 +386,8 @@ def main():
                     classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
             else:
                 st.warning("Você não tem acesso a nenhum setor.")
-
+ elif st.session_state.opcao_menu == "Gerar Laudo Médico":
+            pagina_gerar_laudo()
         elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
             st.header("Histórico do Paciente")
             id_paciente = st.text_input("Digite o ID do Paciente:")
