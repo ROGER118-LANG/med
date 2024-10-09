@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter
 import seaborn as sns
 
 # Desabilitar notação científica para clareza
@@ -315,7 +316,50 @@ def gerenciar_usuarios():
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
+def generate_heatmap(image, prediction_score):
+    # Create a basic heatmap
+    heatmap = np.random.rand(224, 224)  # Random heatmap for demonstration
+    heatmap = gaussian_filter(heatmap, sigma=10)  # Smooth the heatmap
+    
+    # Normalize the heatmap
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+    
+    # Scale the heatmap based on the prediction score
+    heatmap *= prediction_score
+    
+    return heatmap
 
+def visualize_heatmap(image, heatmap):
+    plt.figure(figsize=(10, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.imshow(image, cmap='gray')
+    plt.title('Original X-ray')
+    plt.axis('off')
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(image, cmap='gray')
+    plt.imshow(heatmap, cmap='jet', alpha=0.5)
+    plt.title('Anomaly Heatmap')
+    plt.axis('off')
+    
+    plt.tight_layout()
+    return plt
+
+def process_xray_with_heatmap(model, image_data, class_names):
+    # Make prediction
+    prediction = model.predict(image_data)
+    class_index = np.argmax(prediction)
+    class_name = class_names[class_index].strip()
+    confidence_score = float(prediction[0][class_index])
+    
+    # Generate heatmap
+    heatmap = generate_heatmap(image_data[0], confidence_score)
+    
+    # Visualize
+    fig = visualize_heatmap(image_data[0], heatmap)
+    
+    return class_name, confidence_score, fig
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
