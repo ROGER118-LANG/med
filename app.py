@@ -254,7 +254,7 @@ def gerar_laudo_medico(problema):
     try:
         # Load API key from .env file
         load_dotenv()
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+        openai.api_key = os.getenv("sk-ZAKO-V-Fm0rNaZxFKKrH_UVzHdWheQEoQ3GtGMdfG1T3BlbkFJutKUMQQlfMesiVdOQZwc0BagYNq9sHNUOdYXuVEsgA")
 
         # Generate report using GPT-3
         response = openai.Completion.create(
@@ -269,7 +269,7 @@ def gerar_laudo_medico(problema):
         return response.choices[0].text.strip()
     except Exception as e:
         return f"Erro ao gerar laudo: {str(e)}"
-        def pagina_gerar_laudo():
+def pagina_gerar_laudo():
     st.header("Gerar Laudo Médico")
     problema = st.text_area("Descreva o problema do paciente:", height=150)
     
@@ -281,7 +281,6 @@ def gerar_laudo_medico(problema):
             st.write(laudo)
         else:
             st.warning("Por favor, descreva o problema do paciente.")
-
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
     
@@ -366,12 +365,14 @@ def main():
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
 
+          if 'opcao_menu' not in st.session_state:
+            st.session_state.opcao_menu = "Classificar Exame"
         opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Gerar Laudo Médico"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
-
         st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
 
+     
         if st.session_state.opcao_menu == "Classificar Exame":
             st.header("Classificar Exame")
             
