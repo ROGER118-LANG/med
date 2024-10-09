@@ -7,3 +7,4 @@ plotly
 openai
 transformers
 scipy
+psycopg2
