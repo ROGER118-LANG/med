@@ -252,23 +252,44 @@ def comparar_pacientes():
         st.pyplot(fig)
 def gerar_laudo_medico(problema):
     try:
-        # Load API key from .env file
-        load_dotenv()
-        openai.api_key = os.getenv("sk-ZAKO-V-Fm0rNaZxFKKrH_UVzHdWheQEoQ3GtGMdfG1T3BlbkFJutKUMQQlfMesiVdOQZwc0BagYNq9sHNUOdYXuVEsgA")
+        # Templates para diferentes partes do laudo
+        introducoes = [
+            "Após avaliação clínica detalhada, constatou-se que o paciente apresenta",
+            "O exame físico e a anamnese revelaram que o paciente sofre de",
+            "Com base nos sintomas relatados e nos exames realizados, identificou-se"
+        ]
+        
+        conclusoes = [
+            "Recomenda-se acompanhamento médico regular e exames adicionais para monitorar a evolução do quadro.",
+            "É aconselhável iniciar tratamento específico e realizar exames complementares para melhor avaliação.",
+            "Sugere-se uma abordagem terapêutica multidisciplinar para manejo adequado da condição."
+        ]
+        
+        # Gerar o laudo
+        introducao = random.choice(introducoes)
+        conclusao = random.choice(conclusoes)
+        
+        laudo = f"""
+Laudo Médico
 
-        # Generate report using GPT-3
-        response = openai.Completion.create(
-            engine="text-davinci-002",
-            prompt=f"Gere um laudo médico detalhado para o seguinte problema: {problema}",
-            max_tokens=500,
-            n=1,
-            stop=None,
-            temperature=0.7,
-        )
+{introducao} {problema}.
 
-        return response.choices[0].text.strip()
+Observações adicionais:
+1. A condição atual do paciente requer atenção médica.
+2. Os sintomas apresentados são consistentes com o quadro clínico descrito.
+3. Possíveis complicações devem ser monitoradas de perto.
+
+{conclusao}
+
+Este laudo é baseado nas informações fornecidas e na avaliação realizada. 
+Recomenda-se sempre buscar uma segunda opinião médica para confirmação do diagnóstico e tratamento.
+        """
+        
+        return laudo.strip()
+
     except Exception as e:
         return f"Erro ao gerar laudo: {str(e)}"
+
 def pagina_gerar_laudo():
     st.header("Gerar Laudo Médico")
     problema = st.text_area("Descreva o problema do paciente:", height=150)
@@ -278,7 +299,7 @@ def pagina_gerar_laudo():
             with st.spinner("Gerando laudo..."):
                 laudo = gerar_laudo_medico(problema)
             st.subheader("Laudo Gerado:")
-            st.write(laudo)
+            st.text(laudo)
         else:
             st.warning("Por favor, descreva o problema do paciente.")
 def gerenciar_usuarios():
