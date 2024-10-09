@@ -5,7 +5,8 @@ from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
 import io
-import random
+from transformers import pipeline, set_seed
+import torch
 import os
 import pandas as pd
 from datetime import datetime, timedelta
@@ -249,54 +250,46 @@ def comparar_pacientes():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
-def gerar_laudo_medico(problema):
+def load_model():
+    return pipeline('text-generation', model='gpt2')
+
+def gerar_laudo_medico(problema, generator):
     try:
-        # Templates para diferentes partes do laudo
-        introducoes = [
-            "Após avaliação clínica detalhada, constatou-se que o paciente apresenta",
-            "O exame físico e a anamnese revelaram que o paciente sofre de",
-            "Com base nos sintomas relatados e nos exames realizados, identificou-se"
-        ]
+        prompt = f"Laudo médico para o seguinte problema: {problema}\n\nApós avaliação clínica, constatou-se que o paciente apresenta"
         
-        conclusoes = [
-            "Recomenda-se acompanhamento médico regular e exames adicionais para monitorar a evolução do quadro.",
-            "É aconselhável iniciar tratamento específico e realizar exames complementares para melhor avaliação.",
-            "Sugere-se uma abordagem terapêutica multidisciplinar para manejo adequado da condição."
-        ]
+        # Gerar o texto
+        set_seed(42)  # Para resultados reproduzíveis
+        generated_texts = generator(prompt, max_length=300, num_return_sequences=1, temperature=0.7)
         
-        # Gerar o laudo
-        introducao = random.choice(introducoes)
-        conclusao = random.choice(conclusoes)
+        laudo = generated_texts[0]['generated_text']
         
-        laudo = f"""
+        # Formatar o laudo
+        laudo_formatado = f"""
 Laudo Médico
 
-{introducao} {problema}.
+{laudo}
 
-Observações adicionais:
-1. A condição atual do paciente requer atenção médica.
-2. Os sintomas apresentados são consistentes com o quadro clínico descrito.
-3. Possíveis complicações devem ser monitoradas de perto.
-
-{conclusao}
-
-Este laudo é baseado nas informações fornecidas e na avaliação realizada. 
-Recomenda-se sempre buscar uma segunda opinião médica para confirmação do diagnóstico e tratamento.
+Este laudo é gerado automaticamente e deve ser revisado por um profissional de saúde qualificado.
+Não deve ser considerado como diagnóstico final ou plano de tratamento sem a avaliação de um médico.
         """
         
-        return laudo.strip()
+        return laudo_formatado.strip()
 
     except Exception as e:
         return f"Erro ao gerar laudo: {str(e)}"
 
 def pagina_gerar_laudo():
     st.header("Gerar Laudo Médico")
+    
+    # Carregar o modelo
+    generator = load_model()
+    
     problema = st.text_area("Descreva o problema do paciente:", height=150)
     
     if st.button("Gerar Laudo"):
         if problema:
             with st.spinner("Gerando laudo..."):
-                laudo = gerar_laudo_medico(problema)
+                laudo = gerar_laudo_medico(problema, generator)
             st.subheader("Laudo Gerado:")
             st.text(laudo)
         else:
