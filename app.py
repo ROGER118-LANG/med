@@ -5,7 +5,6 @@ from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
 import io
-from transformers import pipeline
 import os
 import pandas as pd
 from datetime import datetime, timedelta
@@ -249,54 +248,6 @@ def comparar_pacientes():
         ax2.set_ylim(0, 1)
         
         st.pyplot(fig)
-# Desativar avisos do TensorFlow
-tf.get_logger().setLevel('ERROR')
-
-@st.cache_resource
-
-@st.cache_resource
-def load_model():
-    return pipeline('text-generation', model='gpt2')
-
-def gerar_laudo_medico(problema, generator):
-    try:
-        prompt = f"Laudo médico para o seguinte problema: {problema}\n\nApós avaliação clínica, constatou-se que o paciente apresenta"
-        
-        # Gerar o texto
-        generated_texts = generator(prompt, max_length=300, num_return_sequences=1, temperature=0.7)
-        
-        laudo = generated_texts[0]['generated_text']
-        
-        # Formatar o laudo
-        laudo_formatado = f"""
-Laudo Médico
-
-{laudo}
-
-Este laudo é gerado automaticamente e deve ser revisado por um profissional de saúde qualificado.
-Não deve ser considerado como diagnóstico final ou plano de tratamento sem a avaliação de um médico.
-        """
-        
-        return laudo_formatado.strip()
-
-    except Exception as e:
-        return f"Erro ao gerar laudo: {str(e)}"
-
-def pagina_gerar_laudo():
-    st.header("Gerar Laudo Médico")
-    
-    # Carregar o modelo
-    generator = load_model()
-    
-    problema = st.text_area("Descreva o problema do paciente:", height=150)
-    
-    if st.button("Gerar Laudo"):
-        if problema:
-            with st.spinner("Gerando laudo..."):
-                laudo = gerar_laudo_medico(problema, generator)
-            st.subheader("Laudo Gerado:")
-            st.text(laudo)
-        else:
 
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
@@ -314,7 +265,6 @@ def gerenciar_usuarios():
         df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores"])
         
         st.dataframe(df_usuario)
-
 
         st.subheader("Adicionar Usuário")
         novo_nome_usuario = st.text_input("Novo Nome de Usuário")
@@ -382,33 +332,40 @@ def main():
         # Menu lateral
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
-        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Gerar Laudo Médico"]
+
+        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
+
         st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
 
         if st.session_state.opcao_menu == "Classificar Exame":
             st.header("Classificar Exame")
+            
             setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+            
             if setor:
                 id_paciente = st.text_input("Digite o ID do Paciente:")
                 opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
                 arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+                
                 if st.button("Classificar"):
                     classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
             else:
                 st.warning("Você não tem acesso a nenhum setor.")
+
         elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
             st.header("Histórico do Paciente")
             id_paciente = st.text_input("Digite o ID do Paciente:")
             if st.button("Visualizar Histórico"):
                 visualizar_historico_paciente(id_paciente)
+
         elif st.session_state.opcao_menu == "Comparar Pacientes":
             comparar_pacientes()
-        elif st.session_state.opcao_menu == "Gerar Laudo Médico":
-            pagina_gerar_laudo()
+
         elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
             gerenciar_usuarios()
 
 if __name__ == "__main__":
     main()
+
