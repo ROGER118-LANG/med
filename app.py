@@ -371,63 +371,71 @@ def main():
             st.session_state.logado = False
             st.session_state.nome_usuario = None
             st.session_state.setores_usuario = []
-            st.rerun()
+            st.experimental_rerun()
 
         # Menu lateral
-        if 'opcao_menu' not in st.session_state:
-            st.session_state.opcao_menu = "Classificar Exame"
-
-        opcoes = ["Classificar Exame", "Visualizar Heatmap de Raio-X", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
+        opcoes = [
+            "Classificar Exame",
+            "Visualizar Heatmap de Raio-X",  # Certifique-se de que esta opção está incluída
+            "Visualizar Histórico do Paciente",
+            "Comparar Pacientes"
+        ]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
 
-        st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
+        opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes)
 
-        if st.session_state.opcao_menu == "Classificar Exame":
-            st.header("Classificar Exame")
-            
-            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-            
-            if setor:
-                id_paciente = st.text_input("Digite o ID do Paciente:")
-                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-                arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
-                
-                if st.button("Classificar"):
-                    classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
+        if opcao_menu == "Classificar Exame":
+            classificar_exame_page()
+        elif opcao_menu == "Visualizar Heatmap de Raio-X":
+            visualizar_heatmap_page()
+        elif opcao_menu == "Visualizar Histórico do Paciente":
+            visualizar_historico_page()
+        elif opcao_menu == "Comparar Pacientes":
+            comparar_pacientes_page()
+        elif opcao_menu == "Gerenciamento de Usuários":
+            gerenciar_usuarios_page()
+
+def classificar_exame_page():
+    st.header("Classificar Exame")
+    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+    if setor:
+        id_paciente = st.text_input("Digite o ID do Paciente:")
+        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+        arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+        if st.button("Classificar"):
+            classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
+    else:
+        st.warning("Você não tem acesso a nenhum setor.")
+
+def visualizar_heatmap_page():
+    st.header("Visualizar Heatmap de Raio-X")
+    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+    if setor:
+        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+        arquivo_carregado = st.file_uploader("Faça upload da imagem de raio-X", type=["jpg", "jpeg", "png"])
+        if arquivo_carregado is not None and st.button("Gerar Heatmap"):
+            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][opcao_modelo], caminhos_rotulos[setor][opcao_modelo])
+            if modelo is not None and nomes_classes is not None:
+                imagem_processada = preprocessar_imagem(arquivo_carregado)
+                if imagem_processada is not None:
+                    nome_classe, pontuacao_confianca, fig_heatmap = process_xray_with_heatmap(modelo, imagem_processada, nomes_classes)
+                    st.write(f"Classe prevista: {nome_classe}")
+                    st.write(f"Pontuação de confiança: {pontuacao_confianca:.2f}")
+                    st.pyplot(fig_heatmap)
+                else:
+                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
             else:
-                st.warning("Você não tem acesso a nenhum setor.")
+                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
 
-        elif st.session_state.opcao_menu == "Visualizar Heatmap de Raio-X":
-            st.header("Visualizar Heatmap de Raio-X")
-            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-            
-            if setor:
-                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-                arquivo_carregado = st.file_uploader("Faça upload da imagem de raio-X", type=["jpg", "jpeg", "png"])
-                
-                if arquivo_carregado is not None and st.button("Gerar Heatmap"):
-                    modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][opcao_modelo], caminhos_rotulos[setor][opcao_modelo])
-                    if modelo is not None and nomes_classes is not None:
-                        imagem_processada = preprocessar_imagem(arquivo_carregado)
-                        if imagem_processada is not None:
-                            nome_classe, pontuacao_confianca, fig_heatmap = process_xray_with_heatmap(modelo, imagem_processada, nomes_classes)
-                            st.write(f"Classe prevista: {nome_classe}")
-                            st.write(f"Pontuação de confiança: {pontuacao_confianca:.2f}")
-                            st.pyplot(fig_heatmap)
-                        else:
-                            st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
-                    else:
-                        st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+def visualizar_historico_page():
+    st.header("Histórico do Paciente")
+    id_paciente = st.text_input("Digite o ID do Paciente:")
+    if st.button("Visualizar Histórico"):
+        visualizar_historico_paciente(id_paciente)
 
-        elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
-            st.header("Histórico do Paciente")
-            id_paciente = st.text_input("Digite o ID do Paciente:")
-            if st.button("Visualizar Histórico"):
-                visualizar_historico_paciente(id_paciente)
+def comparar_pacientes_page():
+    comparar_pacientes()
 
-        elif st.session_state.opcao_menu == "Comparar Pacientes":
-            comparar_pacientes()
-
-        elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
-            gerenciar_usuarios()
+def gerenciar_usuarios_page():
+    gerenciar_usuarios()
