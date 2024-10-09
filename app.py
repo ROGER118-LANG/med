@@ -364,16 +364,11 @@ def main():
         # Menu lateral
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
-
- # Menu lateral
-        if 'opcao_menu' not in st.session_state:
-            st.session_state.opcao_menu = "Classificar Exame"
         opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Gerar Laudo Médico"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
         st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
 
-     
         if st.session_state.opcao_menu == "Classificar Exame":
             st.header("Classificar Exame")
             
@@ -388,17 +383,15 @@ def main():
                     classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
             else:
                 st.warning("Você não tem acesso a nenhum setor.")
- elif st.session_state.opcao_menu == "Gerar Laudo Médico":
-            pagina_gerar_laudo()
         elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
             st.header("Histórico do Paciente")
             id_paciente = st.text_input("Digite o ID do Paciente:")
             if st.button("Visualizar Histórico"):
                 visualizar_historico_paciente(id_paciente)
-
         elif st.session_state.opcao_menu == "Comparar Pacientes":
             comparar_pacientes()
-
+        elif st.session_state.opcao_menu == "Gerar Laudo Médico":
+            pagina_gerar_laudo()
         elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
             gerenciar_usuarios()
 
