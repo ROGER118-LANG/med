@@ -6,3 +6,4 @@ seaborn
 plotly
 openai
 transformers
+scipy
