@@ -434,8 +434,29 @@ def visualizar_historico_page():
     if st.button("Visualizar Histórico"):
         visualizar_historico_paciente(id_paciente)
 
-def comparar_pacientes_page():
-    comparar_pacientes()
+
 
 def gerenciar_usuarios_page():
     gerenciar_usuarios()
+        st.subheader("Adicionar Usuário")
+        novo_nome_usuario = st.text_input("Novo Nome de Usuário")
+        nova_senha = st.text_input("Nova Senha", type="password")
+        nova_funcao = st.selectbox("Função", ["usuário", "admin"])
+        dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
+        novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
+
+        if st.button("Criar Usuário"):
+            if novo_nome_usuario and nova_senha:
+                # Lógica para adicionar novo usuário
+                st.success("Usuário criado com sucesso!")
+            else:
+                st.error("Por favor, preencha todos os campos obrigatórios.")
+
+# Adicionar mais seções conforme necessário
+
+# Se o usuário estiver logado, mostre o painel principal
+if st.session_state.logado:
+    # Adicionar painel principal aqui
+    pass
+else:
+    pagina_login()
