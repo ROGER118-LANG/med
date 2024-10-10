@@ -40,7 +40,11 @@ caminhos_modelos = {
         "Tumor Cerebral": "tumor_cerebral_model.h5"
     },
     "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_model.h5"
+        "Braço Fraturado": "fractured_arm_model.h5",
+        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
+        "ACL": "acl_model.h5",
+        "Entorse de Tornozelo": "ankle_sprain_model.h5",
+        "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
     }
 }
 
@@ -54,7 +58,11 @@ caminhos_rotulos = {
         "Tumor Cerebral": "tumor_cerebral_labels.txt"
     },
     "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_labels.txt"
+        "Braço Fraturado": "fractured_arm_labels.txt",
+        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
+        "ACL": "acl_labels.txt",
+        "Entorse de Tornozelo": "ankle_sprain_labels.txt",
+        "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }
 }
 
