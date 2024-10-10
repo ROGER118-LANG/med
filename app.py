@@ -12,7 +12,10 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+def custom_depthwise_conv2d(*args, **kwargs):
+    if 'groups' in kwargs:
+        kwargs.pop('groups')
+    return DepthwiseConv2D(*args, **kwargs)
 # Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
@@ -64,11 +67,7 @@ caminhos_rotulos = {
         "Entorse de Tornozelo": "ankle_sprain_labels.txt",
         "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }
-}
 
-def custom_depthwise_conv2d(*args, **kwargs):
-    kwargs.pop('groups', None)
-    return DepthwiseConv2D(*args, **kwargs)
 
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
@@ -79,7 +78,7 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
         
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             modelo = load_model(caminho_modelo, compile=False)
-        
+        ;
         with open(caminho_rotulos, "r") as f:
             nomes_classes = f.readlines()
         return modelo, nomes_classes
