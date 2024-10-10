@@ -64,6 +64,12 @@ caminhos_rotulos = {
         "Entorse de Tornozelo": "ankle_sprain_labels.txt",
         "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }}
+# Defina a função custom_depthwise_conv2d antes de usá-la
+def custom_depthwise_conv2d(*args, **kwargs):
+    if 'groups' in kwargs:
+        kwargs.pop('groups')
+    return DepthwiseConv2D(*args, **kwargs)
+
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
         if not os.path.exists(caminho_modelo):
