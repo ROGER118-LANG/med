@@ -364,19 +364,16 @@ Last edited just now
 
 
 
-
-        elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
-            st.header("Histórico do Paciente")
-            id_paciente = st.text_input("Digite o ID do Paciente:")
-            if st.button("Visualizar Histórico"):
-                visualizar_historico_paciente(id_paciente)
-
-        elif st.session_state.opcao_menu == "Comparar Pacientes":
-            comparar_pacientes()
-
-        elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
-            gerenciar_usuarios()
+    elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
+        st.header("Histórico do Paciente")
+        id_paciente = st.text_input("Digite o ID do Paciente:")
+        if st.button("Visualizar Histórico"):
+            visualizar_historico_paciente(id_paciente)
+    elif st.session_state.opcao_menu == "Comparar Pacientes":
+        comparar_pacientes()
+    elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
+        gerenciar_usuarios()
 
 if __name__ == "__main__":
-    main()
+    main(
 
