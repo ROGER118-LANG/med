@@ -12,10 +12,7 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-def custom_depthwise_conv2d(*args, **kwargs):
-    if 'groups' in kwargs:
-        kwargs.pop('groups')
-    return DepthwiseConv2D(*args, **kwargs)
+
 # Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
@@ -67,8 +64,6 @@ caminhos_rotulos = {
         "Entorse de Tornozelo": "ankle_sprain_labels.txt",
         "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }
-
-
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
         if not os.path.exists(caminho_modelo):
@@ -78,7 +73,7 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
         
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             modelo = load_model(caminho_modelo, compile=False)
-        ;
+        
         with open(caminho_rotulos, "r") as f:
             nomes_classes = f.readlines()
         return modelo, nomes_classes
@@ -86,16 +81,7 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
 
-def prever(modelo, dados, nomes_classes):
-    try:
-        previsao = modelo.predict(dados)
-        indice = np.argmax(previsao)
-        nome_classe = nomes_classes[indice]
-        pontuacao_confianca = float(previsao[0][indice])
-        return nome_classe.strip(), pontuacao_confianca
-    except Exception as e:
-        st.error(f"Erro durante a previsão: {str(e)}")
-        return None, None
+
 
 def preprocessar_imagem(arquivo_carregado):
     try:
@@ -124,32 +110,35 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
         try:
             modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
             
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
-                
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
-                    
-                    if nome_classe is not None and pontuacao_confianca is not None:
-                        resultado = {
-                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'modelo': opcao_modelo,
-                            'classe': nome_classe,
-                            'confianca': pontuacao_confianca
-                        }
-                        
-                        if id_paciente not in st.session_state.historico_paciente:
-                            st.session_state.historico_paciente[id_paciente] = []
-                        st.session_state.historico_paciente[id_paciente].append(resultado)
-                        
-                        st.success("Exame classificado com sucesso!")
-                        return resultado
-                    else:
-                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
-                else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
-            else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+            if modelo is None or nomes_classes is None:
+                st.error("Falha ao carregar o modelo ou rótulos. Verifique os arquivos e tente novamente.")
+                return None
+            
+            imagem_processada = preprocessar_imagem(arquivo_carregado)
+            
+            if imagem_processada is None:
+                st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
+                return None
+            
+            nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
+            
+            if nome_classe is None or pontuacao_confianca is None:
+                st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
+                return None
+            
+            resultado = {
+                'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'modelo': opcao_modelo,
+                'classe': nome_classe,
+                'confianca': pontuacao_confianca
+            }
+            
+            if id_paciente not in st.session_state.historico_paciente:
+                st.session_state.historico_paciente[id_paciente] = []
+            st.session_state.historico_paciente[id_paciente].append(resultado)
+            
+            st.success("Exame classificado com sucesso!")
+            return resultado
         except Exception as e:
             st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
