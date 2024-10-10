@@ -324,6 +324,7 @@ def gerenciar_usuarios():
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
 
+
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
@@ -346,34 +347,34 @@ def main():
             opcoes.append("Gerenciamento de Usuários")
 
         st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
-if st.session_state.opcao_menu == "Classificar Exame":
-        st.header("Classificar Exame")
-        
-        setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-        
-        if setor:
-            id_paciente = st.text_input("Digite o ID do Paciente:")
-            opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-            arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+
+        if st.session_state.opcao_menu == "Classificar Exame":
+            st.header("Classificar Exame")
             
-            if st.button("Classificar"):
-                classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
-        else:
-            st.warning("Você não tem acesso a nenhum setor.")
-Last edited just now
+            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+            
+            if setor:
+                id_paciente = st.text_input("Digite o ID do Paciente:")
+                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+                arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+                
+                if st.button("Classificar"):
+                    classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
+            else:
+                st.warning("Você não tem acesso a nenhum setor.")
 
-
-
-    elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
-        st.header("Histórico do Paciente")
-        id_paciente = st.text_input("Digite o ID do Paciente:")
-        if st.button("Visualizar Histórico"):
-            visualizar_historico_paciente(id_paciente)
-    elif st.session_state.opcao_menu == "Comparar Pacientes":
-        comparar_pacientes()
-    elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
-        gerenciar_usuarios()
+        elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
+            st.header("Histórico do Paciente")
+            id_paciente = st.text_input("Digite o ID do Paciente:")
+            if st.button("Visualizar Histórico"):
+                visualizar_historico_paciente(id_paciente)
+        elif st.session_state.opcao_menu == "Comparar Pacientes":
+            comparar_pacientes()
+        elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
+            gerenciar_usuarios()
 
 if __name__ == "__main__":
-    main(
+    main()
+
+
 
