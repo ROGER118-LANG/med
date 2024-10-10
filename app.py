@@ -63,7 +63,7 @@ caminhos_rotulos = {
         "ACL": "acl_labels.txt",
         "Entorse de Tornozelo": "ankle_sprain_labels.txt",
         "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
-    }
+    }}
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
         if not os.path.exists(caminho_modelo):
@@ -79,7 +79,7 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
         return modelo, nomes_classes
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
-    }  return None, None
+     return None, None
 
 
 
