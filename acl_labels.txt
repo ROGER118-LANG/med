@@ -1,0 +1,2 @@
+0 ACL normal
+1 ACL FRATURA 
