@@ -79,7 +79,7 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
         return modelo, nomes_classes
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
-        return None, None
+    }  return None, None
 
 
 
