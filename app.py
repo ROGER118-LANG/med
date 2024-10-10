@@ -102,7 +102,16 @@ def preprocessar_imagem(arquivo_carregado):
     except Exception as e:
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
-
+def prever(modelo, dados, nomes_classes):
+    try:
+        previsao = modelo.predict(dados)
+        indice = np.argmax(previsao)
+        nome_classe = nomes_classes[indice]
+        pontuacao_confianca = float(previsao[0][indice])
+        return nome_classe.strip(), pontuacao_confianca
+    except Exception as e:
+        st.error(f"Erro durante a previsão: {str(e)}")
+        return None, None
 def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
     if arquivo_carregado is not None:
         st.write(f"Opção de modelo selecionada: {opcao_modelo}")
