@@ -346,21 +346,24 @@ def main():
             opcoes.append("Gerenciamento de Usuários")
 
         st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
+if st.session_state.opcao_menu == "Classificar Exame":
+        st.header("Classificar Exame")
+        
+        setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+        
+        if setor:
+            id_paciente = st.text_input("Digite o ID do Paciente:")
+            opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+            arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+            
+            if st.button("Classificar"):
+                classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
+        else:
+            st.warning("Você não tem acesso a nenhum setor.")
+Last edited just now
 
-        if st.session_state.opcao_menu == "Classificar Exame":
-            st.header("Classificar Exame")
-            
-            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-            
-            if setor:
-                id_paciente = st.text_input("Digite o ID do Paciente:")
-                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-                arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
-                
-                if st.button("Classificar"):
-                    classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
-            else:
-                st.warning("Você não tem acesso a nenhum setor.")
+
+
 
         elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
             st.header("Histórico do Paciente")
