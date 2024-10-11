@@ -335,7 +335,7 @@ def generate_report(patient_id):
         # Summary statistics
         st.write("Summary Statistics:")
         st.write(f"Total exams: {len(df)}")
-st.write(f"Average confidence score: {df['confidence'].mean():.2f}")
+        st.write(f"Average confidence score: {df['confidence'].mean():.2f}")
         st.write(f"Most recent exam: {df['date'].max()}")
         
         # Exam history table
@@ -356,6 +356,8 @@ st.write(f"Average confidence score: {df['confidence'].mean():.2f}")
         
         # Generate PDF report
         generate_pdf_report(patient_id, df)
+    else:
+        st.error(f"No history found for patient {patient_id}")
 
 def generate_pdf_report(patient_id, df):
     try:
