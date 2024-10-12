@@ -4,6 +4,8 @@ from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
 from PIL import Image, ImageOps
 import numpy as np
+from scipy.ndimage import zoom
+import plotly.graph_objects as go
 import io
 import os
 import pandas as pd
@@ -12,8 +14,6 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import plotly.graph_objects as go
-from scipy.ndimage import zoom
 
 # Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
@@ -325,22 +325,23 @@ def gerenciar_usuarios():
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
+
 def converter_raio_x_para_3d(imagem):
-    # Convert the image to grayscale
+    # Converte a imagem para escala de cinza
     imagem_cinza = imagem.convert('L')
-    # Convert to numpy array
+    # Converte para array numpy
     array_imagem = np.array(imagem_cinza)
     
-    # Normalize values to [0, 1] range
+    # Normaliza valores para o intervalo [0, 1]
     array_normalizado = array_imagem / 255.0
     
-    # Create a 3D matrix from the 2D image
+    # Cria uma matriz 3D a partir da imagem 2D
     altura, largura = array_normalizado.shape
-    profundidade = 50  # You can adjust this value
+    profundidade = 50  # Você pode ajustar este valor
     matriz_3d = np.repeat(array_normalizado[:, :, np.newaxis], profundidade, axis=2)
     
-    # Apply zoom factor to smooth the visualization
-    fator_zoom = [0.5, 0.5, 0.5]  # Reduce resolution by half in each dimension
+    # Aplica fator de zoom para suavizar a visualização
+    fator_zoom = [0.5, 0.5, 0.5]  # Reduz a resolução pela metade em cada dimensão
     matriz_3d_suavizada = zoom(matriz_3d, fator_zoom)
     
     return matriz_3d_suavizada
@@ -348,18 +349,19 @@ def converter_raio_x_para_3d(imagem):
 def visualizar_raio_x_3d(matriz_3d):
     x, y, z = matriz_3d.shape
     
-    # Create 3D figure
+    # Cria figura 3D
     fig = go.Figure(data=go.Volume(
         x=np.arange(x),
         y=np.arange(y),
         z=np.arange(z),
         value=matriz_3d.flatten(),
-        opacity=0.1,  # Adjust opacity as needed
-        surface_count=17,  # Adjust for more or less detail
+        opacity=0.1,  # Ajuste a opacidade conforme necessário
+        surface_count=17,  # Ajuste para mais ou menos detalhes
         colorscale='Greys',
+        caps=dict(x_show=False, y_show=False, z_show=False)  # Oculta as "tampas" do volume
     ))
     
-    # Configure layout
+    # Configura o layout
     fig.update_layout(
         scene=dict(
             xaxis_title='X',
@@ -369,28 +371,11 @@ def visualizar_raio_x_3d(matriz_3d):
         ),
         width=700,
         height=700,
-        title="3D X-ray Visualization"
+        title="Visualização 3D de Raio-X"
     )
     
     return fig
 
-def pagina_visualizacao_3d():
-    st.header("3D X-ray Visualization")
-    
-    arquivo_carregado = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
-    
-    if arquivo_carregado is not None:
-        imagem = Image.open(arquivo_carregado)
-        st.image(imagem, caption="Original X-ray", use_column_width=True)
-        
-        if st.button("Convert to 3D"):
-            with st.spinner("Converting to 3D..."):
-                matriz_3d = converter_raio_x_para_3d(imagem)
-                fig_3d = visualizar_raio_x_3d(matriz_3d)
-                st.plotly_chart(fig_3d)
-                st.success("3D visualization generated successfully!")
-    else:
-        st.info("Please upload an X-ray image.")
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
@@ -401,13 +386,13 @@ def pagina_visualizacao_3d():
         st.image(imagem, caption="Raio-X Original", use_column_width=True)
         
         if st.button("Converter para 3D"):
-            matriz_3d = converter_raio_x_para_3d(imagem)
-            fig_3d = visualizar_raio_x_3d(matriz_3d)
-            st.plotly_chart(fig_3d)
-            st.success("Visualização 3D gerada com sucesso!")
+            with st.spinner("Convertendo para 3D..."):
+                matriz_3d = converter_raio_x_para_3d(imagem)
+                fig_3d = visualizar_raio_x_3d(matriz_3d)
+                st.plotly_chart(fig_3d)
+                st.success("Visualização 3D gerada com sucesso!")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
-
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
