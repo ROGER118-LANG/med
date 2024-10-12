@@ -14,9 +14,9 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-# Carregue seus dados
+
+# Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
-# Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
 # Inicializar estado da sessão
@@ -325,12 +325,12 @@ def gerenciar_usuarios():
     
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
+
 def reduzir_resolucao_matriz(matriz_3d, fator=0.5):
     """Reduz a resolução da matriz 3D em um fator especificado."""
     matriz_reduzida = zoom(matriz_3d, (fator, fator, fator))
     return matriz_reduzida
 
-# Função para converter imagem 2D em matriz 3D
 def converter_raio_x_para_3d(imagem, profundidade=20):
     """Converte a imagem de Raio-X para uma matriz 3D."""
     # Converte a imagem para escala de cinza
@@ -341,28 +341,31 @@ def converter_raio_x_para_3d(imagem, profundidade=20):
     # Normaliza valores para o intervalo [0, 1]
     array_normalizado = array_imagem.astype(float) / 255.0
     
-    # Ajusta a profundidade da matriz 3D
-    altura, largura = array_normalizado.shape
-    profundidade = min(profundidade, min(altura, largura) // 2)  # Limita a profundidade para não exceder limites
-    matriz_3d = np.repeat(array_normalizado[:, :, np.newaxis], profundidade, axis=2)
+    # Cria a matriz 3D
+    matriz_3d = np.zeros((profundidade, *array_normalizado.shape))
+    for i in range(profundidade):
+        matriz_3d[i] = array_normalizado * (1 - i/profundidade)
     
     return matriz_3d
 
-# Função para visualizar a matriz 3D com Plotly
-def visualizar_raio_x_3d(matriz_3d, surface_count=5):
+def visualizar_raio_x_3d(matriz_3d, surface_count=20):
     """Cria uma visualização 3D do Raio-X a partir da matriz 3D."""
-    x, y, z = matriz_3d.shape
+    z, y, x = matriz_3d.shape
+    
+    # Cria uma malha de coordenadas
+    X, Y, Z = np.mgrid[0:x:complex(0, x), 0:y:complex(0, y), 0:z:complex(0, z)]
     
     # Cria figura 3D
     fig = go.Figure(data=go.Volume(
-        x=np.arange(x),
-        y=np.arange(y),
-        z=np.arange(z),
+        x=X.flatten(),
+        y=Y.flatten(),
+        z=Z.flatten(),
         value=matriz_3d.flatten(),
+        isomin=0.1,
+        isomax=0.8,
         opacity=0.1,
-        surface_count=surface_count,  # Diminui a quantidade de superfícies
+        surface_count=surface_count,
         colorscale='Greys',
-        caps=dict(x_show=False, y_show=False, z_show=False)
     ))
     
     # Configura o layout
@@ -380,7 +383,6 @@ def visualizar_raio_x_3d(matriz_3d, surface_count=5):
     
     return fig
 
-# Página principal para visualização 3D
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
@@ -398,10 +400,14 @@ def pagina_visualizacao_3d():
                 with st.spinner("Convertendo para 3D..."):
                     # Converte a imagem em uma matriz 3D
                     matriz_3d = converter_raio_x_para_3d(imagem, profundidade=20)
-                    matriz_3d_reduzida = reduzir_resolucao_matriz(matriz_3d, fator=0.5)  # Reduz a resolução da matriz
+                    
+                    # Reduz a resolução da matriz se necessário
+                    if matriz_3d.size > 5_000_000:  # Ajuste este valor conforme necessário
+                        fator = (5_000_000 / matriz_3d.size) ** (1/3)
+                        matriz_3d = reduzir_resolucao_matriz(matriz_3d, fator=fator)
                     
                     # Gera o gráfico 3D
-                    fig_3d = visualizar_raio_x_3d(matriz_3d_reduzida, surface_count=5)
+                    fig_3d = visualizar_raio_x_3d(matriz_3d, surface_count=20)
                     st.plotly_chart(fig_3d, use_container_width=True)
                     st.success("Visualização 3D gerada com sucesso!")
         
@@ -409,6 +415,7 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
+
 def main():
     st.title("MedVision")
     
@@ -452,10 +459,10 @@ def main():
                 comparar_pacientes()
             
             elif opcao_menu == "Visualização 3D de Raio-X":
-                pagina_visualizacao_3d()  # Chama a função de visualização 3D
+                pagina_visualizacao_3d()
             
             elif opcao_menu == "Gerenciamento de Usuários" and st.session_state.nome_usuario == 'admin':
-                gerenciar_usuarios()  # Somente administradores podem acessar esta função
+                gerenciar_usuarios()
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
