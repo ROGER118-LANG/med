@@ -394,8 +394,7 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
-
-    def main():
+def main():
     st.title("MedVision")
     
     try:
