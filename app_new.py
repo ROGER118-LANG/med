@@ -325,9 +325,7 @@ def gerenciar_usuarios():
     
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
-
-
-def converter_raio_x_para_3d(imagem):
+def converter_raio_x_para_3d(imagem, profundidade=20):
     # Converte a imagem para escala de cinza
     imagem_cinza = imagem.convert('L')
     # Converte para array numpy
@@ -336,12 +334,24 @@ def converter_raio_x_para_3d(imagem):
     # Normaliza valores para o intervalo [0, 1]
     array_normalizado = array_imagem.astype(float) / 255.0
     
-    # Cria uma matriz 3D a partir da imagem 2D
+    # Ajusta a profundidade da matriz 3D
     altura, largura = array_normalizado.shape
-    profundidade = min(50, min(altura, largura) // 2)  # Ajusta a profundidade com base no tamanho da imagem
+    profundidade = min(profundidade, min(altura, largura) // 2)  # Reduz a profundidade para não exceder limites
     matriz_3d = np.repeat(array_normalizado[:, :, np.newaxis], profundidade, axis=2)
     
     return matriz_3d
+
+# Exemplo: limitar a profundidade da matriz 3D para 20 camadas
+matriz_3d_reduzida = converter_raio_x_para_3d(imagem, profundidade=20)
+
+
+def reduzir_resolucao_matriz(matriz_3d, fator=0.5):
+    # Reduz a resolução da matriz 3D em um fator especificado
+    matriz_reduzida = zoom(matriz_3d, (fator, fator, fator))
+    return matriz_reduzida
+
+# Exemplo: reduzir a matriz 3D pela metade
+matriz_3d_reduzida = reduzir_resolucao_matriz(matriz_3d, fator=0.5)
 
 def visualizar_raio_x_3d(matriz_3d):
     x, y, z = matriz_3d.shape
