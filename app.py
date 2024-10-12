@@ -457,7 +457,10 @@ def main():
                     st.header("Classificar Exame")
                     id_paciente = st.text_input("ID do Paciente")
                     
+                    # Primeiro, escolha o setor
                     setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
+                    
+                    # Depois, escolha o modelo dentro do setor selecionado
                     modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
                     
                     opcao_modelo = f"{setor}_{modelo}"
