@@ -14,7 +14,21 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+# Carregue seus dados
+df = pd.read_csv("seu_arquivo_grande.csv")
 
+# Defina o tamanho da página
+page_size = 1000
+
+# Crie um seletor de página
+page_number = st.number_input("Página", min_value=1, max_value=len(df) // page_size + 1, value=1)
+
+# Calcule o início e o fim do slice
+start_idx = (page_number - 1) * page_size
+end_idx = start_idx + page_size
+
+# Exiba apenas a parte selecionada dos dados
+st.dataframe(df.iloc[start_idx:end_idx])
 # Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
