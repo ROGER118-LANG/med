@@ -325,7 +325,14 @@ def gerenciar_usuarios():
     
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
+def reduzir_resolucao_matriz(matriz_3d, fator=0.5):
+    """Reduz a resolução da matriz 3D em um fator especificado."""
+    matriz_reduzida = zoom(matriz_3d, (fator, fator, fator))
+    return matriz_reduzida
+
+# Função para converter imagem 2D em matriz 3D
 def converter_raio_x_para_3d(imagem, profundidade=20):
+    """Converte a imagem de Raio-X para uma matriz 3D."""
     # Converte a imagem para escala de cinza
     imagem_cinza = imagem.convert('L')
     # Converte para array numpy
@@ -336,24 +343,14 @@ def converter_raio_x_para_3d(imagem, profundidade=20):
     
     # Ajusta a profundidade da matriz 3D
     altura, largura = array_normalizado.shape
-    profundidade = min(profundidade, min(altura, largura) // 2)  # Reduz a profundidade para não exceder limites
+    profundidade = min(profundidade, min(altura, largura) // 2)  # Limita a profundidade para não exceder limites
     matriz_3d = np.repeat(array_normalizado[:, :, np.newaxis], profundidade, axis=2)
     
     return matriz_3d
 
-# Exemplo: limitar a profundidade da matriz 3D para 20 camadas
-matriz_3d_reduzida = converter_raio_x_para_3d(imagem, profundidade=20)
-
-
-def reduzir_resolucao_matriz(matriz_3d, fator=0.5):
-    # Reduz a resolução da matriz 3D em um fator especificado
-    matriz_reduzida = zoom(matriz_3d, (fator, fator, fator))
-    return matriz_reduzida
-
-# Exemplo: reduzir a matriz 3D pela metade
-matriz_3d_reduzida = reduzir_resolucao_matriz(matriz_3d, fator=0.5)
-
-def visualizar_raio_x_3d(matriz_3d):
+# Função para visualizar a matriz 3D com Plotly
+def visualizar_raio_x_3d(matriz_3d, surface_count=5):
+    """Cria uma visualização 3D do Raio-X a partir da matriz 3D."""
     x, y, z = matriz_3d.shape
     
     # Cria figura 3D
@@ -363,7 +360,7 @@ def visualizar_raio_x_3d(matriz_3d):
         z=np.arange(z),
         value=matriz_3d.flatten(),
         opacity=0.1,
-        surface_count=15,
+        surface_count=surface_count,  # Diminui a quantidade de superfícies
         colorscale='Greys',
         caps=dict(x_show=False, y_show=False, z_show=False)
     ))
@@ -383,23 +380,31 @@ def visualizar_raio_x_3d(matriz_3d):
     
     return fig
 
-
+# Página principal para visualização 3D
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
+    # Upload da imagem de Raio-X
     arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["png", "jpg", "jpeg"], key="visualizacao_3d_uploader")
     
     if arquivo_carregado is not None:
         try:
+            # Abre a imagem usando PIL
             imagem = Image.open(arquivo_carregado)
             st.image(imagem, caption="Raio-X Original", use_column_width=True)
             
+            # Botão para converter a imagem em 3D
             if st.button("Converter para 3D"):
                 with st.spinner("Convertendo para 3D..."):
-                    matriz_3d = converter_raio_x_para_3d(imagem)
-                    fig_3d = visualizar_raio_x_3d(matriz_3d)
+                    # Converte a imagem em uma matriz 3D
+                    matriz_3d = converter_raio_x_para_3d(imagem, profundidade=20)
+                    matriz_3d_reduzida = reduzir_resolucao_matriz(matriz_3d, fator=0.5)  # Reduz a resolução da matriz
+                    
+                    # Gera o gráfico 3D
+                    fig_3d = visualizar_raio_x_3d(matriz_3d_reduzida, surface_count=5)
                     st.plotly_chart(fig_3d, use_container_width=True)
                     st.success("Visualização 3D gerada com sucesso!")
+        
         except Exception as e:
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
