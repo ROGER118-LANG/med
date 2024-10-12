@@ -372,6 +372,7 @@ def visualizar_raio_x_3d(matriz_3d):
     )
     
     return fig
+
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
@@ -392,9 +393,6 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
-
-    st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
-    pagina_visualizacao_3d()
 def main():
     inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
