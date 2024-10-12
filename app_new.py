@@ -14,6 +14,7 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+from skimage import measure
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -335,48 +336,43 @@ def reduzir_resolucao_matriz(matriz_3d, max_size=5_000_000):
     fator = (max_size / current_size) ** (1/3)
     return zoom(matriz_3d, (fator, fator, fator))
 
-def converter_raio_x_para_3d(imagem, profundidade=20):
+def converter_raio_x_para_3d(imagem, profundidade=50):
     """Converte a imagem de Raio-X para uma matriz 3D."""
-    # Converte a imagem para escala de cinza
     imagem_cinza = imagem.convert('L')
-    # Converte para array numpy
     array_imagem = np.array(imagem_cinza)
-    
-    # Normaliza valores para o intervalo [0, 1]
     array_normalizado = array_imagem.astype(float) / 255.0
     
-    # Cria a matriz 3D
-    matriz_3d = np.zeros((profundidade, *array_normalizado.shape))
-    for i in range(profundidade):
-        matriz_3d[i] = array_normalizado * (1 - i/profundidade)
+    # Cria a matriz 3D usando repetição e gradiente
+    matriz_3d = np.repeat(array_normalizado[np.newaxis, :, :], profundidade, axis=0)
+    gradiente = np.linspace(1, 0.5, profundidade)[:, np.newaxis, np.newaxis]
+    matriz_3d *= gradiente
     
     return matriz_3d
 
-def visualizar_raio_x_3d(imagem, profundidade=10, surface_count=5):
+def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
     """Cria uma visualização 3D do Raio-X a partir da imagem."""
-    # Converte a imagem para uma matriz 3D
     matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
-    
-    # Reduz a resolução da matriz
-    matriz_3d = reduzir_resolucao_matriz(matriz_3d, max_size=1_000_000)
+    matriz_3d = reduzir_resolucao_matriz(matriz_3d, max_size=5_000_000)
     
     z, y, x = matriz_3d.shape
     
-    # Cria uma malha de coordenadas reduzida
-    X, Y, Z = np.mgrid[0:x:complex(0, min(x, 50)), 0:y:complex(0, min(y, 50)), 0:z:complex(0, min(z, 50))]
+    fig = go.Figure()
     
-    # Cria figura 3D
-    fig = go.Figure(data=go.Volume(
-        x=X.flatten(),
-        y=Y.flatten(),
-        z=Z.flatten(),
-        value=matriz_3d[::max(1, z//50), ::max(1, y//50), ::max(1, x//50)].flatten(),
-        isomin=0.1,
-        isomax=0.8,
-        opacity=0.1,
-        surface_count=surface_count,
-        colorscale='Greys',
-    ))
+    # Cria isosurfaces
+    valores_iso = np.linspace(matriz_3d.min(), matriz_3d.max(), num_isosurfaces + 2)[1:-1]
+    for valor_iso in valores_iso:
+        verts, faces, _, _ = measure.marching_cubes(matriz_3d, valor_iso)
+        x_mesh, y_mesh, z_mesh = verts.T
+        i, j, k = faces.T
+        
+        fig.add_trace(go.Mesh3d(
+            x=x_mesh, y=y_mesh, z=z_mesh,
+            i=i, j=j, k=k,
+            opacity=0.3,
+            colorscale='Greys',
+            intensity=z_mesh,
+            intensitymode='vertex',
+        ))
     
     # Configura o layout
     fig.update_layout(
@@ -403,9 +399,12 @@ def pagina_visualizacao_3d():
             imagem = Image.open(arquivo_carregado)
             st.image(imagem, caption="Raio-X Original", use_column_width=True)
             
+            profundidade = st.slider("Profundidade da visualização 3D", min_value=10, max_value=100, value=50, step=10)
+            num_isosurfaces = st.slider("Número de isosuperfícies", min_value=1, max_value=10, value=5, step=1)
+            
             if st.button("Converter para 3D"):
                 with st.spinner("Convertendo para 3D..."):
-                    fig_3d = visualizar_raio_x_3d(imagem, profundidade=10, surface_count=5)
+                    fig_3d = visualizar_raio_x_3d(imagem, profundidade=profundidade, num_isosurfaces=num_isosurfaces)
                     st.plotly_chart(fig_3d, use_container_width=True)
                     st.success("Visualização 3D gerada com sucesso!")
         
