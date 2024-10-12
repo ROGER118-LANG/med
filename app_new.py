@@ -208,10 +208,12 @@ def atualizar_ultimo_login(nome_usuario):
     wb.save(ARQUIVO_LOGIN)
 
 def pagina_login():
+    st.write("Debug: Entering login page")
     st.title("Login")
     nome_usuario = st.text_input("Nome de Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
+        st.write("Debug: Login button pressed")
         sucesso_login, mensagem, setores, paginas_acessiveis = verificar_login(nome_usuario, senha)
         if sucesso_login:
             st.session_state.logado = True
@@ -358,6 +360,7 @@ def converter_raio_x_para_3d(imagem, profundidade=50):
 def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
     """Cria uma visualização 3D do Raio-X a partir da imagem."""
     try:
+        st.write("Debug: Starting 3D visualization")
         matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
         matriz_3d = reduzir_resolucao_matriz(matriz_3d)
         
@@ -392,12 +395,14 @@ def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
             title="Visualização 3D de Raio-X"
         )
         
+        st.write("Debug: 3D visualization generated successfully")
         return fig
     except Exception as e:
         st.error(f"Erro ao gerar visualização 3D: {str(e)}")
         return None
 
 def pagina_visualizacao_3d():
+    st.write("Debug: Entering 3D visualization page")
     st.header("Visualização 3D de Raio-X")
     
     arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["png", "jpg", "jpeg"], key="visualizacao_3d_uploader")
@@ -425,14 +430,20 @@ def pagina_visualizacao_3d():
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
 
 def main():
+    st.write("Debug: Starting main function")
     st.title("MedVision")
     
     try:
         inicializar_arquivo_login()  # Inicializa o arquivo de login
         
         if not st.session_state.logado:
+            st.write("Debug: User not logged in, showing login page")
             pagina_login()  # Exibe a página de login se não estiver logado
         else:
+            st.write(f"Debug: User logged in as {st.session_state.nome_usuario}")
+            st.write(f"Debug: User has access to sectors: {st.session_state.setores_usuario}")
+            st.write(f"Debug: User has access to pages: {st.session_state.paginas_acessiveis}")
+
             st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
             if st.sidebar.button("Sair"):
                 st.session_state.logado = False
@@ -447,12 +458,14 @@ def main():
                 todas_opcoes.append("Gerenciamento de Usuários")
             
             opcoes_disponiveis = [opcao for opcao in todas_opcoes if opcao in st.session_state.paginas_acessiveis]
-            
+            st.write(f"Debug: Available menu options: {opcoes_disponiveis}")
+
             if opcoes_disponiveis:
                 opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
 
                 # Chamando as funções correspondentes às opções selecionadas
                 if opcao_menu == "Classificar Exame":
+                    st.write("Debug: Entering Classificar Exame section")
                     st.header("Classificar Exame")
                     id_paciente = st.text_input("ID do Paciente")
                     opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
@@ -461,19 +474,23 @@ def main():
                         classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
                 
                 elif opcao_menu == "Visualizar Histórico do Paciente":
+                    st.write("Debug: Entering Visualizar Histórico do Paciente section")
                     st.header("Histórico do Paciente")
                     id_paciente = st.text_input("ID do Paciente para visualização do histórico")
                     if st.button("Visualizar Histórico"):
                         visualizar_historico_paciente(id_paciente)
                 
                 elif opcao_menu == "Comparar Pacientes":
+                    st.write("Debug: Entering Comparar Pacientes section")
                     st.header("Comparar Pacientes")
                     comparar_pacientes()
                 
                 elif opcao_menu == "Visualização 3D de Raio-X":
+                    st.write("Debug: Entering Visualização 3D de Raio-X section")
                     pagina_visualizacao_3d()
                 
                 elif opcao_menu == "Gerenciamento de Usuários" and st.session_state.nome_usuario == 'admin':
+                    st.write("Debug: Entering Gerenciamento de Usuários section")
                     gerenciar_usuarios()
 
     except Exception as e:
