@@ -8,16 +8,17 @@ import io
 import os
 import pandas as pd
 from datetime import datetime, timedelta
+from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+import plotly.graph_objects as go
+from scipy.ndimage import zoom
 
-# Disable scientific notation for clarity
+# Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
-# Initialize session state
+# Inicializar estado da sessão
 if 'historico_paciente' not in st.session_state:
     st.session_state.historico_paciente = {}
 if 'logado' not in st.session_state:
@@ -27,17 +28,10 @@ if 'nome_usuario' not in st.session_state:
 if 'setores_usuario' not in st.session_state:
     st.session_state.setores_usuario = []
 
-# Google Sheets setup
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-SERVICE_ACCOUNT_FILE = 'path/to/your/service_account.json'
-SAMPLE_SPREADSHEET_ID = 'your-spreadsheet-id'
-SAMPLE_RANGE_NAME = 'Sheet1!A2:F'
+# Arquivo para armazenar informações de login
+ARQUIVO_LOGIN = 'info_login.xlsx'
 
-creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-service = build('sheets', 'v4', credentials=creds)
-sheet = service.spreadsheets()
-
-# Define model and label paths
+# Definição dos caminhos dos modelos e rótulos
 caminhos_modelos = {
     "Pneumologia": {
         "Pneumonia": "pneumonia_model.h5",
@@ -168,49 +162,45 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
 
-def ler_usuarios():
-    result = sheet.values().get(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=SAMPLE_RANGE_NAME).execute()
-    valores = result.get('values', [])
-    return pd.DataFrame(valores, columns=['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores'])
-
-def atualizar_usuario(nome_usuario, dados):
-    df = ler_usuarios()
-    idx = df.index[df['Nome de Usuário'] == nome_usuario].tolist()[0]
-    range_name = f'Sheet1!A{idx+2}:F{idx+2}'
-    body = {'values': [dados]}
-    sheet.values().update(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
-
-def adicionar_usuario(dados):
-    range_name = 'Sheet1!A:F'
-    body = {'values': [dados]}
-    sheet.values().append(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
-
-def remover_usuario(nome_usuario):
-    df = ler_usuarios()
-    df = df[df['Nome de Usuário'] != nome_usuario]
-    range_name = 'Sheet1!A2:F'
-    body = {'values': df.values.tolist()}
-    sheet.values().update(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
+def inicializar_arquivo_login():
+    if not os.path.exists(ARQUIVO_LOGIN):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores'])
+        senha_admin = hash_senha('123')
+        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia'])
+        wb.save(ARQUIVO_LOGIN)
 
 def verificar_login(nome_usuario, senha):
-    df = ler_usuarios()
-    usuario = df[df['Nome de Usuário'] == nome_usuario]
-    if not usuario.empty and usuario['Senha'].iloc[0] == hash_senha(senha):
-        eh_admin = usuario['Função'].iloc[0] == 'admin'
-        if not eh_admin and usuario['Data de Expiração'].iloc[0]:
-            data_expiracao = datetime.strptime(usuario['Data de Expiração'].iloc[0], '%Y-%m-%d %H:%M:%S')
-            if datetime.now() > data_expiracao:
-                return False, "Conta expirada", []
-        setores = usuario['Setores'].iloc[0].split(',') if usuario['Setores'].iloc[0] else []
-        return True, "Sucesso", setores
-    return False, "Credenciais inválidas", []
+    try:
+        wb = load_workbook(ARQUIVO_LOGIN)
+        ws = wb.active
+        for linha in ws.iter_rows(min_row=2, values_only=True):
+            if linha[0] == nome_usuario and linha[1] == hash_senha(senha):
+                eh_admin = len(linha) > 4 and linha[4] == 'admin'
+                
+                if not eh_admin:
+                    if len(linha) > 3 and linha[3]:
+                        data_expiracao = linha[3]
+                        if isinstance(data_expiracao, datetime) and datetime.now() > data_expiracao:
+                            return False, "Conta expirada", []
+                
+                setores = linha[5].split(',') if len(linha) > 5 and linha[5] else []
+                return True, "Sucesso", setores
+        
+        return False, "Credenciais inválidas", []
+    except Exception as e:
+        st.error(f"Ocorreu um erro ao verificar o login: {str(e)}")
+        return False, "Falha na verificação do login", []
 
 def atualizar_ultimo_login(nome_usuario):
-    df = ler_usuarios()
-    df.loc[df['Nome de Usuário'] == nome_usuario, 'Último Login'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    range_name = 'Sheet1!A2:F'
-    body = {'values': df.values.tolist()}
-    sheet.values().update(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
+    wb = load_workbook(ARQUIVO_LOGIN)
+    ws = wb.active
+    for linha in ws.iter_rows(min_row=2):
+        if linha[0].value == nome_usuario:
+            linha[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            break
+    wb.save(ARQUIVO_LOGIN)
 
 def pagina_login():
     st.title("Login")
@@ -269,13 +259,21 @@ def comparar_pacientes():
         
         st.pyplot(fig)
 
-# ... [Previous code remains the same]
-
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
     
     try:
-        df_usuario = ler_usuarios()
+        wb = load_workbook(ARQUIVO_LOGIN)
+        ws = wb.active
+        dados_usuario = {linha[0]: linha for linha in ws.iter_rows(min_row=2, values_only=True)}
+        
+        dados_usuario_limpos = [
+            (linha if len(linha) == 6 else linha + (None,) * (6 - len(linha))) 
+            for linha in dados_usuario.values()
+        ]
+        
+        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores"])
+        
         st.dataframe(df_usuario)
 
         st.subheader("Adicionar Usuário")
@@ -288,14 +286,15 @@ def gerenciar_usuarios():
         if st.button("Adicionar Usuário"):
             if novo_nome_usuario and nova_senha:
                 senha_hash = hash_senha(nova_senha)
-                data_expiracao = (datetime.now() + timedelta(days=dias_validade)).strftime("%Y-%m-%d %H:%M:%S") if nova_funcao != "admin" else ""
-                adicionar_usuario([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
+                data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
+               ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
+                wb.save(ARQUIVO_LOGIN)
                 st.success("Usuário adicionado com sucesso!")
             else:
                 st.error("Por favor, forneça nome de usuário e senha.")
 
         st.subheader("Editar Usuário")
-        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", df_usuario['Nome de Usuário'].tolist())
+        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", list(dados_usuario.keys()))
         senha_editada = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
         funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
         validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
@@ -304,22 +303,96 @@ def gerenciar_usuarios():
         if st.button("Editar Usuário"):
             if senha_editada:
                 senha_hash = hash_senha(senha_editada)
-                data_expiracao = (datetime.now() + timedelta(days=validade_editada)).strftime("%Y-%m-%d %H:%M:%S") if funcao_editada != "admin" else ""
-                atualizar_usuario(editar_nome_usuario, [editar_nome_usuario, senha_hash, "", data_expiracao, funcao_editada, ",".join(setores_editados)])
+                for linha in ws.iter_rows(min_row=2):
+                    if linha[0].value == editar_nome_usuario:
+                        linha[1].value = senha_hash
+                        linha[3].value = datetime.now() + timedelta(days=validade_editada) if funcao_editada != "admin" else None
+                        linha[4].value = funcao_editada
+                        linha[5].value = ",".join(setores_editados)
+                        break
+                wb.save(ARQUIVO_LOGIN)
                 st.success("Usuário editado com sucesso!")
             else:
                 st.error("Por favor, forneça uma nova senha.")
 
         st.subheader("Remover Usuário")
-        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", df_usuario['Nome de Usuário'].tolist())
+        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", list(dados_usuario.keys()))
         if st.button("Remover Usuário"):
-            remover_usuario(remover_nome_usuario)
+            ws.delete_rows(list(dados_usuario.keys()).index(remover_nome_usuario) + 2)
+            wb.save(ARQUIVO_LOGIN)
             st.success("Usuário removido com sucesso!")
     
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
+def converter_raio_x_para_3d(imagem):
+    # Converter a imagem para escala de cinza
+    imagem_cinza = imagem.convert('L')
+    # Converter para array numpy
+    array_imagem = np.array(imagem_cinza)
+    
+    # Normalizar os valores para o intervalo [0, 1]
+    array_normalizado = array_imagem / 255.0
+    
+    # Criar uma matriz 3D a partir da imagem 2D
+    altura, largura = array_normalizado.shape
+    profundidade = 50  # Você pode ajustar este valor
+    matriz_3d = np.repeat(array_normalizado[:, :, np.newaxis], profundidade, axis=2)
+    
+    # Aplicar um fator de zoom para suavizar a visualização
+    fator_zoom = [0.5, 0.5, 0.5]  # Reduzir a resolução pela metade em cada dimensão
+    matriz_3d_suavizada = zoom(matriz_3d, fator_zoom)
+    
+    return matriz_3d_suavizada
+
+def visualizar_raio_x_3d(matriz_3d):
+    x, y, z = matriz_3d.shape
+    
+    # Criar a figura 3D
+    fig = go.Figure(data=go.Volume(
+        x=np.arange(x),
+        y=np.arange(y),
+        z=np.arange(z),
+        value=matriz_3d.flatten(),
+        opacity=0.1,  # Ajuste a opacidade conforme necessário
+        surface_count=17,  # Ajuste para mais ou menos detalhes
+        colorscale='Greys',
+    ))
+    
+    # Configurar o layout
+    fig.update_layout(
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z',
+            aspectmode='data'
+        ),
+        width=700,
+        height=700,
+        title="Visualização 3D do Raio-X"
+    )
+    
+    return fig
+
+def pagina_visualizacao_3d():
+    st.header("Visualização 3D de Raio-X")
+    
+    arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["jpg", "jpeg", "png"])
+    
+    if arquivo_carregado is not None:
+        imagem = Image.open(arquivo_carregado)
+        st.image(imagem, caption="Raio-X Original", use_column_width=True)
+        
+        if st.button("Converter para 3D"):
+            matriz_3d = converter_raio_x_para_3d(imagem)
+            fig_3d = visualizar_raio_x_3d(matriz_3d)
+            st.plotly_chart(fig_3d)
+            st.success("Visualização 3D gerada com sucesso!")
+    else:
+        st.info("Por favor, faça o upload de uma imagem de Raio-X.")
+
 def main():
+    inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
         pagina_login()
     else:
@@ -335,7 +408,7 @@ def main():
         if 'opcao_menu' not in st.session_state:
             st.session_state.opcao_menu = "Classificar Exame"
 
-        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
+        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
 
@@ -364,6 +437,9 @@ def main():
 
         elif st.session_state.opcao_menu == "Comparar Pacientes":
             comparar_pacientes()
+
+        elif st.session_state.opcao_menu == "Visualização 3D de Raio-X":
+            pagina_visualizacao_3d()
 
         elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
             gerenciar_usuarios()
