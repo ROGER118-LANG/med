@@ -348,8 +348,16 @@ def converter_raio_x_para_3d(imagem, profundidade=20):
     
     return matriz_3d
 
-def visualizar_raio_x_3d(matriz_3d, surface_count=20):
-    """Cria uma visualização 3D do Raio-X a partir da matriz 3D."""
+def visualizar_raio_x_3d(imagem, profundidade=20, surface_count=20):
+    """Cria uma visualização 3D do Raio-X a partir da imagem."""
+    # Converte a imagem para uma matriz 3D
+    matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
+    
+    # Reduz a resolução da matriz se necessário
+    if matriz_3d.size > 5_000_000:  # Ajuste este valor conforme necessário
+        fator = (5_000_000 / matriz_3d.size) ** (1/3)
+        matriz_3d = reduzir_resolucao_matriz(matriz_3d, fator=fator)
+    
     z, y, x = matriz_3d.shape
     
     # Cria uma malha de coordenadas
@@ -398,16 +406,8 @@ def pagina_visualizacao_3d():
             # Botão para converter a imagem em 3D
             if st.button("Converter para 3D"):
                 with st.spinner("Convertendo para 3D..."):
-                    # Converte a imagem em uma matriz 3D
-                    matriz_3d = converter_raio_x_para_3d(imagem, profundidade=20)
-                    
-                    # Reduz a resolução da matriz se necessário
-                    if matriz_3d.size > 5_000_000:  # Ajuste este valor conforme necessário
-                        fator = (5_000_000 / matriz_3d.size) ** (1/3)
-                        matriz_3d = reduzir_resolucao_matriz(matriz_3d, fator=fator)
-                    
                     # Gera o gráfico 3D
-                    fig_3d = visualizar_raio_x_3d(matriz_3d, surface_count=20)
+                    fig_3d = visualizar_raio_x_3d(imagem, profundidade=20, surface_count=20)
                     st.plotly_chart(fig_3d, use_container_width=True)
                     st.success("Visualização 3D gerada com sucesso!")
         
