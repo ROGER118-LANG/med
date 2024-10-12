@@ -326,21 +326,21 @@ def gerenciar_usuarios():
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
 def converter_raio_x_para_3d(imagem):
-    # Converter a imagem para escala de cinza
+    # Convert the image to grayscale
     imagem_cinza = imagem.convert('L')
-    # Converter para array numpy
+    # Convert to numpy array
     array_imagem = np.array(imagem_cinza)
     
-    # Normalizar os valores para o intervalo [0, 1]
+    # Normalize values to [0, 1] range
     array_normalizado = array_imagem / 255.0
     
-    # Criar uma matriz 3D a partir da imagem 2D
+    # Create a 3D matrix from the 2D image
     altura, largura = array_normalizado.shape
-    profundidade = 50  # Você pode ajustar este valor
+    profundidade = 50  # You can adjust this value
     matriz_3d = np.repeat(array_normalizado[:, :, np.newaxis], profundidade, axis=2)
     
-    # Aplicar um fator de zoom para suavizar a visualização
-    fator_zoom = [0.5, 0.5, 0.5]  # Reduzir a resolução pela metade em cada dimensão
+    # Apply zoom factor to smooth the visualization
+    fator_zoom = [0.5, 0.5, 0.5]  # Reduce resolution by half in each dimension
     matriz_3d_suavizada = zoom(matriz_3d, fator_zoom)
     
     return matriz_3d_suavizada
@@ -348,18 +348,18 @@ def converter_raio_x_para_3d(imagem):
 def visualizar_raio_x_3d(matriz_3d):
     x, y, z = matriz_3d.shape
     
-    # Criar a figura 3D
+    # Create 3D figure
     fig = go.Figure(data=go.Volume(
         x=np.arange(x),
         y=np.arange(y),
         z=np.arange(z),
         value=matriz_3d.flatten(),
-        opacity=0.1,  # Ajuste a opacidade conforme necessário
-        surface_count=17,  # Ajuste para mais ou menos detalhes
+        opacity=0.1,  # Adjust opacity as needed
+        surface_count=17,  # Adjust for more or less detail
         colorscale='Greys',
     ))
     
-    # Configurar o layout
+    # Configure layout
     fig.update_layout(
         scene=dict(
             xaxis_title='X',
@@ -369,11 +369,28 @@ def visualizar_raio_x_3d(matriz_3d):
         ),
         width=700,
         height=700,
-        title="Visualização 3D do Raio-X"
+        title="3D X-ray Visualization"
     )
     
     return fig
 
+def pagina_visualizacao_3d():
+    st.header("3D X-ray Visualization")
+    
+    arquivo_carregado = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
+    
+    if arquivo_carregado is not None:
+        imagem = Image.open(arquivo_carregado)
+        st.image(imagem, caption="Original X-ray", use_column_width=True)
+        
+        if st.button("Convert to 3D"):
+            with st.spinner("Converting to 3D..."):
+                matriz_3d = converter_raio_x_para_3d(imagem)
+                fig_3d = visualizar_raio_x_3d(matriz_3d)
+                st.plotly_chart(fig_3d)
+                st.success("3D visualization generated successfully!")
+    else:
+        st.info("Please upload an X-ray image.")
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
