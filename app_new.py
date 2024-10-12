@@ -327,7 +327,7 @@ def gerenciar_usuarios():
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
-def reduzir_resolucao_matriz(matriz_3d, max_size=5_000_000):
+def reduzir_resolucao_matriz(matriz_3d, max_size=1_000_000):
     """Reduz a resolução da matriz 3D para um tamanho máximo especificado."""
     current_size = matriz_3d.size
     if current_size <= max_size:
@@ -342,7 +342,6 @@ def converter_raio_x_para_3d(imagem, profundidade=50):
     array_imagem = np.array(imagem_cinza)
     array_normalizado = array_imagem.astype(float) / 255.0
     
-    # Cria a matriz 3D usando repetição e gradiente
     matriz_3d = np.repeat(array_normalizado[np.newaxis, :, :], profundidade, axis=0)
     gradiente = np.linspace(1, 0.5, profundidade)[:, np.newaxis, np.newaxis]
     matriz_3d *= gradiente
@@ -351,43 +350,45 @@ def converter_raio_x_para_3d(imagem, profundidade=50):
 
 def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
     """Cria uma visualização 3D do Raio-X a partir da imagem."""
-    matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
-    matriz_3d = reduzir_resolucao_matriz(matriz_3d, max_size=5_000_000)
-    
-    z, y, x = matriz_3d.shape
-    
-    fig = go.Figure()
-    
-    # Cria isosurfaces
-    valores_iso = np.linspace(matriz_3d.min(), matriz_3d.max(), num_isosurfaces + 2)[1:-1]
-    for valor_iso in valores_iso:
-        verts, faces, _, _ = measure.marching_cubes(matriz_3d, valor_iso)
-        x_mesh, y_mesh, z_mesh = verts.T
-        i, j, k = faces.T
+    try:
+        matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
+        matriz_3d = reduzir_resolucao_matriz(matriz_3d)
         
-        fig.add_trace(go.Mesh3d(
-            x=x_mesh, y=y_mesh, z=z_mesh,
-            i=i, j=j, k=k,
-            opacity=0.3,
-            colorscale='Greys',
-            intensity=z_mesh,
-            intensitymode='vertex',
-        ))
-    
-    # Configura o layout
-    fig.update_layout(
-        scene=dict(
-            xaxis_title='X',
-            yaxis_title='Y',
-            zaxis_title='Z',
-            aspectmode='data'
-        ),
-        width=600,
-        height=600,
-        title="Visualização 3D de Raio-X"
-    )
-    
-    return fig
+        z, y, x = matriz_3d.shape
+        
+        fig = go.Figure()
+        
+        valores_iso = np.linspace(matriz_3d.min(), matriz_3d.max(), num_isosurfaces + 2)[1:-1]
+        for valor_iso in valores_iso:
+            verts, faces, _, _ = measure.marching_cubes(matriz_3d, valor_iso)
+            x_mesh, y_mesh, z_mesh = verts.T
+            i, j, k = faces.T
+            
+            fig.add_trace(go.Mesh3d(
+                x=x_mesh, y=y_mesh, z=z_mesh,
+                i=i, j=j, k=k,
+                opacity=0.3,
+                colorscale='Greys',
+                intensity=z_mesh,
+                intensitymode='vertex',
+            ))
+        
+        fig.update_layout(
+            scene=dict(
+                xaxis_title='X',
+                yaxis_title='Y',
+                zaxis_title='Z',
+                aspectmode='data'
+            ),
+            width=600,
+            height=600,
+            title="Visualização 3D de Raio-X"
+        )
+        
+        return fig
+    except Exception as e:
+        st.error(f"Erro ao gerar visualização 3D: {str(e)}")
+        return None
 
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
@@ -405,8 +406,11 @@ def pagina_visualizacao_3d():
             if st.button("Converter para 3D"):
                 with st.spinner("Convertendo para 3D..."):
                     fig_3d = visualizar_raio_x_3d(imagem, profundidade=profundidade, num_isosurfaces=num_isosurfaces)
-                    st.plotly_chart(fig_3d, use_container_width=True)
-                    st.success("Visualização 3D gerada com sucesso!")
+                    if fig_3d is not None:
+                        st.plotly_chart(fig_3d, use_container_width=True)
+                        st.success("Visualização 3D gerada com sucesso!")
+                    else:
+                        st.error("Não foi possível gerar a visualização 3D.")
         
         except Exception as e:
             st.error(f"Erro ao processar a imagem: {str(e)}")
