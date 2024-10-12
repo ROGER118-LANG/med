@@ -394,50 +394,54 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
-def main():
+
+           def main():
     st.title("MedVision")
     
     try:
-        inicializar_arquivo_login()
+        inicializar_arquivo_login()  # Inicializa o arquivo de login
         
-        if 'logado' not in st.session_state:
-            st.session_state.logado = False
-
         if not st.session_state.logado:
-            pagina_login()
+            pagina_login()  # Exibe a página de login se não estiver logado
         else:
             st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
             if st.sidebar.button("Sair"):
                 st.session_state.logado = False
                 st.session_state.nome_usuario = None
                 st.session_state.setores_usuario = []
-                st.rerun()
+                st.experimental_rerun()  # Reinicia a interface ao deslogar
 
+            # Definindo opções do menu
             opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"]
             if st.session_state.nome_usuario == 'admin':
                 opcoes.append("Gerenciamento de Usuários")
 
             opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes)
 
+            # Chamando as funções correspondentes às opções selecionadas
             if opcao_menu == "Classificar Exame":
                 st.header("Classificar Exame")
-                st.write("Funcionalidade de classificação de exame será implementada aqui.")
+                id_paciente = st.text_input("ID do Paciente")
+                opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
+                arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
+                if st.button("Classificar Exame"):
+                    classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
             
             elif opcao_menu == "Visualizar Histórico do Paciente":
                 st.header("Histórico do Paciente")
-                st.write("Funcionalidade de visualização de histórico será implementada aqui.")
+                id_paciente = st.text_input("ID do Paciente para visualização do histórico")
+                if st.button("Visualizar Histórico"):
+                    visualizar_historico_paciente(id_paciente)
             
             elif opcao_menu == "Comparar Pacientes":
                 st.header("Comparar Pacientes")
-                st.write("Funcionalidade de comparação de pacientes será implementada aqui.")
+                comparar_pacientes()
             
             elif opcao_menu == "Visualização 3D de Raio-X":
-                st.header("Visualização 3D de Raio-X")
-                st.write("Funcionalidade de visualização 3D será implementada aqui.")
+                pagina_visualizacao_3d()  # Chama a função de visualização 3D
             
-            elif opcao_menu == "Gerenciamento de Usuários":
-                st.header("Gerenciamento de Usuários")
-                st.write("Funcionalidade de gerenciamento de usuários será implementada aqui.")
+            elif opcao_menu == "Gerenciamento de Usuários" and st.session_state.nome_usuario == 'admin':
+                gerenciar_usuarios()  # Somente administradores podem acessar esta função
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
