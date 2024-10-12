@@ -445,6 +445,8 @@ def main():
 
         elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
             gerenciar_usuarios()
-
+       st.error("A conexão foi fechada. Por favor, recarregue a página.")
+    except Exception as e:
+        st.error(f"Ocorreu um erro inesperado: {str(e)}")
 if __name__ == "__main__":
     main()
