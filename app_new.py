@@ -287,7 +287,7 @@ def gerenciar_usuarios():
             if novo_nome_usuario and nova_senha:
                 senha_hash = hash_senha(nova_senha)
                 data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
-               ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
+                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
                 wb.save(ARQUIVO_LOGIN)
                 st.success("Usuário adicionado com sucesso!")
             else:
