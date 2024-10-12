@@ -29,6 +29,8 @@ if 'nome_usuario' not in st.session_state:
     st.session_state.nome_usuario = None
 if 'setores_usuario' not in st.session_state:
     st.session_state.setores_usuario = []
+if 'paginas_acessiveis' not in st.session_state:
+    st.session_state.paginas_acessiveis = []
 
 # Arquivo para armazenar informações de login
 ARQUIVO_LOGIN = 'info_login.xlsx'
@@ -168,9 +170,9 @@ def inicializar_arquivo_login():
     if not os.path.exists(ARQUIVO_LOGIN):
         wb = Workbook()
         ws = wb.active
-        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores'])
+        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores', 'Páginas Acessíveis'])
         senha_admin = hash_senha('123')
-        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia'])
+        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia', 'Classificar Exame,Visualizar Histórico do Paciente,Comparar Pacientes,Visualização 3D de Raio-X,Gerenciamento de Usuários'])
         wb.save(ARQUIVO_LOGIN)
 
 def verificar_login(nome_usuario, senha):
@@ -185,15 +187,16 @@ def verificar_login(nome_usuario, senha):
                     if len(linha) > 3 and linha[3]:
                         data_expiracao = linha[3]
                         if isinstance(data_expiracao, datetime) and datetime.now() > data_expiracao:
-                            return False, "Conta expirada", []
+                            return False, "Conta expirada", [], []
                 
                 setores = linha[5].split(',') if len(linha) > 5 and linha[5] else []
-                return True, "Sucesso", setores
+                paginas_acessiveis = linha[6].split(',') if len(linha) > 6 and linha[6] else []
+                return True, "Sucesso", setores, paginas_acessiveis
         
-        return False, "Credenciais inválidas", []
+        return False, "Credenciais inválidas", [], []
     except Exception as e:
         st.error(f"Ocorreu um erro ao verificar o login: {str(e)}")
-        return False, "Falha na verificação do login", []
+        return False, "Falha na verificação do login", [], []
 
 def atualizar_ultimo_login(nome_usuario):
     wb = load_workbook(ARQUIVO_LOGIN)
@@ -209,11 +212,12 @@ def pagina_login():
     nome_usuario = st.text_input("Nome de Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
-        sucesso_login, mensagem, setores = verificar_login(nome_usuario, senha)
+        sucesso_login, mensagem, setores, paginas_acessiveis = verificar_login(nome_usuario, senha)
         if sucesso_login:
             st.session_state.logado = True
             st.session_state.nome_usuario = nome_usuario
             st.session_state.setores_usuario = setores
+            st.session_state.paginas_acessiveis = paginas_acessiveis
             atualizar_ultimo_login(nome_usuario)
             st.success("Login realizado com sucesso!")
         else:
@@ -270,11 +274,11 @@ def gerenciar_usuarios():
         dados_usuario = {linha[0]: linha for linha in ws.iter_rows(min_row=2, values_only=True)}
         
         dados_usuario_limpos = [
-            (linha if len(linha) == 6 else linha + (None,) * (6 - len(linha))) 
+            (linha if len(linha) == 7 else linha + (None,) * (7 - len(linha))) 
             for linha in dados_usuario.values()
         ]
         
-        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores"])
+        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores", "Páginas Acessíveis"])
         
         st.dataframe(df_usuario)
 
@@ -284,12 +288,13 @@ def gerenciar_usuarios():
         nova_funcao = st.selectbox("Função", ["usuário", "admin"])
         dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
         novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
+        novas_paginas = st.multiselect("Páginas Acessíveis", ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"])
         
         if st.button("Adicionar Usuário"):
             if novo_nome_usuario and nova_senha:
                 senha_hash = hash_senha(nova_senha)
                 data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
-                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
+                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores), ",".join(novas_paginas)])
                 wb.save(ARQUIVO_LOGIN)
                 st.success("Usuário adicionado com sucesso!")
             else:
@@ -301,6 +306,7 @@ def gerenciar_usuarios():
         funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
         validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
         setores_editados = st.multiselect("Novos Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
+        paginas_editadas = st.multiselect("Novas Páginas Acessíveis", ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"])
         
         if st.button("Editar Usuário"):
             if senha_editada:
@@ -311,6 +317,7 @@ def gerenciar_usuarios():
                         linha[3].value = datetime.now() + timedelta(days=validade_editada) if funcao_editada != "admin" else None
                         linha[4].value = funcao_editada
                         linha[5].value = ",".join(setores_editados)
+                        linha[6].value = ",".join(paginas_editadas)
                         break
                 wb.save(ARQUIVO_LOGIN)
                 st.success("Usuário editado com sucesso!")
@@ -431,39 +438,43 @@ def main():
                 st.session_state.logado = False
                 st.session_state.nome_usuario = None
                 st.session_state.setores_usuario = []
+                st.session_state.paginas_acessiveis = []
                 st.experimental_rerun()  # Reinicia a interface ao deslogar
 
-            # Definindo opções do menu
-            opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"]
+            # Filtra as opções do menu com base nas páginas acessíveis do usuário
+            todas_opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"]
             if st.session_state.nome_usuario == 'admin':
-                opcoes.append("Gerenciamento de Usuários")
+                todas_opcoes.append("Gerenciamento de Usuários")
+            
+            opcoes_disponiveis = [opcao for opcao in todas_opcoes if opcao in st.session_state.paginas_acessiveis]
+            
+            if opcoes_disponiveis:
+                opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
 
-            opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes)
-
-            # Chamando as funções correspondentes às opções selecionadas
-            if opcao_menu == "Classificar Exame":
-                st.header("Classificar Exame")
-                id_paciente = st.text_input("ID do Paciente")
-                opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
-                arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
-                if st.button("Classificar Exame"):
-                    classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
-            
-            elif opcao_menu == "Visualizar Histórico do Paciente":
-                st.header("Histórico do Paciente")
-                id_paciente = st.text_input("ID do Paciente para visualização do histórico")
-                if st.button("Visualizar Histórico"):
-                    visualizar_historico_paciente(id_paciente)
-            
-            elif opcao_menu == "Comparar Pacientes":
-                st.header("Comparar Pacientes")
-                comparar_pacientes()
-            
-            elif opcao_menu == "Visualização 3D de Raio-X":
-                pagina_visualizacao_3d()
-            
-            elif opcao_menu == "Gerenciamento de Usuários" and st.session_state.nome_usuario == 'admin':
-                gerenciar_usuarios()
+                # Chamando as funções correspondentes às opções selecionadas
+                if opcao_menu == "Classificar Exame":
+                    st.header("Classificar Exame")
+                    id_paciente = st.text_input("ID do Paciente")
+                    opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
+                    arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
+                    if st.button("Classificar Exame"):
+                        classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
+                
+                elif opcao_menu == "Visualizar Histórico do Paciente":
+                    st.header("Histórico do Paciente")
+                    id_paciente = st.text_input("ID do Paciente para visualização do histórico")
+                    if st.button("Visualizar Histórico"):
+                        visualizar_historico_paciente(id_paciente)
+                
+                elif opcao_menu == "Comparar Pacientes":
+                    st.header("Comparar Pacientes")
+                    comparar_pacientes()
+                
+                elif opcao_menu == "Visualização 3D de Raio-X":
+                    pagina_visualizacao_3d()
+                
+                elif opcao_menu == "Gerenciamento de Usuários" and st.session_state.nome_usuario == 'admin':
+                    gerenciar_usuarios()
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
