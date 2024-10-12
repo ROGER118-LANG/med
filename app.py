@@ -456,8 +456,14 @@ def main():
                 if opcao_menu == "Classificar Exame":
                     st.header("Classificar Exame")
                     id_paciente = st.text_input("ID do Paciente")
-                    opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
+                    
+                    setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
+                    modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
+                    
+                    opcao_modelo = f"{setor}_{modelo}"
+                    
                     arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
+                    
                     if st.button("Classificar Exame"):
                         classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
                 
