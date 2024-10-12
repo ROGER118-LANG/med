@@ -15,7 +15,7 @@ import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 # Carregue seus dados
-
+st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
 # Desabilitar notação científica para clareza
 np.set_printoptions(suppress=True)
 
@@ -326,11 +326,6 @@ def gerenciar_usuarios():
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
-
-import streamlit as st
-import numpy as np
-from PIL import Image
-import plotly.graph_objects as go
 
 def converter_raio_x_para_3d(imagem):
     # Converte a imagem para escala de cinza
