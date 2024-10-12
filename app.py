@@ -444,7 +444,8 @@ def main():
                 st.session_state.nome_usuario = None
                 st.session_state.setores_usuario = []
                 st.session_state.paginas_acessiveis = []
-                st.experimental_rerun()  # Reinicia a interface ao deslogar
+                st.rerun()  # Alterado de st.experimental_rerun() para st.rerun()
+                # Remova a linha de rerun completamente
 
             # Use as páginas acessíveis definidas durante o login
             opcoes_disponiveis = st.session_state.paginas_acessiveis
@@ -457,10 +458,7 @@ def main():
                     st.header("Classificar Exame")
                     id_paciente = st.text_input("ID do Paciente")
                     
-                    # Primeiro, escolha o setor
                     setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
-                    
-                    # Depois, escolha o modelo dentro do setor selecionado
                     modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
                     
                     opcao_modelo = f"{setor}_{modelo}"
