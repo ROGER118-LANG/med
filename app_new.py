@@ -397,7 +397,6 @@ def pagina_visualizacao_3d():
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
 
-if __name__ == "__main__":
     st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
     pagina_visualizacao_3d()
 def main():
