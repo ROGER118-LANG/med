@@ -395,7 +395,7 @@ def pagina_visualizacao_3d():
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
 
-       def main():
+      def main():
     st.title("MedVision")
     
     try:
