@@ -8,16 +8,16 @@ import io
 import os
 import pandas as pd
 from datetime import datetime, timedelta
-from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
 import seaborn as sns
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
-# Desabilitar notação científica para clareza
+# Disable scientific notation for clarity
 np.set_printoptions(suppress=True)
 
-# Inicializar estado da sessão
+# Initialize session state
 if 'historico_paciente' not in st.session_state:
     st.session_state.historico_paciente = {}
 if 'logado' not in st.session_state:
@@ -27,10 +27,17 @@ if 'nome_usuario' not in st.session_state:
 if 'setores_usuario' not in st.session_state:
     st.session_state.setores_usuario = []
 
-# Arquivo para armazenar informações de login
-ARQUIVO_LOGIN = 'info_login.xlsx'
+# Google Sheets setup
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SERVICE_ACCOUNT_FILE = 'path/to/your/service_account.json'
+SAMPLE_SPREADSHEET_ID = 'your-spreadsheet-id'
+SAMPLE_RANGE_NAME = 'Sheet1!A2:F'
 
-# Definição dos caminhos dos modelos e rótulos
+creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+service = build('sheets', 'v4', credentials=creds)
+sheet = service.spreadsheets()
+
+# Define model and label paths
 caminhos_modelos = {
     "Pneumologia": {
         "Pneumonia": "pneumonia_model.h5",
@@ -41,7 +48,11 @@ caminhos_modelos = {
         "Tumor Cerebral": "tumor_cerebral_model.h5"
     },
     "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_model.h5"
+        "Braço Fraturado": "fractured_arm_model.h5",
+        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
+        "ACL": "acl_model.h5",
+        "Entorse de Tornozelo": "ankle_sprain_model.h5",
+        "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
     }
 }
 
@@ -55,7 +66,11 @@ caminhos_rotulos = {
         "Tumor Cerebral": "tumor_cerebral_labels.txt"
     },
     "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_labels.txt"
+        "Braço Fraturado": "fractured_arm_labels.txt",
+        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
+        "ACL": "acl_labels.txt",
+        "Entorse de Tornozelo": "ankle_sprain_labels.txt",
+        "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }
 }
 
@@ -153,45 +168,49 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
 
-def inicializar_arquivo_login():
-    if not os.path.exists(ARQUIVO_LOGIN):
-        wb = Workbook()
-        ws = wb.active
-        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores'])
-        senha_admin = hash_senha('123')
-        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia'])
-        wb.save(ARQUIVO_LOGIN)
+def ler_usuarios():
+    result = sheet.values().get(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=SAMPLE_RANGE_NAME).execute()
+    valores = result.get('values', [])
+    return pd.DataFrame(valores, columns=['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores'])
+
+def atualizar_usuario(nome_usuario, dados):
+    df = ler_usuarios()
+    idx = df.index[df['Nome de Usuário'] == nome_usuario].tolist()[0]
+    range_name = f'Sheet1!A{idx+2}:F{idx+2}'
+    body = {'values': [dados]}
+    sheet.values().update(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
+
+def adicionar_usuario(dados):
+    range_name = 'Sheet1!A:F'
+    body = {'values': [dados]}
+    sheet.values().append(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
+
+def remover_usuario(nome_usuario):
+    df = ler_usuarios()
+    df = df[df['Nome de Usuário'] != nome_usuario]
+    range_name = 'Sheet1!A2:F'
+    body = {'values': df.values.tolist()}
+    sheet.values().update(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
 
 def verificar_login(nome_usuario, senha):
-    try:
-        wb = load_workbook(ARQUIVO_LOGIN)
-        ws = wb.active
-        for linha in ws.iter_rows(min_row=2, values_only=True):
-            if linha[0] == nome_usuario and linha[1] == hash_senha(senha):
-                eh_admin = len(linha) > 4 and linha[4] == 'admin'
-                
-                if not eh_admin:
-                    if len(linha) > 3 and linha[3]:
-                        data_expiracao = linha[3]
-                        if isinstance(data_expiracao, datetime) and datetime.now() > data_expiracao:
-                            return False, "Conta expirada", []
-                
-                setores = linha[5].split(',') if len(linha) > 5 and linha[5] else []
-                return True, "Sucesso", setores
-        
-        return False, "Credenciais inválidas", []
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao verificar o login: {str(e)}")
-        return False, "Falha na verificação do login", []
+    df = ler_usuarios()
+    usuario = df[df['Nome de Usuário'] == nome_usuario]
+    if not usuario.empty and usuario['Senha'].iloc[0] == hash_senha(senha):
+        eh_admin = usuario['Função'].iloc[0] == 'admin'
+        if not eh_admin and usuario['Data de Expiração'].iloc[0]:
+            data_expiracao = datetime.strptime(usuario['Data de Expiração'].iloc[0], '%Y-%m-%d %H:%M:%S')
+            if datetime.now() > data_expiracao:
+                return False, "Conta expirada", []
+        setores = usuario['Setores'].iloc[0].split(',') if usuario['Setores'].iloc[0] else []
+        return True, "Sucesso", setores
+    return False, "Credenciais inválidas", []
 
 def atualizar_ultimo_login(nome_usuario):
-    wb = load_workbook(ARQUIVO_LOGIN)
-    ws = wb.active
-    for linha in ws.iter_rows(min_row=2):
-        if linha[0].value == nome_usuario:
-            linha[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            break
-    wb.save(ARQUIVO_LOGIN)
+    df = ler_usuarios()
+    df.loc[df['Nome de Usuário'] == nome_usuario, 'Último Login'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    range_name = 'Sheet1!A2:F'
+    body = {'values': df.values.tolist()}
+    sheet.values().update(spreadsheetId=SAMPLE_SPREADSHEET_ID, range=range_name, valueInputOption='USER_ENTERED', body=body).execute()
 
 def pagina_login():
     st.title("Login")
@@ -250,21 +269,13 @@ def comparar_pacientes():
         
         st.pyplot(fig)
 
+# ... [Previous code remains the same]
+
 def gerenciar_usuarios():
     st.header("Gerenciamento de Usuários")
     
     try:
-        wb = load_workbook(ARQUIVO_LOGIN)
-        ws = wb.active
-        dados_usuario = {linha[0]: linha for linha in ws.iter_rows(min_row=2, values_only=True)}
-        
-        dados_usuario_limpos = [
-            (linha if len(linha) == 6 else linha + (None,) * (6 - len(linha))) 
-            for linha in dados_usuario.values()
-        ]
-        
-        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores"])
-        
+        df_usuario = ler_usuarios()
         st.dataframe(df_usuario)
 
         st.subheader("Adicionar Usuário")
@@ -277,15 +288,14 @@ def gerenciar_usuarios():
         if st.button("Adicionar Usuário"):
             if novo_nome_usuario and nova_senha:
                 senha_hash = hash_senha(nova_senha)
-                data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
-                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
-                wb.save(ARQUIVO_LOGIN)
+                data_expiracao = (datetime.now() + timedelta(days=dias_validade)).strftime("%Y-%m-%d %H:%M:%S") if nova_funcao != "admin" else ""
+                adicionar_usuario([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores)])
                 st.success("Usuário adicionado com sucesso!")
             else:
                 st.error("Por favor, forneça nome de usuário e senha.")
 
         st.subheader("Editar Usuário")
-        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", list(dados_usuario.keys()))
+        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", df_usuario['Nome de Usuário'].tolist())
         senha_editada = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
         funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
         validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
@@ -294,74 +304,22 @@ def gerenciar_usuarios():
         if st.button("Editar Usuário"):
             if senha_editada:
                 senha_hash = hash_senha(senha_editada)
-                for linha in ws.iter_rows(min_row=2):
-                    if linha[0].value == editar_nome_usuario:
-                        linha[1].value = senha_hash
-                        linha[3].value = datetime.now() + timedelta(days=validade_editada) if funcao_editada != "admin" else None
-                        linha[4].value = funcao_editada
-                        linha[5].value = ",".join(setores_editados)
-                        break
-                wb.save(ARQUIVO_LOGIN)
+                data_expiracao = (datetime.now() + timedelta(days=validade_editada)).strftime("%Y-%m-%d %H:%M:%S") if funcao_editada != "admin" else ""
+                atualizar_usuario(editar_nome_usuario, [editar_nome_usuario, senha_hash, "", data_expiracao, funcao_editada, ",".join(setores_editados)])
                 st.success("Usuário editado com sucesso!")
             else:
                 st.error("Por favor, forneça uma nova senha.")
 
         st.subheader("Remover Usuário")
-        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", list(dados_usuario.keys()))
+        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", df_usuario['Nome de Usuário'].tolist())
         if st.button("Remover Usuário"):
-            ws.delete_rows(list(dados_usuario.keys()).index(remover_nome_usuario) + 2)
-            wb.save(ARQUIVO_LOGIN)
+            remover_usuario(remover_nome_usuario)
             st.success("Usuário removido com sucesso!")
     
     except Exception as e:
         st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
 
-def generate_heatmap(image, prediction_score):
-    # Create a basic heatmap
-    heatmap = np.random.rand(224, 224)  # Random heatmap for demonstration
-    heatmap = gaussian_filter(heatmap, sigma=10)  # Smooth the heatmap
-    
-    # Normalize the heatmap
-    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
-    
-    # Scale the heatmap based on the prediction score
-    heatmap *= prediction_score
-    
-    return heatmap
-
-def visualize_heatmap(image, heatmap):
-    plt.figure(figsize=(10, 5))
-    
-    plt.subplot(1, 2, 1)
-    plt.imshow(image, cmap='gray')
-    plt.title('Original X-ray')
-    plt.axis('off')
-    
-    plt.subplot(1, 2, 2)
-    plt.imshow(image, cmap='gray')
-    plt.imshow(heatmap, cmap='jet', alpha=0.5)
-    plt.title('Anomaly Heatmap')
-    plt.axis('off')
-    
-    plt.tight_layout()
-    return plt
-
-def process_xray_with_heatmap(model, image_data, class_names):
-    # Make prediction
-    prediction = model.predict(image_data)
-    class_index = np.argmax(prediction)
-    class_name = class_names[class_index].strip()
-    confidence_score = float(prediction[0][class_index])
-    
-    # Generate heatmap
-    heatmap = generate_heatmap(image_data[0], confidence_score)
-    
-    # Visualize
-    fig = visualize_heatmap(image_data[0], heatmap)
-    
-    return class_name, confidence_score, fig
 def main():
-    inicializar_arquivo_login()
     if not st.session_state.get('logado', False):
         pagina_login()
     else:
@@ -371,71 +329,44 @@ def main():
             st.session_state.logado = False
             st.session_state.nome_usuario = None
             st.session_state.setores_usuario = []
-            st.experimental_rerun()
+            st.rerun()
 
         # Menu lateral
-        opcoes = [
-            "Classificar Exame",
-            "Visualizar Heatmap de Raio-X",  # Certifique-se de que esta opção está incluída
-            "Visualizar Histórico do Paciente",
-            "Comparar Pacientes"
-        ]
+        if 'opcao_menu' not in st.session_state:
+            st.session_state.opcao_menu = "Classificar Exame"
+
+        opcoes = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes"]
         if st.session_state.nome_usuario == 'admin':
             opcoes.append("Gerenciamento de Usuários")
 
-        opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes)
+        st.session_state.opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes, key="radio_menu")
 
-        if opcao_menu == "Classificar Exame":
-            classificar_exame_page()
-        elif opcao_menu == "Visualizar Heatmap de Raio-X":
-            visualizar_heatmap_page()
-        elif opcao_menu == "Visualizar Histórico do Paciente":
-            visualizar_historico_page()
-        elif opcao_menu == "Comparar Pacientes":
-            comparar_pacientes_page()
-        elif opcao_menu == "Gerenciamento de Usuários":
-            gerenciar_usuarios_page()
-
-def classificar_exame_page():
-    st.header("Classificar Exame")
-    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-    if setor:
-        id_paciente = st.text_input("Digite o ID do Paciente:")
-        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-        arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
-        if st.button("Classificar"):
-            classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
-    else:
-        st.warning("Você não tem acesso a nenhum setor.")
-
-def visualizar_heatmap_page():
-    st.header("Visualizar Heatmap de Raio-X")
-    setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
-    if setor:
-        opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
-        arquivo_carregado = st.file_uploader("Faça upload da imagem de raio-X", type=["jpg", "jpeg", "png"])
-        if arquivo_carregado is not None and st.button("Gerar Heatmap"):
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][opcao_modelo], caminhos_rotulos[setor][opcao_modelo])
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca, fig_heatmap = process_xray_with_heatmap(modelo, imagem_processada, nomes_classes)
-                    st.write(f"Classe prevista: {nome_classe}")
-                    st.write(f"Pontuação de confiança: {pontuacao_confianca:.2f}")
-                    st.pyplot(fig_heatmap)
-                else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
+        if st.session_state.opcao_menu == "Classificar Exame":
+            st.header("Classificar Exame")
+            
+            setor = st.selectbox("Escolha um setor:", st.session_state.setores_usuario)
+            
+            if setor:
+                id_paciente = st.text_input("Digite o ID do Paciente:")
+                opcao_modelo = st.selectbox("Escolha um modelo para análise:", list(caminhos_modelos[setor].keys()))
+                arquivo_carregado = st.file_uploader("Faça upload da imagem", type=["jpg", "jpeg", "png"])
+                
+                if st.button("Classificar"):
+                    classificar_exame(id_paciente, f"{setor}_{opcao_modelo}", arquivo_carregado)
             else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+                st.warning("Você não tem acesso a nenhum setor.")
 
-def visualizar_historico_page():
-    st.header("Histórico do Paciente")
-    id_paciente = st.text_input("Digite o ID do Paciente:")
-    if st.button("Visualizar Histórico"):
-        visualizar_historico_paciente(id_paciente)
+        elif st.session_state.opcao_menu == "Visualizar Histórico do Paciente":
+            st.header("Histórico do Paciente")
+            id_paciente = st.text_input("Digite o ID do Paciente:")
+            if st.button("Visualizar Histórico"):
+                visualizar_historico_paciente(id_paciente)
 
-def comparar_pacientes_page():
-    comparar_pacientes()
+        elif st.session_state.opcao_menu == "Comparar Pacientes":
+            comparar_pacientes()
 
-def gerenciar_usuarios_page():
-    gerenciar_usuarios()
+        elif st.session_state.opcao_menu == "Gerenciamento de Usuários":
+            gerenciar_usuarios()
+
+if __name__ == "__main__":
+    main()
