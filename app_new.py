@@ -376,11 +376,10 @@ def visualizar_raio_x_3d(matriz_3d):
     )
     
     return fig
-
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
-    arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["jpg", "jpeg", "png"])
+    arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["png", "jpg", "jpeg"], key="visualizacao_3d_uploader")
     
     if arquivo_carregado is not None:
         try:
