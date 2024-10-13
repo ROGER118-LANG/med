@@ -39,37 +39,37 @@ ARQUIVO_LOGIN = 'info_login.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 caminhos_modelos = {
     "Pneumologia": {
-        "Pneumonia": "pneumonia_model.h5",
-        "Tuberculose": "tuberculose_model.h5",
-        "Câncer de Pulmão": "cancer_model.h5"
+        "Pneumonia": "./models/pneumonia_model.h5",
+        "Tuberculose": "./models/tuberculose_model.h5",
+        "Câncer de Pulmão": "./models/cancer_pulmao_model.h5"
     },
     "Neurologia": {
-        "Tumor Cerebral": "tumor_cerebral_model.h5"
+        "Tumor Cerebral": "./models/tumor_cerebral_model.h5"
     },
     "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_model.h5",
-        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
-        "ACL": "acl_model.h5",
-        "Entorse de Tornozelo": "ankle_sprain_model.h5",
-        "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
+        "Braço Fraturado": "./models/fractured_arm_model.h5",
+        "Ruptura do Tendão de Aquiles": "./models/achilles_tendon_rupture_model.h5",
+        "ACL": "./models/acl_model.h5",
+        "Entorse de Tornozelo": "./models/ankle_sprain_model.h5",
+        "Fratura de Calcâneo": "./models/calcaneus_fracture_model.h5"
     }
 }
 
 caminhos_rotulos = {
     "Pneumologia": {
-        "Pneumonia": "pneumonia_labels.txt",
-        "Tuberculose": "tuberculose_labels.txt",
-        "Câncer de Pulmão": "cancer_labels.txt"
+        "Pneumonia": "./labels/pneumonia_labels.txt",
+        "Tuberculose": "./labels/tuberculose_labels.txt",
+        "Câncer de Pulmão": "./labels/cancer_pulmao_labels.txt"
     },
     "Neurologia": {
-        "Tumor Cerebral": "tumor_cerebral_labels.txt"
+        "Tumor Cerebral": "./labels/tumor_cerebral_labels.txt"
     },
     "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_labels.txt",
-        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
-        "ACL": "acl_labels.txt",
-        "Entorse de Tornozelo": "ankle_sprain_labels.txt",
-        "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
+        "Braço Fraturado": "./labels/fractured_arm_labels.txt",
+        "Ruptura do Tendão de Aquiles": "./labels/achilles_tendon_rupture_labels.txt",
+        "ACL": "./labels/acl_labels.txt",
+        "Entorse de Tornozelo": "./labels/ankle_sprain_labels.txt",
+        "Fratura de Calcâneo": "./labels/calcaneus_fracture_labels.txt"
     }
 }
 
@@ -80,9 +80,11 @@ def custom_depthwise_conv2d(*args, **kwargs):
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
         if not os.path.exists(caminho_modelo):
-            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
+            st.error(f"Arquivo de modelo não encontrado: {caminho_modelo}")
+            return None, None
         if not os.path.exists(caminho_rotulos):
-            raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
+            st.error(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
+            return None, None
         
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             modelo = load_model(caminho_modelo, compile=False)
@@ -119,6 +121,7 @@ def preprocessar_imagem(arquivo_carregado):
     except Exception as e:
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
+
 def obter_ultima_camada_convolucional(model):
     for layer in reversed(model.layers):
         if isinstance(layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
@@ -128,7 +131,6 @@ def obter_ultima_camada_convolucional(model):
                 if isinstance(inner_layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
                     return inner_layer.name
     return None
-
 
 def gerar_mapa_calor(modelo, imagem, classe_predita):
     img_array = np.expand_dims(imagem, axis=0)
@@ -176,23 +178,31 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
             
             if modelo is None or nomes_classes is None:
-                st.error("Erro ao carregar o modelo ou rótulos.")
+                st.error("Não foi possível carregar o modelo ou rótulos. Verifique se os arquivos existem e estão no local correto.")
                 return
 
             predicao = modelo.predict(img_array)
             classe_predita = np.argmax(predicao)
 
-            mapa_calor = gerar_mapa_calor(modelo, img_array[0], classe_predita)
+            try:
+                mapa_calor = gerar_mapa_calor(modelo, img_array[0], classe_predita)
+            except Exception as e:
+                st.warning(f"Não foi possível gerar o mapa de calor: {str(e)}")
+                mapa_calor = None
 
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
             ax1.imshow(imagem)
             ax1.set_title('Imagem Original')
             ax1.axis('off')
             
-            ax2.imshow(imagem)
-            ax2.imshow(mapa_calor, cmap='jet', alpha=0.5)
-            ax2.set_title('Mapa de Calor')
-            ax2.axis('off')
+            if mapa_calor is not None:
+                ax2.imshow(imagem)
+                ax2.imshow(mapa_calor, cmap='jet', alpha=0.5)
+                ax2.set_title('Mapa de Calor')
+                ax2.axis('off')
+            else:
+                ax2.set_title('Mapa de Calor não disponível')
+                ax2.axis('off')
 
             buf = io.BytesIO()
             plt.savefig(buf, format='png')
@@ -495,6 +505,12 @@ def main():
     
     try:
         inicializar_arquivo_login()
+        
+        # Check if models and labels directories exist
+        if not os.path.exists("./models"):
+            st.error("Diretório de modelos não encontrado. Por favor, crie um diretório 'models' e coloque os arquivos .h5 lá.")
+        if not os.path.exists("./labels"):
+            st.error("Diretório de rótulos não encontrado. Por favor, crie um diretório 'labels' e coloque os arquivos .txt lá.")
         
         if 'logado' not in st.session_state:
             st.session_state.logado = False
