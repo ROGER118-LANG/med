@@ -428,6 +428,74 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
+def visualizar_anomalia(imagem, modelo):
+    """
+    Visualiza a área de anomalia em um exame de raio-x usando um mapa de calor.
+    """
+    # Pré-processamento da imagem
+    img = imagem.resize((224, 224))
+    img_array = np.array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = img_array / 255.0
+
+    # Obter as últimas camadas convolucionais do modelo
+    last_conv_layer = modelo.get_layer('nome_da_ultima_camada_convolucional')
+
+    # Criar um modelo que retorna os mapas de ativação da última camada convolucional
+    grad_model = tf.keras.models.Model([modelo.inputs], [last_conv_layer.output, modelo.output])
+
+    # Calcular o gradiente da saída em relação aos mapas de ativação
+    with tf.GradientTape() as tape:
+        conv_outputs, predictions = grad_model(img_array)
+        loss = predictions[:, np.argmax(predictions[0])]
+
+    grads = tape.gradient(loss, conv_outputs)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+
+    # Multiplicar cada canal pelo seu gradiente médio
+    heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_outputs), axis=-1)
+    heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
+    heatmap = heatmap.reshape((7, 7))
+
+    # Redimensionar o mapa de calor para o tamanho da imagem original
+    heatmap = cv2.resize(heatmap, (img.size[1], img.size[0]))
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+    # Sobrepor o mapa de calor à imagem original
+    superimposed_img = heatmap * 0.4 + img_array[0] * 255
+    superimposed_img = np.clip(superimposed_img, 0, 255).astype(np.uint8)
+
+    return superimposed_img
+
+def pagina_visualizacao_anomalia():
+    st.header("Visualização de Anomalia em Raio-X")
+    
+    arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["png", "jpg", "jpeg"], key="visualizacao_anomalia_uploader")
+    
+    if arquivo_carregado is not None:
+        try:
+            imagem = Image.open(arquivo_carregado)
+            st.image(imagem, caption="Raio-X Original", use_column_width=True)
+            
+            opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
+            
+            if st.button("Visualizar Anomalia"):
+                with st.spinner("Processando..."):
+                    setor, modelo_nome = opcao_modelo.split('_', 1)
+                    modelo, _ = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo_nome], caminhos_rotulos[setor][modelo_nome])
+                    
+                    if modelo is not None:
+                        imagem_com_anomalia = visualizar_anomalia(imagem, modelo)
+                        st.image(imagem_com_anomalia, caption="Raio-X com Visualização de Anomalia", use_column_width=True)
+                        st.success("Visualização de anomalia gerada com sucesso!")
+                    else:
+                        st.error("Não foi possível carregar o modelo para visualização de anomalia.")
+        
+        except Exception as e:
+            st.error(f"Erro ao processar a imagem: {str(e)}")
+    else:
+        st.info("Por favor, faça o upload de uma imagem de Raio-X.")
 
 def main():
     st.title("MedVision")
@@ -452,6 +520,8 @@ def main():
             if opcoes_disponiveis:
                 opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
 
+            if opcoes_disponiveis:
+                opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis + ["Visualização de Anomalia"])
                 # Chamando as funções correspondentes às opções selecionadas
                 if opcao_menu == "Classificar Exame":
                     st.header("Classificar Exame")
