@@ -119,12 +119,16 @@ def preprocessar_imagem(arquivo_carregado):
     except Exception as e:
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
-
 def obter_ultima_camada_convolucional(model):
     for layer in reversed(model.layers):
-        if isinstance(layer, tf.keras.layers.Conv2D):
+        if isinstance(layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
             return layer.name
+        elif hasattr(layer, 'layers'):
+            for inner_layer in reversed(layer.layers):
+                if isinstance(inner_layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
+                    return inner_layer.name
     return None
+
 
 def gerar_mapa_calor(modelo, imagem, classe_predita):
     img_array = np.expand_dims(imagem, axis=0)
@@ -132,7 +136,8 @@ def gerar_mapa_calor(modelo, imagem, classe_predita):
 
     ultima_camada_conv = obter_ultima_camada_convolucional(modelo)
     if ultima_camada_conv is None:
-        raise ValueError("Não foi possível encontrar uma camada convolucional no modelo.")
+        st.warning("Não foi possível encontrar uma camada convolucional no modelo. Usando a última camada como fallback.")
+        ultima_camada_conv = modelo.layers[-1].name
 
     grad_model = tf.keras.models.Model([modelo.inputs], [modelo.get_layer(ultima_camada_conv).output, modelo.output])
 
