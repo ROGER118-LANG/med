@@ -149,7 +149,6 @@ def gerar_mapa_calor(modelo, imagem, classe_predita):
     cam = tf.maximum(cam, 0) / tf.math.reduce_max(cam)
     cam = cam.numpy()
     
-    # Use PIL instead of cv2 for resizing
     cam_image = Image.fromarray(cam)
     cam_image = cam_image.resize((imagem.shape[1], imagem.shape[0]), Image.LANCZOS)
     cam = np.array(cam_image)
@@ -165,7 +164,16 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             img_array = np.array(imagem.resize((224, 224))) / 255.0
             img_array = np.expand_dims(img_array, axis=0)
 
-            modelo = carregar_modelo(opcao_modelo)
+            setor, nome_modelo = opcao_modelo.split('_', 1)
+            caminho_modelo = caminhos_modelos[setor][nome_modelo]
+            caminho_rotulos = caminhos_rotulos[setor][nome_modelo]
+
+            modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
+            
+            if modelo is None or nomes_classes is None:
+                st.error("Erro ao carregar o modelo ou rótulos.")
+                return
+
             predicao = modelo.predict(img_array)
             classe_predita = np.argmax(predicao)
 
@@ -187,13 +195,25 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             
             st.image(buf, caption='Resultado da Análise', use_column_width=True)
 
-            resultado = "Positivo" if classe_predita == 1 else "Negativo"
-            confianca = predicao[0][classe_predita] * 100
+            nome_classe, confianca = prever(modelo, img_array, nomes_classes)
+            
+            if nome_classe is not None and confianca is not None:
+                st.write(f"Classe Predita: {nome_classe}")
+                st.write(f"Confiança: {confianca:.2f}%")
 
-            st.write(f"Resultado: {resultado}")
-            st.write(f"Confiança: {confianca:.2f}%")
+                # Salvar no histórico do paciente
+                if id_paciente not in st.session_state.historico_paciente:
+                    st.session_state.historico_paciente[id_paciente] = []
+                
+                st.session_state.historico_paciente[id_paciente].append({
+                    'data': datetime.now(),
+                    'modelo': opcao_modelo,
+                    'resultado': nome_classe,
+                    'confianca': confianca
+                })
+            else:
+                st.error("Erro ao realizar a previsão.")
 
-            # Aqui você pode adicionar código para salvar o resultado no histórico do paciente
         except Exception as e:
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
