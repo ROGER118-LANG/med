@@ -466,23 +466,60 @@ def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
         st.error(f"Erro ao gerar visualização 3D: {str(e)}")
         return None
 
-def pagina_visualizacao_3d():
-    st.header("Visualização 3D de Raio-X")
-    arquivo_carregado = st.file_uploader("Faça upload da imagem de Raio-X", type=["png", "jpg", "jpeg"])
+def visualizar_modelo_3d():
+    st.header("Visualizador de Modelo 3D")
+    st.write("Esta função ainda não foi implementada.")
+
+def chat_colaborativo():
+    st.header("Chat Colaborativo")
+    st.write("Bem-vindo ao chat colaborativo!")
     
-    if arquivo_carregado is not None:
-        imagem = Image.open(arquivo_carregado)
-        st.image(imagem, caption="Imagem de Raio-X carregada", use_column_width=True)
-        
-        profundidade = st.slider("Profundidade da visualização 3D", 10, 100, 50)
-        num_isosurfaces = st.slider("Número de isosuperfícies", 2, 10, 5)
-        
-        if st.button("Gerar Visualização 3D"):
-            fig = visualizar_raio_x_3d(imagem, profundidade, num_isosurfaces)
-            if fig is not None:
-                st.plotly_chart(fig)
-            else:
-                st.error("Não foi possível gerar a visualização 3D.")
+    mensagem = st.text_input("Digite sua mensagem:")
+    if st.button("Enviar"):
+        if mensagem:
+            save_chat_message(mensagem, True)
+            st.success("Mensagem enviada!")
+
+    st.subheader("Histórico de mensagens:")
+    mensagens = get_chat_messages()
+    for msg in mensagens:
+        if msg['is_user']:
+            st.text_input("Você:", msg['content'], disabled=True)
+        else:
+            st.text_input("Sistema:", msg['content'], disabled=True)
+
+def rastrear_progresso():
+    st.header("Rastreador de Progresso")
+    paciente = st.text_input("Nome do Paciente:")
+    progresso = st.slider("Progresso do tratamento", 0, 100, 50)
+    if st.button("Salvar Progresso"):
+        save_patient_data(paciente, np.array([]), progresso)
+        st.success(f"Progresso de {progresso}% salvo para {paciente}")
+
+def visualizar_heatmap_dor():
+    st.header("Mapa de Calor da Dor")
+    paciente = st.text_input("Nome do Paciente:")
+    if st.button("Visualizar Mapa de Calor"):
+        dados_paciente = get_patient_data(paciente)
+        if dados_paciente:
+            ultimo_dado = dados_paciente[-1]
+            heatmap = np.array(ultimo_dado['heatmap'])
+            fig, ax = plt.subplots()
+            sns.heatmap(heatmap, ax=ax)
+            st.pyplot(fig)
+        else:
+            st.warning("Nenhum dado encontrado para este paciente.")
+
+def visualizar_historico_paciente_por_nome():
+    st.header("Histórico do Paciente por Nome")
+    nome_paciente = st.text_input("Nome do Paciente:")
+    if st.button("Visualizar Histórico"):
+        dados_paciente = get_patient_data(nome_paciente)
+        if dados_paciente:
+            df = pd.DataFrame(dados_paciente)
+            st.dataframe(df)
+        else:
+            st.warning("Nenhum histórico encontrado para este paciente.")
 
 def main():
     init_db()
@@ -504,61 +541,65 @@ def main():
                 st.rerun()
 
             # Use as páginas acessíveis definidas durante o login
-            opcoes_disponiveis = st.session_state.paginas_acessiveis + [
+            opcoes_disponiveis = [
+                "Classificar Exame",
+                "Visualizar Histórico do Paciente",
+                "Comparar Pacientes",
+                "Visualização 3D de Raio-X",
                 "Visualizador de Modelo 3D",
                 "Chat Colaborativo",
                 "Rastreador de Progresso",
                 "Mapa de Calor da Dor",
-                "Histórico do Paciente por Nome"
+                "Histórico do Paciente por Nome",
+                "Gerenciamento de Usuários"
             ]
             
-            if opcoes_disponiveis:
-                opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
+            opcao_menu = st.sidebar.selectbox("Escolha uma opção:", opcoes_disponiveis)
 
-                # Chamando as funções correspondentes às opções selecionadas
-                if opcao_menu == "Classificar Exame":
-                    st.header("Classificar Exame")
-                    id_paciente = st.text_input("ID do Paciente")
-                    
-                    setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
-                    modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
-                    
-                    opcao_modelo = f"{setor}_{modelo}"
-                    
-                    arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
-                    
-                    if st.button("Classificar Exame"):
-                        classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
+            # Chamando as funções correspondentes às opções selecionadas
+            if opcao_menu == "Classificar Exame":
+                st.header("Classificar Exame")
+                id_paciente = st.text_input("ID do Paciente")
                 
-                elif opcao_menu == "Visualizar Histórico do Paciente":
-                    st.header("Histórico do Paciente")
-                    id_paciente = st.text_input("ID do Paciente para visualização do histórico")
-                    if st.button("Visualizar Histórico"):
-                        visualizar_historico_paciente(id_paciente)
+                setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
+                modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
                 
-                elif opcao_menu == "Comparar Pacientes":
-                    st.header("Comparar Pacientes")
-                    comparar_pacientes()
+                opcao_modelo = f"{setor}_{modelo}"
                 
-                elif opcao_menu == "Visualização 3D de Raio-X":
-                    pagina_visualizacao_3d()
+                arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
+                
+                if st.button("Classificar Exame"):
+                    classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
+            
+            elif opcao_menu == "Visualizar Histórico do Paciente":
+                st.header("Histórico do Paciente")
+                id_paciente = st.text_input("ID do Paciente para visualização do histórico")
+                if st.button("Visualizar Histórico"):
+                    visualizar_historico_paciente(id_paciente)
+            
+            elif opcao_menu == "Comparar Pacientes":
+                comparar_pacientes()
+            
+            elif opcao_menu == "Visualização 3D de Raio-X":
+                pagina_visualizacao_3d()
 
-                elif opcao_menu == "Visualizador de Modelo 3D":
-                    visualizar_modelo_3d()
-                
-                elif opcao_menu == "Chat Colaborativo":
-                    chat_colaborativo()
-                
-                elif opcao_menu == "Rastreador de Progresso":
-                    rastrear_progresso()
-                
-                elif opcao_menu == "Mapa de Calor da Dor":
-                    visualizar_heatmap_dor()
-                
-                elif opcao_menu == "Histórico do Paciente por Nome":
-                    visualizar_historico_paciente_por_nome()
-            else:
-                st.warning("Você não tem acesso a nenhuma página. Por favor, contate o administrador.")
+            elif opcao_menu == "Visualizador de Modelo 3D":
+                visualizar_modelo_3d()
+            
+            elif opcao_menu == "Chat Colaborativo":
+                chat_colaborativo()
+            
+            elif opcao_menu == "Rastreador de Progresso":
+                rastrear_progresso()
+            
+            elif opcao_menu == "Mapa de Calor da Dor":
+                visualizar_heatmap_dor()
+            
+            elif opcao_menu == "Histórico do Paciente por Nome":
+                visualizar_historico_paciente_por_nome()
+
+            elif opcao_menu == "Gerenciamento de Usuários":
+                gerenciar_usuarios()
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
