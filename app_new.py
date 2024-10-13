@@ -18,8 +18,7 @@ import seaborn as sns
 from skimage import measure
 from streamlit_chat import message
 from gtts import gTTS
-import os
-import pygame
+from playsound import playsound
 
 # Função para obter gerenciador de cookies
 def get_manager():
@@ -31,15 +30,13 @@ def play_welcome_message():
     tts = gTTS(text=message, lang='pt-br')
     tts.save("welcome.mp3")
     
-    pygame.mixer.init()
-    pygame.mixer.music.load("welcome.mp3")
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        pygame.time.Clock().tick(10)
-    pygame.mixer.quit()
+    try:
+        playsound("welcome.mp3")
+    except Exception as e:
+        st.warning(f"Não foi possível reproduzir a mensagem de áudio: {str(e)}")
     
     os.remove("welcome.mp3")
- 
+
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
 np.set_printoptions(suppress=True)
