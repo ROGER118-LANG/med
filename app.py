@@ -55,7 +55,7 @@ caminhos_modelos = {
         "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
     }
      "MURA": {
-        "DenseNet": "densenet_mura.h5"
+        "DenseNet": "https://drive.google.com/file/d/1pFEZsDJ8CKnKdwmNvRyd0rcbfMh-8GZJ/view?usp=drive_link"
     }
 }
 
