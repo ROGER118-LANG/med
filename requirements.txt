@@ -10,3 +10,4 @@ requests
 extra_streamlit_components
 streamlit_chat
 pygame
+gTTS
