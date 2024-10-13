@@ -53,7 +53,7 @@ caminhos_modelos = {
         "Entorse de Tornozelo": "ankle_sprain_model.h5",
         "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
     }
-    "MURA": {
+    "MURA": 
         "DenseNet": "https://seu-link-de-download-direto/densenet_mura.h5"
     }
 }
