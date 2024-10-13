@@ -14,7 +14,6 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
-import requests
 from skimage import measure
 
 # Configuração da página
@@ -52,9 +51,6 @@ caminhos_modelos = {
         "ACL": "acl_model.h5",
         "Entorse de Tornozelo": "ankle_sprain_model.h5",
         "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
-    },
-    "MURA": {
-        "DenseNet": "https://drive.google.com/file/d/1pFEZsDJ8CKnKdwmNvRyd0rcbfMh-8GZJ/view?usp=drive_link"
     }
 }
 
@@ -82,35 +78,20 @@ def custom_depthwise_conv2d(*args, **kwargs):
 
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
-        # Se o caminho_modelo for uma URL, baixe o modelo
-        if isinstance(caminho_modelo, str) and caminho_modelo.startswith('http'):
-            response = requests.get(caminho_modelo)
-            response.raise_for_status()  # Lança uma exceção para erros HTTP
-            modelo_bytes = io.BytesIO(response.content)
-            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-                modelo = load_model(modelo_bytes, compile=False)
-        elif isinstance(caminho_modelo, io.BytesIO):
-            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-                modelo = load_model(caminho_modelo, compile=False)
-        else:
-            if not os.path.exists(caminho_modelo):
-                raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-                modelo = load_model(caminho_modelo, compile=False)
-
-        nomes_classes = None
-        if caminho_rotulos:
-            if not os.path.exists(caminho_rotulos):
-                raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
-            with open(caminho_rotulos, "r") as f:
-                nomes_classes = f.readlines()
-
+        if not os.path.exists(caminho_modelo):
+            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
+        if not os.path.exists(caminho_rotulos):
+            raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
+        
+        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+            modelo = load_model(caminho_modelo, compile=False)
+        
+        with open(caminho_rotulos, "r") as f:
+            nomes_classes = f.readlines()
         return modelo, nomes_classes
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
-
-
 
 def prever(modelo, dados, nomes_classes):
     try:
@@ -148,29 +129,13 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             return None
         
         try:
-            caminho_modelo = caminhos_modelos[setor][modelo]
-            caminho_rotulos = caminhos_rotulos.get(setor, {}).get(modelo)
+            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
             
-            st.write(f"Carregando modelo de: {caminho_modelo}")
-            st.write(f"Carregando rótulos de: {caminho_rotulos}")
-            
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
-            
-            if modelo is not None:
-                st.write("Modelo carregado com sucesso")
+            if modelo is not None and nomes_classes is not None:
                 imagem_processada = preprocessar_imagem(arquivo_carregado)
                 
                 if imagem_processada is not None:
-                    st.write("Imagem pré-processada com sucesso")
-                    
-                    # Se não houver rótulos (como no caso do MURA), ajuste a função de previsão
-                    if nomes_classes is None:
-                        previsao = modelo.predict(imagem_processada)
-                        # Ajuste isso de acordo com a saída esperada do modelo MURA
-                        nome_classe = "Anormal" if previsao[0][0] > 0.5 else "Normal"
-                        pontuacao_confianca = float(previsao[0][0])
-                    else:
-                        nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
+                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
                     
                     if nome_classe is not None and pontuacao_confianca is not None:
                         resultado = {
@@ -191,12 +156,13 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
                 else:
                     st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
             else:
-                st.error("Falha ao carregar o modelo. Por favor, verifique os arquivos e tente novamente.")
+                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
         except Exception as e:
             st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
         st.error("Por favor, faça o upload de uma imagem primeiro.")
     return None
+
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
 
@@ -523,4 +489,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
