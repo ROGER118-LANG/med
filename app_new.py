@@ -11,31 +11,54 @@ import io
 import os
 import pandas as pd
 from datetime import datetime, timedelta
-from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from skimage import measure
 from streamlit_chat import message
-from gtts import gTTS
-from playsound import playsound
+import sqlite3
+import json
 
-# Função para obter gerenciador de cookies
-def get_manager():
-    return stx.CookieManager()
+def init_db():
+    conn = sqlite3.connect('medvision.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS chat_messages
+                 (id INTEGER PRIMARY KEY, content TEXT, is_user BOOLEAN, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS patient_data
+                 (id INTEGER PRIMARY KEY, patient_name TEXT, heatmap TEXT, progress INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    conn.commit()
+    conn.close()
 
-# Função para tocar a mensagem de boas-vindas
-def play_welcome_message():
-    message = "Seja bem-vindo à MedVision"
-    tts = gTTS(text=message, lang='pt-br')
-    tts.save("welcome.mp3")
-    
-    try:
-        playsound("welcome.mp3")
-    except Exception as e:
-        st.warning(f"Não foi possível reproduzir a mensagem de áudio: {str(e)}")
-    
-    os.remove("welcome.mp3")
+def save_chat_message(content, is_user):
+    conn = sqlite3.connect('medvision.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO chat_messages (content, is_user) VALUES (?, ?)", (content, is_user))
+    conn.commit()
+    conn.close()
+
+def get_chat_messages():
+    conn = sqlite3.connect('medvision.db')
+    c = conn.cursor()
+    c.execute("SELECT content, is_user FROM chat_messages ORDER BY timestamp")
+    messages = c.fetchall()
+    conn.close()
+    return [{"content": msg[0], "is_user": msg[1]} for msg in messages]
+
+def save_patient_data(patient_name, heatmap, progress):
+    conn = sqlite3.connect('medvision.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO patient_data (patient_name, heatmap, progress) VALUES (?, ?, ?)",
+              (patient_name, json.dumps(heatmap.tolist()), progress))
+    conn.commit()
+    conn.close()
+
+def get_patient_data(patient_name):
+    conn = sqlite3.connect('medvision.db')
+    c = conn.cursor()
+    c.execute("SELECT heatmap, progress, timestamp FROM patient_data WHERE patient_name = ? ORDER BY timestamp DESC", (patient_name,))
+    data = c.fetchall()
+    conn.close()
+    return [{"heatmap": json.loads(d[0]), "progress": d[1], "timestamp": d[2]} for d in data]
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -56,7 +79,7 @@ if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
 
 # Gerenciador de cookies
-cookie_manager = get_manager()
+cookie_manager = stx.CookieManager()
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = cookie_manager.get(cookie='dark_mode') == 'true'
 
@@ -253,7 +276,6 @@ def atualizar_ultimo_login(nome_usuario):
 
 def pagina_login():
     st.title("Login")
-    play_welcome_message()  # Adiciona esta linha para tocar a mensagem de boas-vindas
     nome_usuario = st.text_input("Nome de Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
@@ -455,26 +477,25 @@ def visualizar_modelo_3d():
 
 def chat_colaborativo():
     st.header("Chat Colaborativo")
-    if 'chat_messages' not in st.session_state:
-        st.session_state.chat_messages = []
     
-    for i, msg in enumerate(st.session_state.chat_messages):
+    messages = get_chat_messages()
+    for i, msg in enumerate(messages):
         message(msg['content'], is_user=msg['is_user'], key=f"msg_{i}")
     
     user_input = st.text_input("Digite sua mensagem:")
     if st.button("Enviar"):
-        st.session_state.chat_messages.append({"content": user_input, "is_user": True})
+        save_chat_message(user_input, True)
         st.rerun()
 
 def rastrear_progresso():
     st.header("Rastreador de Progresso do Paciente")
-    paciente_id = st.text_input("ID do Paciente")
-    if paciente_id:
-        if paciente_id not in st.session_state:
-            st.session_state[paciente_id] = {"progresso": 0}
+    patient_name = st.text_input("Nome do Paciente")
+    if patient_name:
+        progresso = st.slider("Progresso da Recuperação", 0, 100, 0)
         
-        progresso = st.slider("Progresso da Recuperação", 0, 100, st.session_state[paciente_id]["progresso"])
-        st.session_state[paciente_id]["progresso"] = progresso
+        if st.button("Salvar Progresso"):
+            save_patient_data(patient_name, np.zeros((10, 10)), progresso)
+            st.success("Progresso salvo com sucesso!")
         
         st.progress(progresso)
         if progresso == 100:
@@ -482,6 +503,8 @@ def rastrear_progresso():
 
 def visualizar_heatmap_dor():
     st.header("Mapa de Calor da Dor")
+    
+    patient_name = st.text_input("Nome do Paciente")
     
     corpo = np.zeros((10, 10))
     
@@ -491,38 +514,35 @@ def visualizar_heatmap_dor():
             if cols[j].button(f"{i},{j}", key=f"pain_{i}_{j}"):
                 corpo[i, j] = 1 if corpo[i, j] == 0 else 0
     
+    if st.button("Salvar Mapa de Calor"):
+        save_patient_data(patient_name, corpo, None)
+        st.success("Mapa de calor salvo com sucesso!")
+    
     fig = go.Figure(data=go.Heatmap(z=corpo, colorscale='Reds'))
     fig.update_layout(title='Mapa de Calor da Dor', width=600, height=600)
     st.plotly_chart(fig)
 
-def pagina_visualizacao_3d():
-    st.header("Visualização 3D de Raio-X")
-    
-    arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["png", "jpg", "jpeg"], key="visualizacao_3d_uploader")
-    
-    if arquivo_carregado is not None:
-        try:
-            imagem = Image.open(arquivo_carregado)
-            st.image(imagem, caption="Raio-X Original", use_column_width=True)
-            
-            profundidade = st.slider("Profundidade da visualização 3D", min_value=10, max_value=100, value=50, step=10)
-            num_isosurfaces = st.slider("Número de isosuperfícies", min_value=1, max_value=10, value=5, step=1);
-            
-            if st.button("Converter para 3D"):
-                with st.spinner("Convertendo para 3D..."):
-                    fig_3d = visualizar_raio_x_3d(imagem, profundidade=profundidade, num_isosurfaces=num_isosurfaces)
-                    if fig_3d is not None:
-                        st.plotly_chart(fig_3d, use_container_width=True)
-                        st.success("Visualização 3D gerada com sucesso!")
-                    else:
-                        st.error("Não foi possível gerar a visualização 3D.")
-        
-        except Exception as e:
-            st.error(f"Erro ao processar a imagem: {str(e)}")
-    else:
-        st.info("Por favor, faça o upload de uma imagem de Raio-X.")
+def visualizar_historico_paciente_por_nome():
+    st.header("Histórico do Paciente")
+    patient_name = st.text_input("Nome do Paciente para visualização do histórico")
+    if st.button("Visualizar Histórico"):
+        patient_data = get_patient_data(patient_name)
+        if patient_data:
+            for i, data in enumerate(patient_data):
+                st.subheader(f"Registro {i+1} - {data['timestamp']}")
+                if data['progress'] is not None:
+                    st.write(f"Progresso: {data['progress']}%")
+                    st.progress(data['progress'])
+                if any(data['heatmap']):
+                    fig = go.Figure(data=go.Heatmap(z=data['heatmap'], colorscale='Reds'))
+                    fig.update_layout(title='Mapa de Calor da Dor', width=600, height=600)
+                    st.plotly_chart(fig)
+        else:
+            st.info("Nenhum histórico encontrado para este paciente.")
 
 def main():
+    init_db()
+    
     st.title("MedVision")
     
     try:
@@ -544,7 +564,8 @@ def main():
                 "Visualizador de Modelo 3D",
                 "Chat Colaborativo",
                 "Rastreador de Progresso",
-                "Mapa de Calor da Dor"
+                "Mapa de Calor da Dor",
+                "Histórico do Paciente por Nome"
             ]
             
             if opcoes_disponiveis:
@@ -590,8 +611,8 @@ def main():
                 elif opcao_menu == "Mapa de Calor da Dor":
                     visualizar_heatmap_dor()
                 
-                elif opcao_menu == "Gerenciamento de Usuários":
-                    gerenciar_usuarios()
+                elif opcao_menu == "Histórico do Paciente por Nome":
+                    visualizar_historico_paciente_por_nome()
             else:
                 st.warning("Você não tem acesso a nenhuma página. Por favor, contate o administrador.")
 
