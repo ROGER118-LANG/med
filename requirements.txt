@@ -6,3 +6,4 @@ seaborn
 plotly
 scipy
 scikit-image
+cv2
