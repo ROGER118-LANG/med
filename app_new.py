@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from skimage import measure
 import tensorflow as tf
-import cv2
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -149,7 +148,12 @@ def gerar_mapa_calor(modelo, imagem, classe_predita):
 
     cam = tf.maximum(cam, 0) / tf.math.reduce_max(cam)
     cam = cam.numpy()
-    cam = cv2.resize(cam, (imagem.shape[1], imagem.shape[0]))
+    
+    # Use PIL instead of cv2 for resizing
+    cam_image = Image.fromarray(cam)
+    cam_image = cam_image.resize((imagem.shape[1], imagem.shape[0]), Image.LANCZOS)
+    cam = np.array(cam_image)
+    
     cam = np.uint8(255 * cam)
     
     return cam
