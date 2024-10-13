@@ -15,6 +15,8 @@ import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from skimage import measure
+import tensorflow as tf
+import cv2
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -119,8 +121,41 @@ def preprocessar_imagem(arquivo_carregado):
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
 
+def obter_ultima_camada_convolucional(model):
+    for layer in reversed(model.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            return layer.name
+    return None
+
+def gerar_mapa_calor(modelo, imagem, classe_predita):
+    img_array = np.expand_dims(imagem, axis=0)
+    img_array = tf.keras.applications.mobilenet.preprocess_input(img_array)
+
+    ultima_camada_conv = obter_ultima_camada_convolucional(modelo)
+    if ultima_camada_conv is None:
+        raise ValueError("Não foi possível encontrar uma camada convolucional no modelo.")
+
+    grad_model = tf.keras.models.Model([modelo.inputs], [modelo.get_layer(ultima_camada_conv).output, modelo.output])
+
+    with tf.GradientTape() as tape:
+        conv_outputs, predictions = grad_model(img_array)
+        loss = predictions[:, classe_predita]
+
+    output = conv_outputs[0]
+    grads = tape.gradient(loss, conv_outputs)[0]
+
+    weights = tf.reduce_mean(grads, axis=(0, 1))
+    cam = tf.reduce_sum(tf.multiply(output, weights), axis=-1)
+
+    cam = tf.maximum(cam, 0) / tf.math.reduce_max(cam)
+    cam = cam.numpy()
+    cam = cv2.resize(cam, (imagem.shape[1], imagem.shape[0]))
+    cam = np.uint8(255 * cam)
+    
+    return cam
+
 def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
-  if arquivo_carregado is not None:
+    if arquivo_carregado is not None:
         try:
             imagem = Image.open(arquivo_carregado).convert('RGB')
             img_array = np.array(imagem.resize((224, 224))) / 255.0
@@ -155,45 +190,10 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             st.write(f"Confiança: {confianca:.2f}%")
 
             # Aqui você pode adicionar código para salvar o resultado no histórico do paciente
-
         except Exception as e:
             st.error(f"Erro ao processar a imagem: {str(e)}")
-
-        
-        try:
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
-            
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
-                
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
-                    
-                    if nome_classe is not None and pontuacao_confianca is not None:
-                        resultado = {
-                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'modelo': opcao_modelo,
-                            'classe': nome_classe,
-                            'confianca': pontuacao_confianca
-                        }
-                        
-                        if id_paciente not in st.session_state.historico_paciente:
-                            st.session_state.historico_paciente[id_paciente] = []
-                        st.session_state.historico_paciente[id_paciente].append(resultado)
-                        
-                        st.success("Exame classificado com sucesso!")
-                        return resultado
-                    else:
-                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
-                else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
-            else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
-        except Exception as e:
-            st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
         st.error("Por favor, faça o upload de uma imagem primeiro.")
-    return None
 
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
@@ -460,75 +460,7 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
-       # Função para obter a última camada convolucional
-# Função para gerar o mapa de calor
-def gerar_mapa_calor(modelo, imagem, classe_predita):
-    img_array = np.expand_dims(imagem, axis=0)
-    img_array = tf.keras.applications.mobilenet.preprocess_input(img_array)
 
-    ultima_camada_conv = obter_ultima_camada_convolucional(modelo)
-    if ultima_camada_conv is None:
-        raise ValueError("Não foi possível encontrar uma camada convolucional no modelo.")
-
-    grad_model = tf.keras.models.Model([modelo.inputs], [modelo.get_layer(ultima_camada_conv).output, modelo.output])
-
-    with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(img_array)
-        loss = predictions[:, classe_predita]
-
-    output = conv_outputs[0]
-    grads = tape.gradient(loss, conv_outputs)[0]
-
-    weights = tf.reduce_mean(grads, axis=(0, 1))
-    cam = tf.reduce_sum(tf.multiply(output, weights), axis=-1)
-
-    cam = tf.maximum(cam, 0) / tf.math.reduce_max(cam)
-    cam = cam.numpy()
-    cam = cv2.resize(cam, (imagem.shape[1], imagem.shape[0]))
-    cam = np.uint8(255 * cam)
-    
-    return cam
-
-# Função principal para classificar o exame
-def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
-    if arquivo_carregado is not None:
-        try:
-            imagem = Image.open(arquivo_carregado).convert('RGB')
-            img_array = np.array(imagem.resize((224, 224))) / 255.0
-            img_array = np.expand_dims(img_array, axis=0)
-
-            modelo = carregar_modelo(opcao_modelo)
-            predicao = modelo.predict(img_array)
-            classe_predita = np.argmax(predicao)
-
-            mapa_calor = gerar_mapa_calor(modelo, img_array[0], classe_predita)
-
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-            ax1.imshow(imagem)
-            ax1.set_title('Imagem Original')
-            ax1.axis('off')
-            
-            ax2.imshow(imagem)
-            ax2.imshow(mapa_calor, cmap='jet', alpha=0.5)
-            ax2.set_title('Mapa de Calor')
-            ax2.axis('off')
-
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png')
-            buf.seek(0)
-            
-            st.image(buf, caption='Resultado da Análise', use_column_width=True)
-
-            resultado = "Positivo" if classe_predita == 1 else "Negativo"
-            confianca = predicao[0][classe_predita] * 100
-
-            st.write(f"Resultado: {resultado}")
-            st.write(f"Confiança: {confianca:.2f}%")
-
-            # Aqui você pode adicionar código para salvar o resultado no histórico do paciente
-
-        except Exception as e:
-            st.error(f"Erro ao processar a imagem: {str(e)}")
 def main():
     st.title("MedVision")
     
@@ -555,7 +487,7 @@ def main():
                 st.session_state.paginas_acessiveis = []
                 st.experimental_rerun()
 
-            opcoes_disponiveis = st.session_state.paginas_acessiveis + ["Visualização de Anomalia"]
+            opcoes_disponiveis = st.session_state.paginas_acessiveis
             
             if opcoes_disponiveis:
                 opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
@@ -583,9 +515,6 @@ def main():
                 
                 elif opcao_menu == "Gerenciamento de Usuários":
                     gerenciar_usuarios()
-                
-                elif opcao_menu == "Visualização de Anomalia":
-                    pagina_visualizacao_anomalia()
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
