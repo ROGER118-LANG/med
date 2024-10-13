@@ -498,13 +498,23 @@ def pagina_visualizacao_anomalia():
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
 
 def main():
+    st.set_page_config(page_title="MedVision", layout="wide")
     st.title("MedVision")
     
     try:
-        inicializar_arquivo_login()  # Inicializa o arquivo de login
+        inicializar_arquivo_login()
+        
+        if 'logado' not in st.session_state:
+            st.session_state.logado = False
+        if 'nome_usuario' not in st.session_state:
+            st.session_state.nome_usuario = None
+        if 'setores_usuario' not in st.session_state:
+            st.session_state.setores_usuario = []
+        if 'paginas_acessiveis' not in st.session_state:
+            st.session_state.paginas_acessiveis = []
         
         if not st.session_state.logado:
-            pagina_login()  # Exibe a página de login se não estiver logado
+            pagina_login()
         else:
             st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
             if st.sidebar.button("Sair"):
@@ -512,17 +522,13 @@ def main():
                 st.session_state.nome_usuario = None
                 st.session_state.setores_usuario = []
                 st.session_state.paginas_acessiveis = []
-                st.experimental_rerun()  # Reinicia a interface ao deslogar
+                st.experimental_rerun()
 
-            # Use as páginas acessíveis definidas durante o login
-            opcoes_disponiveis = st.session_state.paginas_acessiveis
+            opcoes_disponiveis = st.session_state.paginas_acessiveis + ["Visualização de Anomalia"]
             
             if opcoes_disponiveis:
                 opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
 
-            if opcoes_disponiveis:
-                opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis + ["Visualização de Anomalia"])
-                # Chamando as funções correspondentes às opções selecionadas
                 if opcao_menu == "Classificar Exame":
                     st.header("Classificar Exame")
                     id_paciente = st.text_input("ID do Paciente")
@@ -546,6 +552,9 @@ def main():
                 
                 elif opcao_menu == "Gerenciamento de Usuários":
                     gerenciar_usuarios()
+                
+                elif opcao_menu == "Visualização de Anomalia":
+                    pagina_visualizacao_anomalia()
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
