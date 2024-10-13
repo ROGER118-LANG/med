@@ -1,4 +1,5 @@
 import streamlit as st
+import extra_streamlit_components as stx
 from keras.models import load_model
 from keras.layers import DepthwiseConv2D
 from keras.utils import custom_object_scope
@@ -15,6 +16,13 @@ import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from skimage import measure
+from streamlit_chat import message
+import speech_recognition as sr
+import streamlit_3d_viewer as st3d
+
+# Função para obter gerenciador de cookies
+def get_manager():
+    return stx.CookieManager()
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -31,6 +39,24 @@ if 'setores_usuario' not in st.session_state:
     st.session_state.setores_usuario = []
 if 'paginas_acessiveis' not in st.session_state:
     st.session_state.paginas_acessiveis = []
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+
+# Gerenciador de cookies
+cookie_manager = get_manager()
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = cookie_manager.get(cookie='dark_mode') == 'true'
+
+dark_mode = st.sidebar.checkbox('Dark Mode', value=st.session_state.dark_mode)
+if dark_mode != st.session_state.dark_mode:
+    st.session_state.dark_mode = dark_mode
+    cookie_manager.set('dark_mode', str(dark_mode).lower(), expires_at=datetime.now() + timedelta(days=30))
+    st.experimental_rerun()
+
+if st.session_state.dark_mode:
+    st.markdown("""
+    
+    """, unsafe_allow_html=True)
 
 # Arquivo para armazenar informações de login
 ARQUIVO_LOGIN = 'info_login.xlsx'
@@ -402,6 +428,71 @@ def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
         st.error(f"Erro ao gerar visualização 3D: {str(e)}")
         return None
 
+def visualizar_modelo_3d():
+    st.header("Visualizador de Modelo 3D")
+    model_options = {
+        "Crânio": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/skull/skull.gltf",
+        "Coração": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/heart/heart.gltf",
+        "Pulmão": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/lungs/lungs.gltf"
+    }
+    selected_model = st.selectbox("Selecione o modelo 3D", list(model_options.keys()))
+    st3d.streamlit_3d_viewer(model_options[selected_model], height=400)
+
+def chat_colaborativo():
+    st.header("Chat Colaborativo")
+    if 'chat_messages' not in st.session_state:
+        st.session_state.chat_messages = []
+    
+    for i, msg in enumerate(st.session_state.chat_messages):
+        message(msg['content'], is_user=msg['is_user'], key=f"msg_{i}")
+    
+    user_input = st.text_input("Digite sua mensagem:")
+    if st.button("Enviar"):
+        st.session_state.chat_messages.append({"content": user_input, "is_user": True})
+        st.experimental_rerun()
+
+def comando_voz():
+    st.header("Comandos de Voz")
+    r = sr.Recognizer()
+    if st.button("Iniciar Comando de Voz"):
+        with sr.Microphone() as source:
+            st.write("Fale agora...")
+            audio = r.listen(source)
+            try:
+                text = r.recognize_google(audio, language='pt-BR')
+                st.write(f"Você disse: {text}")
+            except:
+                st.write("Não foi possível entender o áudio")
+
+def rastrear_progresso():
+    st.header("Rastreador de Progresso do Paciente")
+    paciente_id = st.text_input("ID do Paciente")
+    if paciente_id:
+        if paciente_id not in st.session_state:
+            st.session_state[paciente_id] = {"progresso": 0}
+        
+        progresso = st.slider("Progresso da Recuperação", 0, 100, st.session_state[paciente_id]["progresso"])
+        st.session_state[paciente_id]["progresso"] = progresso
+        
+        st.progress(progresso)
+        if progresso == 100:
+            st.balloons()
+
+def visualizar_heatmap_dor():
+    st.header("Mapa de Calor da Dor")
+    
+    corpo = np.zeros((10, 10))
+    
+    for i in range(10):
+        cols = st.columns(10)
+        for j in range(10):
+            if cols[j].button(f"{i},{j}", key=f"pain_{i}_{j}"):
+                corpo[i, j] = 1 if corpo[i, j] == 0 else 0
+    
+    fig = go.Figure(data=go.Heatmap(z=corpo, colorscale='Reds'))
+    fig.update_layout(title='Mapa de Calor da Dor', width=600, height=600)
+    st.plotly_chart(fig)
+
 def pagina_visualizacao_3d():
     st.header("Visualização 3D de Raio-X")
     
@@ -444,11 +535,16 @@ def main():
                 st.session_state.nome_usuario = None
                 st.session_state.setores_usuario = []
                 st.session_state.paginas_acessiveis = []
-                st.rerun()  # Alterado de st.experimental_rerun() para st.rerun()
-                # Remova a linha de rerun completamente
+                st.rerun()
 
             # Use as páginas acessíveis definidas durante o login
-            opcoes_disponiveis = st.session_state.paginas_acessiveis
+            opcoes_disponiveis = st.session_state.paginas_acessiveis + [
+                "Visualizador de Modelo 3D",
+                "Chat Colaborativo",
+                "Comandos de Voz",
+                "Rastreador de Progresso",
+                "Mapa de Calor da Dor"
+            ]
             
             if opcoes_disponiveis:
                 opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
@@ -480,6 +576,21 @@ def main():
                 
                 elif opcao_menu == "Visualização 3D de Raio-X":
                     pagina_visualizacao_3d()
+
+                elif opcao_menu == "Visualizador de Modelo 3D":
+                    visualizar_modelo_3d()
+                
+                elif opcao_menu == "Chat Colaborativo":
+                    chat_colaborativo()
+                
+                elif opcao_menu == "Comandos de Voz":
+                    comando_voz()
+                
+                elif opcao_menu == "Rastreador de Progresso":
+                    rastrear_progresso()
+                
+                elif opcao_menu == "Mapa de Calor da Dor":
+                    visualizar_heatmap_dor()
                 
                 elif opcao_menu == "Gerenciamento de Usuários":
                     gerenciar_usuarios()
@@ -489,5 +600,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
