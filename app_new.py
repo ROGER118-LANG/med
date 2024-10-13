@@ -107,6 +107,8 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
+
+
 def prever(modelo, dados, nomes_classes):
     try:
         previsao = modelo.predict(dados)
@@ -146,12 +148,17 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             caminho_modelo = caminhos_modelos[setor][modelo]
             caminho_rotulos = caminhos_rotulos.get(setor, {}).get(modelo)
             
+            st.write(f"Carregando modelo de: {caminho_modelo}")
+            st.write(f"Carregando rótulos de: {caminho_rotulos}")
+            
             modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
             
             if modelo is not None:
+                st.write("Modelo carregado com sucesso")
                 imagem_processada = preprocessar_imagem(arquivo_carregado)
                 
                 if imagem_processada is not None:
+                    st.write("Imagem pré-processada com sucesso")
                     nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
                     
                     if nome_classe is not None and pontuacao_confianca is not None:
@@ -179,6 +186,7 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
     else:
         st.error("Por favor, faça o upload de uma imagem primeiro.")
     return None
+
 
 
 def hash_senha(senha):
