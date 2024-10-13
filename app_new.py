@@ -14,8 +14,8 @@ from openpyxl import Workbook, load_workbook
 import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import requests
 from skimage import measure
-import tensorflow as tf
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -49,15 +49,13 @@ caminhos_modelos = {
     "Ortopedia": {
         "Braço Fraturado": "fractured_arm_model.h5",
         "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
-        "ACL": "./models/acl_model.h5",
+        "ACL": "acl_model.h5",
         "Entorse de Tornozelo": "ankle_sprain_model.h5",
         "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
+    },
+    "MURA": {
+        "DenseNet": "https://drive.google.com/file/d/1pFEZsDJ8CKnKdwmNvRyd0rcbfMh-8GZJ/view?usp=drive_link"
     }
-     "MURA": {
-        "DenseNet": "https://seu-link-de-download-direto/mura_weights.h5"
-    }
-}
-    
 }
 
 caminhos_rotulos = {
@@ -72,7 +70,7 @@ caminhos_rotulos = {
     "Ortopedia": {
         "Braço Fraturado": "fractured_arm_labels.txt",
         "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
-        "ACL": "./labels/acl_labels.txt",
+        "ACL": "acl_labels.txt",
         "Entorse de Tornozelo": "ankle_sprain_labels.txt",
         "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }
@@ -87,17 +85,15 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
         # Se o caminho_modelo for uma URL, baixe o modelo
         if caminho_modelo.startswith('http'):
             response = requests.get(caminho_modelo)
-            response.raise_for_status()
+            response.raise_for_status()  # Lança uma exceção para erros HTTP
             modelo_bytes = io.BytesIO(response.content)
-            modelo = load_model(modelo_bytes, compile=False)
+            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+                modelo = load_model(modelo_bytes, compile=False)
         else:
             if not os.path.exists(caminho_modelo):
                 raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-            modelo = load_model(caminho_modelo, compile=False)
-
-        # Inicialize o modelo com uma entrada de exemplo
-        input_shape = modelo.input_shape[1:]
-        modelo(tf.zeros((1,) + input_shape))
+            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+                modelo = load_model(caminho_modelo, compile=False)
 
         if caminho_rotulos:
             if not os.path.exists(caminho_rotulos):
@@ -111,9 +107,6 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
-
-
-
 def prever(modelo, dados, nomes_classes):
     try:
         previsao = modelo.predict(dados)
@@ -140,85 +133,19 @@ def preprocessar_imagem(arquivo_carregado):
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
 
-def obter_ultima_camada_convolucional(model):
-    for layer in reversed(model.layers):
-        if isinstance(layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
-            return layer.name
-        elif hasattr(layer, 'layers'):
-            for inner_layer in reversed(layer.layers):
-                if isinstance(inner_layer, (tf.keras.layers.Conv2D, tf.keras.layers.DepthwiseConv2D)):
-                    return inner_layer.name
-    return None
-
-def gerar_mapa_calor(modelo, imagem, classe_idx=None):
-    # Certifique-se de que a imagem tem a forma correta
-    if len(imagem.shape) == 3:
-        imagem = np.expand_dims(imagem, axis=0)
-    
-    # Encontre a última camada convolucional
-    ultima_conv_layer = None
-    for layer in reversed(modelo.layers):
-        if isinstance(layer, tf.keras.layers.Conv2D):
-            ultima_conv_layer = layer
-            break
-    
-    if ultima_conv_layer is None:
-        st.error("Não foi possível encontrar uma camada convolucional no modelo.")
-        return None
-
-    # Crie um modelo que vai até a última camada convolucional
-    grad_model = tf.keras.models.Model([modelo.inputs], [ultima_conv_layer.output, modelo.output])
-
-    # Calcule os gradientes
-    with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(imagem)
-        if classe_idx is None:
-            classe_idx = tf.argmax(predictions[0])
-        class_output = predictions[:, classe_idx]
-
-    grads = tape.gradient(class_output, conv_outputs)
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-
-    # Pondere as saídas da camada convolucional com os gradientes
-    heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_outputs), axis=-1)
-    heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
-    heatmap = heatmap.reshape((heatmap.shape[1], heatmap.shape[2]))
-
-    return heatmap
-
-def visualizar_mapa_calor(imagem, heatmap):
-    # Redimensione o heatmap para o tamanho da imagem original
-    heatmap = np.uint8(255 * heatmap)
-    heatmap = Image.fromarray(heatmap).resize((imagem.shape[1], imagem.shape[0]), Image.LANCZOS)
-    heatmap = np.asarray(heatmap)
-    
-    # Aplique o mapa de calor à imagem original
-    heatmap = np.uint8(cm.jet(heatmap)[..., :3] * 255)
-    superimposed_img = heatmap * 0.4 + imagem
-    superimposed_img = np.uint8(superimposed_img / np.max(superimposed_img) * 255)
-    
-    # Exiba a imagem
-    fig, ax = plt.subplots()
-    ax.imshow(superimposed_img)
-    ax.axis('off')
-    st.pyplot(fig)
-
 def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
     if arquivo_carregado is not None:
         st.write(f"Opção de modelo selecionada: {opcao_modelo}")
         
-        setor, modelo_nome = opcao_modelo.split('_', 1)
-        if setor not in caminhos_modelos or modelo_nome not in caminhos_modelos[setor]:
+        setor, modelo = opcao_modelo.split('_', 1)
+        if setor not in caminhos_modelos or modelo not in caminhos_modelos[setor]:
             st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
             return None
         
         try:
-            caminho_modelo = caminhos_modelos[setor][modelo_nome]
-            caminho_rotulos = caminhos_rotulos.get(setor, {}).get(modelo_nome)
+            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
             
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
-            
-            if modelo is not None:
+            if modelo is not None and nomes_classes is not None:
                 imagem_processada = preprocessar_imagem(arquivo_carregado)
                 
                 if imagem_processada is not None:
@@ -237,20 +164,13 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
                         st.session_state.historico_paciente[id_paciente].append(resultado)
                         
                         st.success("Exame classificado com sucesso!")
-                        
-                        # Gerar e exibir o mapa de calor
-                        heatmap = gerar_mapa_calor(modelo, imagem_processada[0])
-                        if heatmap is not None:
-                            st.subheader("Mapa de Calor")
-                            visualizar_mapa_calor(imagem_processada[0], heatmap)
-                        
                         return resultado
                     else:
                         st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
                 else:
                     st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
             else:
-                st.error("Falha ao carregar o modelo. Por favor, verifique os arquivos e tente novamente.")
+                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
         except Exception as e:
             st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
@@ -527,25 +447,10 @@ def main():
     st.title("MedVision")
     
     try:
-        inicializar_arquivo_login()
-        
-        # Check if models and labels directories exist
-        if not os.path.exists("./models"):
-            st.error("Diretório de modelos não encontrado. Por favor, crie um diretório 'models' e coloque os arquivos .h5 lá.")
-        if not os.path.exists("./labels"):
-            st.error("Diretório de rótulos não encontrado. Por favor, crie um diretório 'labels' e coloque os arquivos .txt lá.")
-        
-        if 'logado' not in st.session_state:
-            st.session_state.logado = False
-        if 'nome_usuario' not in st.session_state:
-            st.session_state.nome_usuario = None
-        if 'setores_usuario' not in st.session_state:
-            st.session_state.setores_usuario = []
-        if 'paginas_acessiveis' not in st.session_state:
-            st.session_state.paginas_acessiveis = []
+        inicializar_arquivo_login()  # Inicializa o arquivo de login
         
         if not st.session_state.logado:
-            pagina_login()
+            pagina_login()  # Exibe a página de login se não estiver logado
         else:
             st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
             if st.sidebar.button("Sair"):
@@ -553,18 +458,27 @@ def main():
                 st.session_state.nome_usuario = None
                 st.session_state.setores_usuario = []
                 st.session_state.paginas_acessiveis = []
-                st.experimental_rerun()
+                st.rerun()  # Alterado de st.experimental_rerun() para st.rerun()
+                # Remova a linha de rerun completamente
 
+            # Use as páginas acessíveis definidas durante o login
             opcoes_disponiveis = st.session_state.paginas_acessiveis
             
             if opcoes_disponiveis:
                 opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
 
+                # Chamando as funções correspondentes às opções selecionadas
                 if opcao_menu == "Classificar Exame":
                     st.header("Classificar Exame")
                     id_paciente = st.text_input("ID do Paciente")
-                    opcao_modelo = st.selectbox("Escolha o modelo", [f"{setor}_{modelo}" for setor in caminhos_modelos for modelo in caminhos_modelos[setor]])
+                    
+                    setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
+                    modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
+                    
+                    opcao_modelo = f"{setor}_{modelo}"
+                    
                     arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
+                    
                     if st.button("Classificar Exame"):
                         classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
                 
@@ -589,3 +503,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
