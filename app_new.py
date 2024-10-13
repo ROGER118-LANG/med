@@ -506,7 +506,7 @@ def pagina_visualizacao_3d():
             st.image(imagem, caption="Raio-X Original", use_column_width=True)
             
             profundidade = st.slider("Profundidade da visualização 3D", min_value=10, max_value=100, value=50, step=10)
-            num_isosurfaces = st.slider("Número de isosuperfícies", min_value=1, max_value=10, value=5, step=1)
+            num_isosurfaces = st.slider("Número de isosuperfícies", min_value=1, max_value=10, value=5, step=1);
             
             if st.button("Converter para 3D"):
                 with st.spinner("Convertendo para 3D..."):
@@ -592,6 +592,8 @@ def main():
                 
                 elif opcao_menu == "Gerenciamento de Usuários":
                     gerenciar_usuarios()
+            else:
+                st.warning("Você não tem acesso a nenhuma página. Por favor, contate o administrador.")
 
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado: {str(e)}")
