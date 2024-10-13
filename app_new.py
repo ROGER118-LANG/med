@@ -466,80 +466,23 @@ def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
         st.error(f"Erro ao gerar visualização 3D: {str(e)}")
         return None
 
-def visualizar_modelo_3d():
-    st.header("Visualizador de Modelo 3D")
-    model_options = {
-        "Crânio": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/skull/skull.gltf",
-        "Coração": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/heart/heart.gltf",
-        "Pulmão": "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/lungs/lungs.gltf"
-    }
-    selected_model = st.selectbox("Selecione o modelo 3D", list(model_options.keys()))
-    st3d.streamlit_3d_viewer(model_options[selected_model], height=400)
-
-def chat_colaborativo():
-    st.header("Chat Colaborativo")
+def pagina_visualizacao_3d():
+    st.header("Visualização 3D de Raio-X")
+    arquivo_carregado = st.file_uploader("Faça upload da imagem de Raio-X", type=["png", "jpg", "jpeg"])
     
-    messages = get_chat_messages()
-    for i, msg in enumerate(messages):
-        message(msg['content'], is_user=msg['is_user'], key=f"msg_{i}")
-    
-    user_input = st.text_input("Digite sua mensagem:")
-    if st.button("Enviar"):
-        save_chat_message(user_input, True)
-        st.rerun()
-
-def rastrear_progresso():
-    st.header("Rastreador de Progresso do Paciente")
-    patient_name = st.text_input("Nome do Paciente")
-    if patient_name:
-        progresso = st.slider("Progresso da Recuperação", 0, 100, 0)
+    if arquivo_carregado is not None:
+        imagem = Image.open(arquivo_carregado)
+        st.image(imagem, caption="Imagem de Raio-X carregada", use_column_width=True)
         
-        if st.button("Salvar Progresso"):
-            save_patient_data(patient_name, np.zeros((10, 10)), progresso)
-            st.success("Progresso salvo com sucesso!")
+        profundidade = st.slider("Profundidade da visualização 3D", 10, 100, 50)
+        num_isosurfaces = st.slider("Número de isosuperfícies", 2, 10, 5)
         
-        st.progress(progresso)
-        if progresso == 100:
-            st.balloons()
-
-def visualizar_heatmap_dor():
-    st.header("Mapa de Calor da Dor")
-    
-    patient_name = st.text_input("Nome do Paciente")
-    
-    corpo = np.zeros((10, 10))
-    
-    for i in range(10):
-        cols = st.columns(10)
-        for j in range(10):
-            if cols[j].button(f"{i},{j}", key=f"pain_{i}_{j}"):
-                corpo[i, j] = 1 if corpo[i, j] == 0 else 0
-    
-    if st.button("Salvar Mapa de Calor"):
-        save_patient_data(patient_name, corpo, None)
-        st.success("Mapa de calor salvo com sucesso!")
-    
-    fig = go.Figure(data=go.Heatmap(z=corpo, colorscale='Reds'))
-    fig.update_layout(title='Mapa de Calor da Dor', width=600, height=600)
-    st.plotly_chart(fig)
-
-def visualizar_historico_paciente_por_nome():
-    st.header("Histórico do Paciente")
-    patient_name = st.text_input("Nome do Paciente para visualização do histórico")
-    if st.button("Visualizar Histórico"):
-        patient_data = get_patient_data(patient_name)
-        if patient_data:
-            for i, data in enumerate(patient_data):
-                st.subheader(f"Registro {i+1} - {data['timestamp']}")
-                if data['progress'] is not None:
-                    st.write(f"Progresso: {data['progress']}%")
-                    st.progress(data['progress'])
-                if any(data['heatmap']):
-                    fig = go.Figure(data=go.Heatmap(z=data['heatmap'], colorscale='Reds'))
-                    fig.update_layout(title='Mapa de Calor da Dor', width=600, height=600)
-                    st.plotly_chart(fig)
-        else:
-            st.info("Nenhum histórico encontrado para este paciente.")
+        if st.button("Gerar Visualização 3D"):
+            fig = visualizar_raio_x_3d(imagem, profundidade, num_isosurfaces)
+            if fig is not None:
+                st.plotly_chart(fig)
+            else:
+                st.error("Não foi possível gerar a visualização 3D.")
 
 def main():
     init_db()
