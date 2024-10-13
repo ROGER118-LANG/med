@@ -79,22 +79,33 @@ def custom_depthwise_conv2d(*args, **kwargs):
 
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
+        # Se o caminho_modelo for uma URL, baixe o modelo
+        if caminho_modelo.startswith('http'):
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as temp_model_file:
+                response = requests.get(caminho_modelo)
+                temp_model_file.write(response.content)
+                caminho_modelo = temp_model_file.name
+
         if not os.path.exists(caminho_modelo):
-            st.error(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-            return None, None
-        if not os.path.exists(caminho_rotulos):
-            st.error(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
-            return None, None
-        
+            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
+
         with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
             modelo = load_model(caminho_modelo, compile=False)
-        
-        with open(caminho_rotulos, "r") as f:
-            nomes_classes = f.readlines()
+
+        if caminho_rotulos:
+            if not os.path.exists(caminho_rotulos):
+                raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
+            with open(caminho_rotulos, "r") as f:
+                nomes_classes = f.readlines()
+        else:
+            nomes_classes = None
+
         return modelo, nomes_classes
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
+
+
 
 def prever(modelo, dados, nomes_classes):
     try:
