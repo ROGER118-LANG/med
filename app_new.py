@@ -83,30 +83,33 @@ def custom_depthwise_conv2d(*args, **kwargs):
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
         # Se o caminho_modelo for uma URL, baixe o modelo
-        if caminho_modelo.startswith('http'):
+        if isinstance(caminho_modelo, str) and caminho_modelo.startswith('http'):
             response = requests.get(caminho_modelo)
             response.raise_for_status()  # Lança uma exceção para erros HTTP
             modelo_bytes = io.BytesIO(response.content)
             with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
                 modelo = load_model(modelo_bytes, compile=False)
+        elif isinstance(caminho_modelo, io.BytesIO):
+            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+                modelo = load_model(caminho_modelo, compile=False)
         else:
             if not os.path.exists(caminho_modelo):
                 raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
             with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
                 modelo = load_model(caminho_modelo, compile=False)
 
+        nomes_classes = None
         if caminho_rotulos:
             if not os.path.exists(caminho_rotulos):
                 raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
             with open(caminho_rotulos, "r") as f:
                 nomes_classes = f.readlines()
-        else:
-            nomes_classes = None
 
         return modelo, nomes_classes
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
+
 
 
 def prever(modelo, dados, nomes_classes):
@@ -159,7 +162,15 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
                 
                 if imagem_processada is not None:
                     st.write("Imagem pré-processada com sucesso")
-                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
+                    
+                    # Se não houver rótulos (como no caso do MURA), ajuste a função de previsão
+                    if nomes_classes is None:
+                        previsao = modelo.predict(imagem_processada)
+                        # Ajuste isso de acordo com a saída esperada do modelo MURA
+                        nome_classe = "Anormal" if previsao[0][0] > 0.5 else "Normal"
+                        pontuacao_confianca = float(previsao[0][0])
+                    else:
+                        nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
                     
                     if nome_classe is not None and pontuacao_confianca is not None:
                         resultado = {
@@ -186,9 +197,6 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
     else:
         st.error("Por favor, faça o upload de uma imagem primeiro.")
     return None
-
-
-
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
 
