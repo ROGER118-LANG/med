@@ -7,4 +7,3 @@ plotly
 scipy
 scikit-image
 requests
-tempfile
