@@ -39,37 +39,37 @@ ARQUIVO_LOGIN = 'info_login.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 caminhos_modelos = {
     "Pneumologia": {
-        "Pneumonia": "./models/pneumonia_model.h5",
-        "Tuberculose": "./models/tuberculose_model.h5",
-        "Câncer de Pulmão": "./models/cancer_pulmao_model.h5"
+        "Pneumonia": "pneumonia_model.h5",
+        "Tuberculose": "tuberculose_model.h5",
+        "Câncer de Pulmão": "cancer_pulmao_model.h5"
     },
     "Neurologia": {
-        "Tumor Cerebral": "./models/tumor_cerebral_model.h5"
+        "Tumor Cerebral": "tumor_cerebral_model.h5"
     },
     "Ortopedia": {
-        "Braço Fraturado": "./models/fractured_arm_model.h5",
-        "Ruptura do Tendão de Aquiles": "./models/achilles_tendon_rupture_model.h5",
+        "Braço Fraturado": "fractured_arm_model.h5",
+        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
         "ACL": "./models/acl_model.h5",
-        "Entorse de Tornozelo": "./models/ankle_sprain_model.h5",
-        "Fratura de Calcâneo": "./models/calcaneus_fracture_model.h5"
+        "Entorse de Tornozelo": "ankle_sprain_model.h5",
+        "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
     }
 }
 
 caminhos_rotulos = {
     "Pneumologia": {
-        "Pneumonia": "./labels/pneumonia_labels.txt",
-        "Tuberculose": "./labels/tuberculose_labels.txt",
-        "Câncer de Pulmão": "./labels/cancer_pulmao_labels.txt"
+        "Pneumonia": "pneumonia_labels.txt",
+        "Tuberculose": "tuberculose_labels.txt",
+        "Câncer de Pulmão": "cancer_pulmao_labels.txt"
     },
     "Neurologia": {
-        "Tumor Cerebral": "./labels/tumor_cerebral_labels.txt"
+        "Tumor Cerebral": "tumor_cerebral_labels.txt"
     },
     "Ortopedia": {
-        "Braço Fraturado": "./labels/fractured_arm_labels.txt",
-        "Ruptura do Tendão de Aquiles": "./labels/achilles_tendon_rupture_labels.txt",
+        "Braço Fraturado": "fractured_arm_labels.txt",
+        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
         "ACL": "./labels/acl_labels.txt",
-        "Entorse de Tornozelo": "./labels/ankle_sprain_labels.txt",
-        "Fratura de Calcâneo": "./labels/calcaneus_fracture_labels.txt"
+        "Entorse de Tornozelo": "ankle_sprain_labels.txt",
+        "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
     }
 }
 
