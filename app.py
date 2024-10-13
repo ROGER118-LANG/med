@@ -15,6 +15,8 @@ import hashlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from skimage import measure
+import requests
+import tempfile
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -79,8 +81,17 @@ def custom_depthwise_conv2d(*args, **kwargs):
     kwargs.pop('groups', None)
     return DepthwiseConv2D(*args, **kwargs)
 
+
+ 
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
+        # Se o caminho_modelo for uma URL, baixe o modelo
+        if caminho_modelo.startswith('http'):
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as temp_model_file:
+                response = requests.get(caminho_modelo)
+                temp_model_file.write(response.content)
+                caminho_modelo = temp_model_file.name
+
         if not os.path.exists(caminho_modelo):
             raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
 
