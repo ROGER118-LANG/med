@@ -9,4 +9,4 @@ scikit-image
 requests
 extra_streamlit_components
 streamlit_chat
-speech_recognition
+pygame
