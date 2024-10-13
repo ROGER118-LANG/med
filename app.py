@@ -51,6 +51,9 @@ caminhos_modelos = {
         "ACL": "acl_model.h5",
         "Entorse de Tornozelo": "ankle_sprain_model.h5",
         "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
+    },
+    "MURA": {
+        "DenseNet": "https://seu-link-de-download-direto/densenet_mura.h5"
     }
 }
 
@@ -78,21 +81,31 @@ def custom_depthwise_conv2d(*args, **kwargs):
 
 def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
-        if not os.path.exists(caminho_modelo):
-            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-        if not os.path.exists(caminho_rotulos):
-            raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
-        
-        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-            modelo = load_model(caminho_modelo, compile=False)
-        
-        with open(caminho_rotulos, "r") as f:
-            nomes_classes = f.readlines()
+        # Se o caminho_modelo for uma URL, baixe o modelo
+        if caminho_modelo.startswith('http'):
+            response = requests.get(caminho_modelo)
+            response.raise_for_status()  # Lança uma exceção para erros HTTP
+            modelo_bytes = io.BytesIO(response.content)
+            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+                modelo = load_model(modelo_bytes, compile=False)
+        else:
+            if not os.path.exists(caminho_modelo):
+                raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
+            with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+                modelo = load_model(caminho_modelo, compile=False)
+
+        if caminho_rotulos:
+            if not os.path.exists(caminho_rotulos):
+                raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
+            with open(caminho_rotulos, "r") as f:
+                nomes_classes = f.readlines()
+        else:
+            nomes_classes = None
+
         return modelo, nomes_classes
     except Exception as e:
         st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
         return None, None
-
 def prever(modelo, dados, nomes_classes):
     try:
         previsao = modelo.predict(dados)
