@@ -143,9 +143,12 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
             return None
         
         try:
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
+            caminho_modelo = caminhos_modelos[setor][modelo]
+            caminho_rotulos = caminhos_rotulos.get(setor, {}).get(modelo)
             
-            if modelo is not None and nomes_classes is not None:
+            modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
+            
+            if modelo is not None:
                 imagem_processada = preprocessar_imagem(arquivo_carregado)
                 
                 if imagem_processada is not None:
@@ -170,12 +173,13 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
                 else:
                     st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
             else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
+                st.error("Falha ao carregar o modelo. Por favor, verifique os arquivos e tente novamente.")
         except Exception as e:
             st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
         st.error("Por favor, faça o upload de uma imagem primeiro.")
     return None
+
 
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
