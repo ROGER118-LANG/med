@@ -17,12 +17,28 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from skimage import measure
 from streamlit_chat import message
-import speech_recognition as sr
-import streamlit_3d_viewer as st3d
+from gtts import gTTS
+import os
+import pygame
 
 # Função para obter gerenciador de cookies
 def get_manager():
     return stx.CookieManager()
+
+# Função para tocar a mensagem de boas-vindas
+def play_welcome_message():
+    message = "Seja bem-vindo à MedVision"
+    tts = gTTS(text=message, lang='pt-br')
+    tts.save("welcome.mp3")
+    
+    pygame.mixer.init()
+    pygame.mixer.music.load("welcome.mp3")
+    pygame.mixer.music.play()
+    while pygame.mixer.music.get_busy():
+        pygame.time.Clock().tick(10)
+    pygame.mixer.quit()
+    
+    os.remove("welcome.mp3")
 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
@@ -51,7 +67,7 @@ dark_mode = st.sidebar.checkbox('Dark Mode', value=st.session_state.dark_mode)
 if dark_mode != st.session_state.dark_mode:
     st.session_state.dark_mode = dark_mode
     cookie_manager.set('dark_mode', str(dark_mode).lower(), expires_at=datetime.now() + timedelta(days=30))
-    st.experimental_rerun()
+    st.rerun()
 
 if st.session_state.dark_mode:
     st.markdown("""
@@ -240,6 +256,7 @@ def atualizar_ultimo_login(nome_usuario):
 
 def pagina_login():
     st.title("Login")
+    play_welcome_message()  # Adiciona esta linha para tocar a mensagem de boas-vindas
     nome_usuario = st.text_input("Nome de Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
@@ -251,6 +268,7 @@ def pagina_login():
             st.session_state.paginas_acessiveis = paginas_acessiveis
             atualizar_ultimo_login(nome_usuario)
             st.success("Login realizado com sucesso!")
+            st.rerun()  # Alterado para st.rerun() em vez de st.experimental_rerun()
         else:
             st.error(mensagem)
 
@@ -449,20 +467,7 @@ def chat_colaborativo():
     user_input = st.text_input("Digite sua mensagem:")
     if st.button("Enviar"):
         st.session_state.chat_messages.append({"content": user_input, "is_user": True})
-        st.experimental_rerun()
-
-def comando_voz():
-    st.header("Comandos de Voz")
-    r = sr.Recognizer()
-    if st.button("Iniciar Comando de Voz"):
-        with sr.Microphone() as source:
-            st.write("Fale agora...")
-            audio = r.listen(source)
-            try:
-                text = r.recognize_google(audio, language='pt-BR')
-                st.write(f"Você disse: {text}")
-            except:
-                st.write("Não foi possível entender o áudio")
+        st.rerun()
 
 def rastrear_progresso():
     st.header("Rastreador de Progresso do Paciente")
@@ -541,7 +546,6 @@ def main():
             opcoes_disponiveis = st.session_state.paginas_acessiveis + [
                 "Visualizador de Modelo 3D",
                 "Chat Colaborativo",
-                "Comandos de Voz",
                 "Rastreador de Progresso",
                 "Mapa de Calor da Dor"
             ]
@@ -582,9 +586,6 @@ def main():
                 
                 elif opcao_menu == "Chat Colaborativo":
                     chat_colaborativo()
-                
-                elif opcao_menu == "Comandos de Voz":
-                    comando_voz()
                 
                 elif opcao_menu == "Rastreador de Progresso":
                     rastrear_progresso()
