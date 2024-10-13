@@ -41,7 +41,7 @@ caminhos_modelos = {
     "Pneumologia": {
         "Pneumonia": "pneumonia_model.h5",
         "Tuberculose": "tuberculose_model.h5",
-        "Câncer de Pulmão": "cancer_pulmao_model.h5"
+        "Câncer de Pulmão": "cancer_model.h5"
     },
     "Neurologia": {
         "Tumor Cerebral": "tumor_cerebral_model.h5"
@@ -59,7 +59,7 @@ caminhos_rotulos = {
     "Pneumologia": {
         "Pneumonia": "pneumonia_labels.txt",
         "Tuberculose": "tuberculose_labels.txt",
-        "Câncer de Pulmão": "cancer_pulmao_labels.txt"
+        "Câncer de Pulmão": "cancer_labels.txt"
     },
     "Neurologia": {
         "Tumor Cerebral": "tumor_cerebral_labels.txt"
