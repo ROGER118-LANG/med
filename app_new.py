@@ -53,9 +53,7 @@ caminhos_modelos = {
         "Entorse de Tornozelo": "ankle_sprain_model.h5",
         "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
     }
-    "MURA": 
-        "DenseNet": "https://seu-link-de-download-direto/densenet_mura.h5"
-    }
+    
 }
 
 caminhos_rotulos = {
@@ -84,16 +82,18 @@ def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
     try:
         # Se o caminho_modelo for uma URL, baixe o modelo
         if caminho_modelo.startswith('http'):
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.h5') as temp_model_file:
-                response = requests.get(caminho_modelo)
-                temp_model_file.write(response.content)
-                caminho_modelo = temp_model_file.name
-
-        if not os.path.exists(caminho_modelo):
-            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-
-        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
+            response = requests.get(caminho_modelo)
+            response.raise_for_status()
+            modelo_bytes = io.BytesIO(response.content)
+            modelo = load_model(modelo_bytes, compile=False)
+        else:
+            if not os.path.exists(caminho_modelo):
+                raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
             modelo = load_model(caminho_modelo, compile=False)
+
+        # Inicialize o modelo com uma entrada de exemplo
+        input_shape = modelo.input_shape[1:]
+        modelo(tf.zeros((1,) + input_shape))
 
         if caminho_rotulos:
             if not os.path.exists(caminho_rotulos):
@@ -146,107 +146,112 @@ def obter_ultima_camada_convolucional(model):
                     return inner_layer.name
     return None
 
-def gerar_mapa_calor(modelo, imagem, classe_predita):
-    img_array = np.expand_dims(imagem, axis=0)
-    img_array = tf.keras.applications.mobilenet.preprocess_input(img_array)
+def gerar_mapa_calor(modelo, imagem, classe_idx=None):
+    # Certifique-se de que a imagem tem a forma correta
+    if len(imagem.shape) == 3:
+        imagem = np.expand_dims(imagem, axis=0)
+    
+    # Encontre a última camada convolucional
+    ultima_conv_layer = None
+    for layer in reversed(modelo.layers):
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            ultima_conv_layer = layer
+            break
+    
+    if ultima_conv_layer is None:
+        st.error("Não foi possível encontrar uma camada convolucional no modelo.")
+        return None
 
-    ultima_camada_conv = obter_ultima_camada_convolucional(modelo)
-    if ultima_camada_conv is None:
-        st.warning("Não foi possível encontrar uma camada convolucional no modelo. Usando a última camada como fallback.")
-        ultima_camada_conv = modelo.layers[-1].name
+    # Crie um modelo que vai até a última camada convolucional
+    grad_model = tf.keras.models.Model([modelo.inputs], [ultima_conv_layer.output, modelo.output])
 
-    grad_model = tf.keras.models.Model([modelo.inputs], [modelo.get_layer(ultima_camada_conv).output, modelo.output])
-
+    # Calcule os gradientes
     with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(img_array)
-        loss = predictions[:, classe_predita]
+        conv_outputs, predictions = grad_model(imagem)
+        if classe_idx is None:
+            classe_idx = tf.argmax(predictions[0])
+        class_output = predictions[:, classe_idx]
 
-    output = conv_outputs[0]
-    grads = tape.gradient(loss, conv_outputs)[0]
+    grads = tape.gradient(class_output, conv_outputs)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    weights = tf.reduce_mean(grads, axis=(0, 1))
-    cam = tf.reduce_sum(tf.multiply(output, weights), axis=-1)
+    # Pondere as saídas da camada convolucional com os gradientes
+    heatmap = tf.reduce_mean(tf.multiply(pooled_grads, conv_outputs), axis=-1)
+    heatmap = np.maximum(heatmap, 0) / np.max(heatmap)
+    heatmap = heatmap.reshape((heatmap.shape[1], heatmap.shape[2]))
 
-    cam = tf.maximum(cam, 0) / tf.math.reduce_max(cam)
-    cam = cam.numpy()
+    return heatmap
+
+def visualizar_mapa_calor(imagem, heatmap):
+    # Redimensione o heatmap para o tamanho da imagem original
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = Image.fromarray(heatmap).resize((imagem.shape[1], imagem.shape[0]), Image.LANCZOS)
+    heatmap = np.asarray(heatmap)
     
-    cam_image = Image.fromarray(cam)
-    cam_image = cam_image.resize((imagem.shape[1], imagem.shape[0]), Image.LANCZOS)
-    cam = np.array(cam_image)
+    # Aplique o mapa de calor à imagem original
+    heatmap = np.uint8(cm.jet(heatmap)[..., :3] * 255)
+    superimposed_img = heatmap * 0.4 + imagem
+    superimposed_img = np.uint8(superimposed_img / np.max(superimposed_img) * 255)
     
-    cam = np.uint8(255 * cam)
-    
-    return cam
+    # Exiba a imagem
+    fig, ax = plt.subplots()
+    ax.imshow(superimposed_img)
+    ax.axis('off')
+    st.pyplot(fig)
 
 def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
     if arquivo_carregado is not None:
+        st.write(f"Opção de modelo selecionada: {opcao_modelo}")
+        
+        setor, modelo_nome = opcao_modelo.split('_', 1)
+        if setor not in caminhos_modelos or modelo_nome not in caminhos_modelos[setor]:
+            st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
+            return None
+        
         try:
-            imagem = Image.open(arquivo_carregado).convert('RGB')
-            img_array = np.array(imagem.resize((224, 224))) / 255.0
-            img_array = np.expand_dims(img_array, axis=0)
-
-            setor, nome_modelo = opcao_modelo.split('_', 1)
-            caminho_modelo = caminhos_modelos[setor][nome_modelo]
-            caminho_rotulos = caminhos_rotulos[setor][nome_modelo]
-
+            caminho_modelo = caminhos_modelos[setor][modelo_nome]
+            caminho_rotulos = caminhos_rotulos.get(setor, {}).get(modelo_nome)
+            
             modelo, nomes_classes = carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos)
             
-            if modelo is None or nomes_classes is None:
-                st.error("Não foi possível carregar o modelo ou rótulos. Verifique se os arquivos existem e estão no local correto.")
-                return
-
-            predicao = modelo.predict(img_array)
-            classe_predita = np.argmax(predicao)
-
-            try:
-                mapa_calor = gerar_mapa_calor(modelo, img_array[0], classe_predita)
-            except Exception as e:
-                st.warning(f"Não foi possível gerar o mapa de calor: {str(e)}")
-                mapa_calor = None
-
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-            ax1.imshow(imagem)
-            ax1.set_title('Imagem Original')
-            ax1.axis('off')
-            
-            if mapa_calor is not None:
-                ax2.imshow(imagem)
-                ax2.imshow(mapa_calor, cmap='jet', alpha=0.5)
-                ax2.set_title('Mapa de Calor')
-                ax2.axis('off')
-            else:
-                ax2.set_title('Mapa de Calor não disponível')
-                ax2.axis('off')
-
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png')
-            buf.seek(0)
-            
-            st.image(buf, caption='Resultado da Análise', use_column_width=True)
-
-            nome_classe, confianca = prever(modelo, img_array, nomes_classes)
-            
-            if nome_classe is not None and confianca is not None:
-                st.write(f"Classe Predita: {nome_classe}")
-                st.write(f"Confiança: {confianca:.2f}%")
-
-                # Salvar no histórico do paciente
-                if id_paciente not in st.session_state.historico_paciente:
-                    st.session_state.historico_paciente[id_paciente] = []
+            if modelo is not None:
+                imagem_processada = preprocessar_imagem(arquivo_carregado)
                 
-                st.session_state.historico_paciente[id_paciente].append({
-                    'data': datetime.now(),
-                    'modelo': opcao_modelo,
-                    'resultado': nome_classe,
-                    'confianca': confianca
-                })
+                if imagem_processada is not None:
+                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
+                    
+                    if nome_classe is not None and pontuacao_confianca is not None:
+                        resultado = {
+                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'modelo': opcao_modelo,
+                            'classe': nome_classe,
+                            'confianca': pontuacao_confianca
+                        }
+                        
+                        if id_paciente not in st.session_state.historico_paciente:
+                            st.session_state.historico_paciente[id_paciente] = []
+                        st.session_state.historico_paciente[id_paciente].append(resultado)
+                        
+                        st.success("Exame classificado com sucesso!")
+                        
+                        # Gerar e exibir o mapa de calor
+                        heatmap = gerar_mapa_calor(modelo, imagem_processada[0])
+                        if heatmap is not None:
+                            st.subheader("Mapa de Calor")
+                            visualizar_mapa_calor(imagem_processada[0], heatmap)
+                        
+                        return resultado
+                    else:
+                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
+                else:
+                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
             else:
-                st.error("Erro ao realizar a previsão.")
-
+                st.error("Falha ao carregar o modelo. Por favor, verifique os arquivos e tente novamente.")
         except Exception as e:
-            st.error(f"Erro ao processar a imagem: {str(e)}")
+            st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
     else:
         st.error("Por favor, faça o upload de uma imagem primeiro.")
+    return None
 
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
