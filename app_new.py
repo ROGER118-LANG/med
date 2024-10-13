@@ -120,13 +120,45 @@ def preprocessar_imagem(arquivo_carregado):
         return None
 
 def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
-    if arquivo_carregado is not None:
-        st.write(f"Opção de modelo selecionada: {opcao_modelo}")
-        
-        setor, modelo = opcao_modelo.split('_', 1)
-        if setor not in caminhos_modelos or modelo not in caminhos_modelos[setor]:
-            st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
-            return None
+  if arquivo_carregado is not None:
+        try:
+            imagem = Image.open(arquivo_carregado).convert('RGB')
+            img_array = np.array(imagem.resize((224, 224))) / 255.0
+            img_array = np.expand_dims(img_array, axis=0)
+
+            modelo = carregar_modelo(opcao_modelo)
+            predicao = modelo.predict(img_array)
+            classe_predita = np.argmax(predicao)
+
+            mapa_calor = gerar_mapa_calor(modelo, img_array[0], classe_predita)
+
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+            ax1.imshow(imagem)
+            ax1.set_title('Imagem Original')
+            ax1.axis('off')
+            
+            ax2.imshow(imagem)
+            ax2.imshow(mapa_calor, cmap='jet', alpha=0.5)
+            ax2.set_title('Mapa de Calor')
+            ax2.axis('off')
+
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            buf.seek(0)
+            
+            st.image(buf, caption='Resultado da Análise', use_column_width=True)
+
+            resultado = "Positivo" if classe_predita == 1 else "Negativo"
+            confianca = predicao[0][classe_predita] * 100
+
+            st.write(f"Resultado: {resultado}")
+            st.write(f"Confiança: {confianca:.2f}%")
+
+            # Aqui você pode adicionar código para salvar o resultado no histórico do paciente
+
+        except Exception as e:
+            st.error(f"Erro ao processar a imagem: {str(e)}")
+
         
         try:
             modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
