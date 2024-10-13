@@ -428,6 +428,24 @@ def pagina_visualizacao_3d():
             st.error(f"Erro ao processar a imagem: {str(e)}")
     else:
         st.info("Por favor, faça o upload de uma imagem de Raio-X.")
+        def obter_ultima_camada_convolucional(model):
+    for layer in reversed(model.layers):
+        # Verifica se a camada é convolucional
+        if isinstance(layer, tf.keras.layers.Conv2D):
+            return layer.name
+    return None  # Retorna None se não encontrar nenhuma camada convolucional[
+    def gerar_mapa_calor(modelo, imagem, classe_predita):
+    # Pré-processamento da imagem
+    img_array = np.expand_dims(imagem, axis=0)
+    img_array = tf.keras.applications.mobilenet.preprocess_input(img_array)
+
+    # Obtém o nome da última camada convolucional
+    ultima_camada_conv = obter_ultima_camada_convolucional(modelo)
+    if ultima_camada_conv is None:
+        raise ValueError("Não foi possível encontrar uma camada convolucional no modelo.")
+
+    # Cria um modelo que mapeia a entrada para as saídas da última camada conv e as predições
+    grad_model = tf.keras.models.Model([modelo.inputs], [modelo.get_layer(ultima_camada_conv).output, modelo.output])
 def visualizar_anomalia(imagem, modelo):
     """
     Visualiza a área de anomalia em um exame de raio-x usando um mapa de calor.
