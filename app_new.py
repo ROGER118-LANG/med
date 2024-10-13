@@ -39,7 +39,7 @@ def play_welcome_message():
     pygame.mixer.quit()
     
     os.remove("welcome.mp3")
-
+ 
 # Configuração da página
 st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
 np.set_printoptions(suppress=True)
