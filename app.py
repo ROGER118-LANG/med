@@ -38,8 +38,7 @@ ARQUIVO_LOGIN = 'info_login.xlsx'
 # Definição dos caminhos dos modelos e rótulos
 caminhos_modelos = {
     "Pneumologia": {
-        "Pneumonia": "pneumonia_model.h5",
-        "Tuberculose": "tuberculose_model.h5",
+        "Torax Raio x": "pneumoniatorax_model.h5",
         "Câncer de Pulmão": "cancer_pulmao_model.h5"
     },
     "Neurologia": {
