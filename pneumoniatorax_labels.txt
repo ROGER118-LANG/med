@@ -1,0 +1,8 @@
+0 Atelectasia
+1 Cardiomegalia
+2 Derrame pleural
+3 fibrose
+4 infiltrado pulmonar
+5 Normal
+6 Pneumonia
+7 Tuberculose
