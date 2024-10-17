@@ -55,8 +55,7 @@ caminhos_modelos = {
 
 caminhos_rotulos = {
     "Pneumologia": {
-        "Pneumonia": "pneumonia_labels.txt",
-        "Tuberculose": "tuberculose_labels.txt",
+        "Torax Raio x": "pneumoniatorax_labels.txt",
         "Câncer de Pulmão": "cancer_pulmao_labels.txt"
     },
     "Neurologia": {
