@@ -1,608 +1,277 @@
+
 import streamlit as st
-import extra_streamlit_components as stx
-from keras.models import load_model
-from keras.layers import DepthwiseConv2D
-from keras.utils import custom_object_scope
-from PIL import Image, ImageOps
 import numpy as np
-from scipy.ndimage import zoom
-import plotly.graph_objects as go
-import io
-import os
+from PIL import Image
+from keras.models import load_model
+import plotly.graph_objs as go
 import pandas as pd
+import sqlite3
 from datetime import datetime, timedelta
 import hashlib
+import os
+import io
 import matplotlib.pyplot as plt
 import seaborn as sns
-from skimage import measure
-from streamlit_chat import message
-import sqlite3
-import json
-from openpyxl import load_workbook, Workbook
-
-def init_db():
-    conn = sqlite3.connect('medvision.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS chat_messages
-                 (id INTEGER PRIMARY KEY, content TEXT, is_user BOOLEAN, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS patient_data
-                 (id INTEGER PRIMARY KEY, patient_name TEXT, heatmap TEXT, progress INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
-    conn.commit()
-    conn.close()
-
-def save_chat_message(content, is_user):
-    conn = sqlite3.connect('medvision.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO chat_messages (content, is_user) VALUES (?, ?)", (content, is_user))
-    conn.commit()
-    conn.close()
-
-def get_chat_messages():
-    conn = sqlite3.connect('medvision.db')
-    c = conn.cursor()
-    c.execute("SELECT content, is_user FROM chat_messages ORDER BY timestamp")
-    messages = c.fetchall()
-    conn.close()
-    return [{"content": msg[0], "is_user": msg[1]} for msg in messages]
-
-def save_patient_data(patient_name, heatmap, progress):
-    conn = sqlite3.connect('medvision.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO patient_data (patient_name, heatmap, progress) VALUES (?, ?, ?)",
-              (patient_name, json.dumps(heatmap.tolist()), progress))
-    conn.commit()
-    conn.close()
-
-def get_patient_data(patient_name):
-    conn = sqlite3.connect('medvision.db')
-    c = conn.cursor()
-    c.execute("SELECT heatmap, progress, timestamp FROM patient_data WHERE patient_name = ? ORDER BY timestamp DESC", (patient_name,))
-    data = c.fetchall()
-    conn.close()
-    return [{"heatmap": json.loads(d[0]), "progress": d[1], "timestamp": d[2]} for d in data]
 
 # Configuração da página
-st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
-np.set_printoptions(suppress=True)
+st.set_page_config(page_title="MedVision AI - Análise Avançada de Raio-X", layout="wide")
 
-# Inicializar estado da sessão
-if 'historico_paciente' not in st.session_state:
-    st.session_state.historico_paciente = {}
-if 'logado' not in st.session_state:
-    st.session_state.logado = False
-if 'nome_usuario' not in st.session_state:
-    st.session_state.nome_usuario = None
-if 'setores_usuario' not in st.session_state:
-    st.session_state.setores_usuario = []
-if 'paginas_acessiveis' not in st.session_state:
-    st.session_state.paginas_acessiveis = []
-if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = False
+# Carregar o modelo e os nomes das classes
+@st.cache_resource
+def load_ai_model():
+    model = load_model("keras_Model.h5", compile=False)
+    class_names = open("labels.txt", "r").readlines()
+    return model, class_names
 
-# Gerenciador de cookies
-cookie_manager = stx.CookieManager()
-if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = cookie_manager.get(cookie='dark_mode') == 'true'
+model, class_names = load_ai_model()
 
-dark_mode = st.sidebar.checkbox('Dark Mode', value=st.session_state.dark_mode)
-if dark_mode != st.session_state.dark_mode:
-    st.session_state.dark_mode = dark_mode
-    cookie_manager.set('dark_mode', str(dark_mode).lower(), expires_at=datetime.now() + timedelta(days=30))
-    st.rerun()
+# Funções do banco de dados
+def init_database():
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS patients
+                 (id INTEGER PRIMARY KEY, name TEXT, date TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS analyses
+                 (id INTEGER PRIMARY KEY, patient_id INTEGER, 
+                  image_path TEXT, prediction TEXT, confidence REAL, 
+                  date TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (username TEXT PRIMARY KEY, password_hash TEXT, role TEXT, 
+                  trial_expiration TEXT)''')
+    conn.commit()
+    conn.close()
 
-if st.session_state.dark_mode:
-    st.markdown("""
-    
-    """, unsafe_allow_html=True)
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-# Arquivo para armazenar informações de login
-ARQUIVO_LOGIN = 'info_login.xlsx'
+# Autenticação
+def login(username, password):
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT password_hash, role, trial_expiration FROM users WHERE username = ?", (username,))
+    user = c.fetchone()
+    conn.close()
 
-# Definição dos caminhos dos modelos e rótulos
-caminhos_modelos = {
-    "Pneumologia": {
-        "Pneumonia": "pneumonia_model.h5",
-        "Tuberculose": "tuberculose_model.h5",
-        "Câncer de Pulmão": "cancer_pulmao_model.h5"
-    },
-    "Neurologia": {
-        "Tumor Cerebral": "tumor_cerebral_model.h5"
-    },
-    "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_model.h5",
-        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
-        "ACL": "acl_model.h5",
-        "Entorse de Tornozelo": "ankle_sprain_model.h5",
-        "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
-    }
-}
+    if user and user[0] == hash_password(password):
+        if user[2] and datetime.now() > datetime.strptime(user[2], "%Y-%m-%d %H:%M:%S"):
+            st.error("Período de teste expirado. Por favor, contate o administrador.")
+            return False
+        st.session_state['logged_in'] = True
+        st.session_state['username'] = username
+        st.session_state['role'] = user[1]
+        return True
+    return False
 
-caminhos_rotulos = {
-    "Pneumologia": {
-        "Pneumonia": "pneumonia_labels.txt",
-        "Tuberculose": "tuberculose_labels.txt",
-        "Câncer de Pulmão": "cancer_pulmao_labels.txt"
-    },
-    "Neurologia": {
-        "Tumor Cerebral": "tumor_cerebral_labels.txt"
-    },
-    "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_labels.txt",
-        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
-        "ACL": "acl_labels.txt",
-        "Entorse de Tornozelo": "ankle_sprain_labels.txt",
-        "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
-    }
-}
+def logout():
+    for key in ['logged_in', 'username', 'role']:
+        if key in st.session_state:
+            del st.session_state[key]
 
-def custom_depthwise_conv2d(*args, **kwargs):
-    kwargs.pop('groups', None)
-    return DepthwiseConv2D(*args, **kwargs)
+# Aplicação principal
+def main():
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False
 
-def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
-    try:
-        if not os.path.exists(caminho_modelo):
-            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-        if not os.path.exists(caminho_rotulos):
-            raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
-        
-        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-            modelo = load_model(caminho_modelo, compile=False)
-        
-        with open(caminho_rotulos, "r") as f:
-            nomes_classes = f.readlines()
-        return modelo, nomes_classes
-    except Exception as e:
-        st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
-        return None, None
-
-def prever(modelo, dados, nomes_classes):
-    try:
-        previsao = modelo.predict(dados)
-        indice = np.argmax(previsao)
-        nome_classe = nomes_classes[indice]
-        pontuacao_confianca = float(previsao[0][indice])
-        return nome_classe.strip(), pontuacao_confianca
-    except Exception as e:
-        st.error(f"Erro durante a previsão: {str(e)}")
-        return None, None
-
-def preprocessar_imagem(arquivo_carregado):
-    try:
-        bytes_imagem = arquivo_carregado.getvalue()
-        imagem = Image.open(io.BytesIO(bytes_imagem)).convert("RGB")
-        tamanho = (224, 224)
-        imagem = ImageOps.fit(imagem, tamanho, Image.Resampling.LANCZOS)
-        array_imagem = np.asarray(imagem)
-        array_imagem_normalizado = (array_imagem.astype(np.float32) / 127.5) - 1
-        dados = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-        dados[0] = array_imagem_normalizado
-        return dados
-    except Exception as e:
-        st.error(f"Erro ao pré-processar imagem: {str(e)}")
-        return None
-
-def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
-    if arquivo_carregado is not None:
-        st.write(f"Opção de modelo selecionada: {opcao_modelo}")
-        
-        setor, modelo = opcao_modelo.split('_', 1)
-        if setor not in caminhos_modelos or modelo not in caminhos_modelos[setor]:
-            st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
-            return None
-        
-        try:
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
-            
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
-                
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
-                    
-                    if nome_classe is not None and pontuacao_confianca is not None:
-                        resultado = {
-                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'modelo': opcao_modelo,
-                            'classe': nome_classe,
-                            'confianca': pontuacao_confianca
-                        }
-                        
-                        if id_paciente not in st.session_state.historico_paciente:
-                            st.session_state.historico_paciente[id_paciente] = []
-                        st.session_state.historico_paciente[id_paciente].append(resultado)
-                        
-                        st.success("Exame classificado com sucesso!")
-                        return resultado
-                    else:
-                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
-                else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
-            else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
-        except Exception as e:
-            st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
+    if not st.session_state['logged_in']:
+        login_page()
     else:
-        st.error("Por favor, faça o upload de uma imagem primeiro.")
-    return None
-
-def hash_senha(senha):
-    return hashlib.sha256(senha.encode()).hexdigest()
-
-def inicializar_arquivo_login():
-    if not os.path.exists(ARQUIVO_LOGIN):
-        wb = Workbook()
-        ws = wb.active
-        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores', 'Páginas Acessíveis'])
-        senha_admin = hash_senha('123')
-        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia', 'Classificar Exame,Visualizar Histórico do Paciente,Comparar Pacientes,Visualização 3D de Raio-X,Gerenciamento de Usuários'])
-        wb.save(ARQUIVO_LOGIN)
-
-def verificar_login(nome_usuario, senha):
-    try:
-        wb = load_workbook(ARQUIVO_LOGIN)
-        ws = wb.active
-        for linha in ws.iter_rows(min_row=2, values_only=True):
-            if linha[0] == nome_usuario and linha[1] == hash_senha(senha):
-                eh_admin = len(linha) > 4 and linha[4] == 'admin'
-                
-                if not eh_admin:
-                    if len(linha) > 3 and linha[3]:
-                        data_expiracao = linha[3]
-                        if isinstance(data_expiracao, datetime) and datetime.now() > data_expiracao:
-                            return False, "Conta expirada", [], []
-                
-                setores = linha[5].split(',') if len(linha) > 5 and linha[5] else []
-                paginas_acessiveis = linha[6].split(',') if len(linha) > 6 and linha[6] else []
-                
-                # If the user is admin, give access to all pages
-                if eh_admin:
-                    paginas_acessiveis = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X", "Gerenciamento de Usuários"]
-                
-                return True, "Sucesso", setores, paginas_acessiveis
-        
-        return False, "Credenciais inválidas", [], []
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao verificar o login: {str(e)}")
-        return False, "Falha na verificação do login", [], []
-
-def atualizar_ultimo_login(nome_usuario):
-    wb = load_workbook(ARQUIVO_LOGIN)
-    ws = wb.active
-    for linha in ws.iter_rows(min_row=2):
-        if linha[0].value == nome_usuario:
-            linha[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            break
-    wb.save(ARQUIVO_LOGIN)
-
-def pagina_login():
-    st.title("Login")
-    nome_usuario = st.text_input("Nome de Usuário")
-    senha = st.text_input("Senha", type="password")
-    if st.button("Entrar"):
-        sucesso_login, mensagem, setores, paginas_acessiveis = verificar_login(nome_usuario, senha)
-        if sucesso_login:
-            st.session_state.logado = True
-            st.session_state.nome_usuario = nome_usuario
-            st.session_state.setores_usuario = setores
-            st.session_state.paginas_acessiveis = paginas_acessiveis
-            atualizar_ultimo_login(nome_usuario)
-            st.success("Login realizado com sucesso!")
-            st.rerun()  # Alterado para st.rerun() em vez de st.experimental_rerun()
+        if st.session_state['role'] == 'admin':
+            admin_page()
         else:
-            st.error(mensagem)
+            user_page()
 
-def visualizar_historico_paciente(id_paciente):
-    if id_paciente in st.session_state.historico_paciente:
-        historico = st.session_state.historico_paciente[id_paciente]
-        df = pd.DataFrame(historico)
-        st.dataframe(df)
-        
-        st.subheader("Visualização do Histórico de Exames do Paciente")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.scatterplot(data=df, x='data', y='confianca', hue='modelo', size='confianca', ax=ax)
-        ax.set_title(f"Confiança dos Exames ao Longo do Tempo para o Paciente {id_paciente}")
-        ax.set_xlabel("Data")
-        ax.set_ylabel("Pontuação de Confiança")
-        st.pyplot(fig)
-    else:
-        st.info("Nenhum histórico encontrado para este paciente.")
-
-def comparar_pacientes():
-    st.subheader("Comparar Pacientes")
-    ids_pacientes = list(st.session_state.historico_paciente.keys())
-    if len(ids_pacientes) < 2:
-        st.warning("É necessário pelo menos dois pacientes com histórico para comparar.")
-        return
+def login_page():
+    st.title("MedVision AI - Login")
+    username = st.text_input("Usuário")
+    password = st.text_input("Senha", type="password")
+    if st.button("Login"):
+        if login(username, password):
+            st.experimental_rerun()
+        else:
+            st.error("Usuário ou senha inválidos")
     
-    paciente1 = st.selectbox("Selecione o primeiro paciente", ids_pacientes)
-    paciente2 = st.selectbox("Selecione o segundo paciente", [id for id in ids_pacientes if id != paciente1])
-    
-    if st.button("Comparar"):
-        df1 = pd.DataFrame(st.session_state.historico_paciente[paciente1])
-        df2 = pd.DataFrame(st.session_state.historico_paciente[paciente2])
-        
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        
-        sns.boxplot(data=df1, x='modelo', y='confianca', ax=ax1)
-        ax1.set_title(f"Paciente {paciente1}")
-        ax1.set_ylim(0, 1)
-        
-        sns.boxplot(data=df2, x='modelo', y='confianca', ax=ax2)
-        ax2.set_title(f"Paciente {paciente2}")
-        ax2.set_ylim(0, 1)
-        
-        st.pyplot(fig)
+    if st.button("Registrar"):
+        register_page()
 
-def gerenciar_usuarios():
+def register_page():
+    st.title("MedVision AI - Registro")
+    new_username = st.text_input("Novo Usuário")
+    new_password = st.text_input("Nova Senha", type="password")
+    confirm_password = st.text_input("Confirmar Senha", type="password")
+
+    if st.button("Registrar"):
+        if new_password != confirm_password:
+            st.error("As senhas não coincidem.")
+        else:
+            conn = sqlite3.connect('medvision_ai.db')
+            c = conn.cursor()
+            expiration_date = datetime.now() + timedelta(days=7)
+            c.execute("INSERT INTO users (username, password_hash, role, trial_expiration) VALUES (?, ?, ?, ?)",
+                      (new_username, hash_password(new_password), "user", expiration_date.strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
+            conn.close()
+            st.success(f"Conta {new_username} criada com sucesso! Você tem um período de teste de 7 dias.")
+
+def admin_page():
+    st.title("MedVision AI - Painel de Administração")
+
+    if st.button("Logout"):
+        logout()
+        st.experimental_rerun()
+
+    if st.button("Mudar para Aplicação Principal"):
+        st.session_state['role'] = 'user'
+        st.experimental_rerun()
+
     st.header("Gerenciamento de Usuários")
     
-    try:
-        wb = load_workbook(ARQUIVO_LOGIN)
-        ws = wb.active
-        dados_usuario = {linha[0]: linha for linha in ws.iter_rows(min_row=2, values_only=True)}
-        
-        dados_usuario_limpos = [
-            (linha if len(linha) == 7 else linha + (None,) * (7 - len(linha))) 
-            for linha in dados_usuario.values()
-        ]
-        
-        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores", "Páginas Acessíveis"])
-        
-        st.dataframe(df_usuario)
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT username, role, trial_expiration FROM users")
+    users = c.fetchall()
+    conn.close()
 
-        st.subheader("Adicionar Usuário")
-        novo_nome_usuario = st.text_input("Novo Nome de Usuário")
-        nova_senha = st.text_input("Nova Senha", type="password")
-        nova_funcao = st.selectbox("Função", ["usuário", "admin"])
-        dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
-        novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-        novas_paginas = st.multiselect("Páginas Acessíveis", ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"])
-        
-        if st.button("Adicionar Usuário"):
-            if novo_nome_usuario and nova_senha:
-                senha_hash = hash_senha(nova_senha)
-                data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
-                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores), ",".join(novas_paginas)])
-                wb.save(ARQUIVO_LOGIN)
-                st.success("Usuário adicionado com sucesso!")
+    user_df = pd.DataFrame(users, columns=['Usuário', 'Função', 'Expiração do Teste'])
+    st.dataframe(user_df)
+
+    st.subheader("Adicionar Novo Usuário")
+    new_username = st.text_input("Novo Usuário")
+    new_password = st.text_input("Nova Senha", type="password")
+    new_role = st.selectbox("Função", ["user", "admin"])
+
+    if st.button("Adicionar Usuário"):
+        if new_username and new_password:
+            conn = sqlite3.connect('medvision_ai.db')
+            c = conn.cursor()
+            c.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                      (new_username, hash_password(new_password), new_role))
+            conn.commit()
+            conn.close()
+            st.success(f"Usuário {new_username} adicionado com sucesso")
+            st.experimental_rerun()
+        else:
+            st.error("Todos os campos são obrigatórios")
+
+def user_page():
+    st.title("MedVision AI - Análise Avançada de Raio-X")
+
+    if st.button("Logout"):
+        logout()
+        st.experimental_rerun()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.header("Upload e Análise de Imagem")
+        uploaded_file = st.file_uploader("Escolha uma imagem de raio-X", type=["jpg", "jpeg", "png"])
+        if uploaded_file is not None:
+            image = Image.open(uploaded_file)
+            st.image(image, caption="Imagem de raio-X carregada", use_column_width=True)
+
+            if st.button("Analisar Imagem"):
+                with st.spinner("Analisando..."):
+                    image_array = np.asarray(image.resize((224, 224)))
+                    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+                    data = np.expand_dims(normalized_image_array, axis=0)
+
+                    prediction = model.predict(data)
+                    index = np.argmax(prediction)
+                    class_name = class_names[index].strip()
+                    confidence_score = float(prediction[0][index])
+
+                    st.success(f"Previsão: {class_name}")
+                    st.info(f"Confiança: {confidence_score:.2f}")
+
+                    # Salvar análise no banco de dados
+                    save_analysis(st.session_state['username'], class_name, confidence_score)
+
+    with col2:
+        st.header("Histórico do Paciente")
+        patient_name = st.text_input("Nome do Paciente")
+        if st.button("Adicionar Paciente"):
+            add_patient(patient_name)
+
+        patients = get_patients()
+        selected_patient = st.selectbox("Selecionar Paciente", patients)
+
+        if selected_patient:
+            patient_id = int(selected_patient.split(':')[0])
+            analyses = get_patient_analyses(patient_id)
+            if analyses:
+                analyses_df = pd.DataFrame(analyses, columns=['Data', 'Previsão', 'Confiança'])
+                st.dataframe(analyses_df)
             else:
-                st.error("Por favor, forneça nome de usuário e senha.")
+                st.info("Nenhuma análise encontrada para este paciente.")
 
-        st.subheader("Editar Usuário")
-        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", list(dados_usuario.keys()))
-        senha_editada = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
-        funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
-        validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
-        setores_editados = st.multiselect("Novos Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-        paginas_editadas = st.multiselect("Novas Páginas Acessíveis", ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"])
-        
-        if st.button("Editar Usuário"):
-            if senha_editada:
-                senha_hash = hash_senha(senha_editada)
-                for linha in ws.iter_rows(min_row=2):
-                    if linha[0].value == editar_nome_usuario:
-                        linha[1].value = senha_hash
-                        linha[3].value = datetime.now() + timedelta(days=validade_editada) if funcao_editada != "admin" else None
-                        linha[4].value = funcao_editada
-                        linha[5].value = ",".join(setores_editados)
-                        linha[6].value = ",".join(paginas_editadas)
-                        break
-                wb.save(ARQUIVO_LOGIN)
-                st.success("Usuário editado com sucesso!")
-            else:
-                st.error("Por favor, forneça uma nova senha.")
+    st.header("Estatísticas")
+    create_statistics()
 
-        st.subheader("Remover Usuário")
-        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", list(dados_usuario.keys()))
-        if st.button("Remover Usuário"):
-            ws.delete_rows(list(dados_usuario.keys()).index(remover_nome_usuario) + 2)
-            wb.save(ARQUIVO_LOGIN)
-            st.success("Usuário removido com sucesso!")
+def save_analysis(username, prediction, confidence):
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO analyses (patient_id, prediction, confidence, date) VALUES (?, ?, ?, ?)",
+              (1, prediction, confidence, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
+def add_patient(name):
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO patients (name, date) VALUES (?, ?)",
+              (name, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+    st.success(f"Paciente {name} adicionado com sucesso")
+
+def get_patients():
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM patients ORDER BY name")
+    patients = c.fetchall()
+    conn.close()
+    return [f"{id}: {name}" for id, name in patients]
+
+def get_patient_analyses(patient_id):
+    conn = sqlite3.connect('medvision_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT date, prediction, confidence FROM analyses WHERE patient_id = ? ORDER BY date DESC", (patient_id,))
+    analyses = c.fetchall()
+    conn.close()
+    return analyses
+
+def create_statistics():
+    conn = sqlite3.connect('medvision_ai.db')
+    df = pd.read_sql_query("SELECT prediction, COUNT(*) as count FROM analyses GROUP BY prediction", conn)
+    conn.close()
+
+    fig = go.Figure(data=[go.Pie(labels=df['prediction'], values=df['count'])])
+    fig.update_layout(title='Distribuição de Diagnósticos')
+    st.plotly_chart(fig)
+
+    # Gráfico de barras para confiança média por diagnóstico
+    conn = sqlite3.connect('medvision_ai.db')
+    df_confidence = pd.read_sql_query("SELECT prediction, AVG(confidence) as avg_confidence FROM analyses GROUP BY prediction", conn)
+    conn.close()
+
+    fig_confidence = go.Figure(data=[go.Bar(x=df_confidence['prediction'], y=df_confidence['avg_confidence'])])
+    fig_confidence.update_layout(title='Confiança Média por Diagnóstico', xaxis_title='Diagnóstico', yaxis_title='Confiança Média')
+    st.plotly_chart(fig_confidence)
+
+    # Gráfico de linha para tendência de diagnósticos ao longo do tempo
+    conn = sqlite3.connect('medvision_ai.db')
+    df_trend = pd.read_sql_query("SELECT date, prediction FROM analyses ORDER BY date", conn)
+    conn.close()
+
+    df_trend['date'] = pd.to_datetime(df_trend['date'])
+    df_trend = df_trend.groupby([df_trend['date'].dt.to_period('D'), 'prediction']).size().unstack(fill_value=0)
+
+    fig_trend = go.Figure()
+    for col in df_trend.columns:
+        fig_trend.add_trace(go.Scatter(x=df_trend.index.astype(str), y=df_trend[col], mode='lines', name=col))
     
-    except Exception as e:
-        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
-
-def reduzir_resolucao_matriz(matriz_3d, max_size=1_000_000):
-    """Reduz a resolução da matriz 3D para um tamanho máximo especificado."""
-    current_size = matriz_3d.size
-    if current_size <= max_size:
-        return matriz_3d
-    
-    fator = (max_size / current_size) ** (1/3)
-    return zoom(matriz_3d, (fator, fator, fator))
-
-def converter_raio_x_para_3d(imagem, profundidade=50):
-    """Converte a imagem de Raio-X para uma matriz 3D."""
-    imagem_cinza = imagem.convert('L')
-    array_imagem = np.array(imagem_cinza)
-    array_normalizado = array_imagem.astype(float) / 255.0
-    
-    matriz_3d = np.repeat(array_normalizado[np.newaxis, :, :], profundidade, axis=0)
-    gradiente = np.linspace(1, 0.5, profundidade)[:, np.newaxis, np.newaxis]
-    matriz_3d *= gradiente
-    
-    return matriz_3d
-
-def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
-    """Cria uma visualização 3D do Raio-X a partir da imagem."""
-    try:
-        matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
-        matriz_3d = reduzir_resolucao_matriz(matriz_3d)
-        
-        z, y, x = matriz_3d.shape
-        
-        fig = go.Figure()
-        
-        valores_iso = np.linspace(matriz_3d.min(), matriz_3d.max(), num_isosurfaces + 2)[1:-1]
-        for valor_iso in valores_iso:
-            verts, faces, _, _ = measure.marching_cubes(matriz_3d, valor_iso)
-            x_mesh, y_mesh, z_mesh = verts.T
-            i, j, k = faces.T
-            
-            fig.add_trace(go.Mesh3d(
-                x=x_mesh, y=y_mesh, z=z_mesh,
-                i=i, j=j, k=k,
-                opacity=0.3,
-                colorscale='Greys',
-                intensity=z_mesh,
-                intensitymode='vertex',
-            ))
-        
-        fig.update_layout(
-            scene=dict(
-                xaxis_title='X',
-                yaxis_title='Y',
-                zaxis_title='Z',
-                aspectmode='data'
-            ),
-            width=600,
-            height=600,
-            title="Visualização 3D de Raio-X"
-        )
-        
-        return fig
-    except Exception as e:
-        st.error(f"Erro ao gerar visualização 3D: {str(e)}")
-        return None
-
-def visualizar_modelo_3d():
-    st.header("Visualizador de Modelo 3D")
-    st.write("Esta função ainda não foi implementada.")
-
-def chat_colaborativo():
-    st.header("Chat Colaborativo")
-    st.write("Bem-vindo ao chat colaborativo!")
-    
-    mensagem = st.text_input("Digite sua mensagem:")
-    if st.button("Enviar"):
-        if mensagem:
-            save_chat_message(mensagem, True)
-            st.success("Mensagem enviada!")
-
-    st.subheader("Histórico de mensagens:")
-    mensagens = get_chat_messages()
-    for msg in mensagens:
-        if msg['is_user']:
-            st.text_input("Você:", msg['content'], disabled=True)
-        else:
-            st.text_input("Sistema:", msg['content'], disabled=True)
-
-def rastrear_progresso():
-    st.header("Rastreador de Progresso")
-    paciente = st.text_input("Nome do Paciente:")
-    progresso = st.slider("Progresso do tratamento", 0, 100, 50)
-    if st.button("Salvar Progresso"):
-        save_patient_data(paciente, np.array([]), progresso)
-        st.success(f"Progresso de {progresso}% salvo para {paciente}")
-
-def visualizar_heatmap_dor():
-    st.header("Mapa de Calor da Dor")
-    paciente = st.text_input("Nome do Paciente:")
-    if st.button("Visualizar Mapa de Calor"):
-        dados_paciente = get_patient_data(paciente)
-        if dados_paciente:
-            ultimo_dado = dados_paciente[-1]
-            heatmap = np.array(ultimo_dado['heatmap'])
-            fig, ax = plt.subplots()
-            sns.heatmap(heatmap, ax=ax)
-            st.pyplot(fig)
-        else:
-            st.warning("Nenhum dado encontrado para este paciente.")
-
-def visualizar_historico_paciente_por_nome():
-    st.header("Histórico do Paciente por Nome")
-    nome_paciente = st.text_input("Nome do Paciente:")
-    if st.button("Visualizar Histórico"):
-        dados_paciente = get_patient_data(nome_paciente)
-        if dados_paciente:
-            df = pd.DataFrame(dados_paciente)
-            st.dataframe(df)
-        else:
-            st.warning("Nenhum histórico encontrado para este paciente.")
-
-def main():
-    init_db()
-    
-    st.title("MedVision")
-    
-    try:
-        inicializar_arquivo_login()  # Inicializa o arquivo de login
-        
-        if not st.session_state.logado:
-            pagina_login()  # Exibe a página de login se não estiver logado
-        else:
-            st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
-            if st.sidebar.button("Sair"):
-                st.session_state.logado = False
-                st.session_state.nome_usuario = None
-                st.session_state.setores_usuario = []
-                st.session_state.paginas_acessiveis = []
-                st.rerun()
-
-            # Use as páginas acessíveis definidas durante o login
-            opcoes_disponiveis = [
-                "Classificar Exame",
-                "Visualizar Histórico do Paciente",
-                "Comparar Pacientes",
-                "Visualização 3D de Raio-X",
-                "Visualizador de Modelo 3D",
-                "Chat Colaborativo",
-                "Rastreador de Progresso",
-                "Mapa de Calor da Dor",
-                "Histórico do Paciente por Nome",
-                "Gerenciamento de Usuários"
-            ]
-            
-            opcao_menu = st.sidebar.selectbox("Escolha uma opção:", opcoes_disponiveis)
-
-            # Chamando as funções correspondentes às opções selecionadas
-            if opcao_menu == "Classificar Exame":
-                st.header("Classificar Exame")
-                id_paciente = st.text_input("ID do Paciente")
-                
-                setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
-                modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
-                
-                opcao_modelo = f"{setor}_{modelo}"
-                
-                arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
-                
-                if st.button("Classificar Exame"):
-                    classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
-            
-            elif opcao_menu == "Visualizar Histórico do Paciente":
-                st.header("Histórico do Paciente")
-                id_paciente = st.text_input("ID do Paciente para visualização do histórico")
-                if st.button("Visualizar Histórico"):
-                    visualizar_historico_paciente(id_paciente)
-            
-            elif opcao_menu == "Comparar Pacientes":
-                comparar_pacientes()
-            
-            elif opcao_menu == "Visualização 3D de Raio-X":
-                pagina_visualizacao_3d()
-
-            elif opcao_menu == "Visualizador de Modelo 3D":
-                visualizar_modelo_3d()
-            
-            elif opcao_menu == "Chat Colaborativo":
-                chat_colaborativo()
-            
-            elif opcao_menu == "Rastreador de Progresso":
-                rastrear_progresso()
-            
-            elif opcao_menu == "Mapa de Calor da Dor":
-                visualizar_heatmap_dor()
-            
-            elif opcao_menu == "Histórico do Paciente por Nome":
-                visualizar_historico_paciente_por_nome()
-
-            elif opcao_menu == "Gerenciamento de Usuários":
-                gerenciar_usuarios()
-
-    except Exception as e:
-        st.error(f"Ocorreu um erro inesperado: {str(e)}")
+    fig_trend.update_layout(title='Tendência de Diagnósticos ao Longo do Tempo', xaxis_title='Data', yaxis_title='Número de Diagnósticos')
+    st.plotly_chart(fig_trend)
 
 if __name__ == "__main__":
+    init_database()
     main()
