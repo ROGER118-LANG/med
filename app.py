@@ -116,7 +116,94 @@ def preprocessar_imagem(arquivo_carregado):
     except Exception as e:
         st.error(f"Erro ao pré-processar imagem: {str(e)}")
         return None
-
+def gerar_laudo(nome_classe, pontuacao_confianca, setor, modelo):
+    laudo = f"""
+    LAUDO MÉDICO
+    
+    Data: {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
+    Setor: {setor}
+    Tipo de Exame: {modelo}
+    
+    ANÁLISE:
+    Com base na imagem de raio-x fornecida, o sistema de inteligência artificial 
+    MedVision classificou o exame como:
+    
+    Resultado: {nome_classe}
+    Confiança: {pontuacao_confianca:.2%}
+    
+    INTERPRETAÇÃO:
+    """
+    
+    if setor == "Pneumologia":
+        if modelo == "Torax Raio x":
+            if "pneumonia" in nome_classe.lower():
+                laudo += """
+    A imagem apresenta características consistentes com pneumonia. 
+    Observam-se opacidades pulmonares difusas, sugestivas de infiltrado inflamatório.
+    Recomenda-se correlação clínica e, se apropriado, início de tratamento antibiótico.
+                """
+            elif "normal" in nome_classe.lower():
+                laudo += """
+    A imagem do tórax não apresenta alterações significativas. 
+    Os campos pulmonares estão claros e bem expandidos, sem evidências de consolidações ou infiltrados.
+                """
+        elif modelo == "Câncer de Pulmão":
+            if "cancer" in nome_classe.lower():
+                laudo += """
+    A imagem revela uma massa pulmonar suspeita, compatível com neoplasia pulmonar. 
+    Recomenda-se urgentemente realizar exames adicionais, como tomografia computadorizada 
+    e possivelmente biópsia para confirmação diagnóstica.
+                """
+            else:
+                laudo += """
+    Não foram identificadas massas ou nódulos suspeitos de malignidade nos campos pulmonares.
+    Contudo, acompanhamento regular é aconselhável, especialmente em pacientes de alto risco.
+                """
+    
+    elif setor == "Neurologia":
+        if "tumor" in nome_classe.lower():
+            laudo += """
+    A imagem cerebral revela uma área de densidade anormal, sugestiva de processo expansivo intracraniano. 
+    A localização e características são compatíveis com tumor cerebral.
+    Recomenda-se ressonância magnética com contraste para melhor caracterização da lesão e planejamento terapêutico.
+            """
+        else:
+            laudo += """
+    Não foram identificadas massas intracranianas ou alterações estruturais significativas. 
+    O parênquima cerebral apresenta densidade normal, sem evidências de efeito de massa ou desvio da linha média.
+            """
+    
+    elif setor == "Ortopedia":
+        if "fratura" in nome_classe.lower():
+            laudo += """
+    A imagem radiográfica demonstra uma linha de descontinuidade óssea, 
+    compatível com fratura. Observa-se desalinhamento dos fragmentos ósseos.
+    Recomenda-se imobilização adequada e acompanhamento ortopédico para manejo apropriado.
+            """
+        elif "ruptura" in nome_classe.lower():
+            laudo += """
+    A imagem sugere descontinuidade na região do tendão de Aquiles, 
+    consistente com ruptura tendinosa. Nota-se aumento do ângulo de Kager.
+    Recomenda-se avaliação ortopédica imediata para determinar a necessidade de intervenção cirúrgica.
+            """
+        else:
+            laudo += """
+    Não foram identificadas fraturas ou rupturas evidentes. 
+    A estrutura óssea e os tecidos moles adjacentes apresentam-se sem alterações significativas.
+            """
+    
+    laudo += """
+    
+    RESSALVA:
+    Este laudo foi gerado por um sistema de inteligência artificial e deve ser 
+    revisado e validado por um profissional médico qualificado antes de ser utilizado 
+    para decisões clínicas. Correlação com achados clínicos e exames complementares 
+    é sempre recomendada.
+    
+    Assinatura Digital: MedVision AI
+    """
+    
+    return laudo
 def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
     if arquivo_carregado is not None:
         st.write(f"Opção de modelo selecionada: {opcao_modelo}")
@@ -148,6 +235,21 @@ def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
                         st.session_state.historico_paciente[id_paciente].append(resultado)
                         
                         st.success("Exame classificado com sucesso!")
+                        
+                        # Gerar e exibir o laudo
+                        laudo = gerar_laudo(nome_classe, pontuacao_confianca, setor, modelo)
+                        st.subheader("Laudo do Exame")
+                        st.text(laudo)
+                        
+                        # Opção para baixar o laudo
+                        laudo_bytes = laudo.encode()
+                        st.download_button(
+                            label="Baixar Laudo",
+                            data=laudo_bytes,
+                            file_name=f"laudo_{id_paciente}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                            mime="text/plain"
+                        )
+                        
                         return resultado
                     else:
                         st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
