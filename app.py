@@ -271,12 +271,12 @@ def update_match_result(match_id, team1_score, team2_score):
     # Process bets
     for bet_id, user_id, bet_type, amount in bets:
         if bet_type == result:
-            # Winning bet
+            # Winning bet - user gets back stake + winnings based on odds
             winnings = int(amount * odds[['team1_win', 'draw', 'team2_win'].index(bet_type)])
-            c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings, user_id))
+            c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings + amount, user_id))
             c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
         else:
-            # Losing bet
+            # Losing bet - user already lost stake when placing bet, just update status
             c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
     
     conn.commit()
@@ -882,4 +882,3 @@ def admin_page():
 
 if __name__ == "__main__":
     main()
-
