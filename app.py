@@ -1,591 +1,885 @@
 import streamlit as st
-from keras.models import load_model
-from keras.layers import DepthwiseConv2D
-from keras.utils import custom_object_scope
-from PIL import Image, ImageOps
-import numpy as np
-from scipy.ndimage import zoom
-import plotly.graph_objects as go
-import io
-import os
+import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta
-from openpyxl import Workbook, load_workbook
+import datetime
 import hashlib
-import matplotlib.pyplot as plt
-import seaborn as sns
-from skimage import measure
+import os
+from PIL import Image
+import random
+import json
 
-# Configuração da página
-st.set_page_config(page_title="Visualização 3D de Raio-X", layout="wide")
-np.set_printoptions(suppress=True)
+# Initialize the database if it doesn't exist
+def init_db():
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    # Create users table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        password TEXT,
+        points INTEGER,
+        is_admin INTEGER
+    )
+    ''')
+    
+    # Create teams table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT
+    )
+    ''')
+    
+    # Create matches table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team1_id INTEGER,
+        team2_id INTEGER,
+        date TEXT,
+        time TEXT,
+        status TEXT DEFAULT 'upcoming',
+        team1_score INTEGER DEFAULT NULL,
+        team2_score INTEGER DEFAULT NULL,
+        FOREIGN KEY (team1_id) REFERENCES teams (id),
+        FOREIGN KEY (team2_id) REFERENCES teams (id)
+    )
+    ''')
+    
+    # Create odds table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS odds (
+        match_id INTEGER,
+        team1_win REAL,
+        draw REAL,
+        team2_win REAL,
+        FOREIGN KEY (match_id) REFERENCES matches (id)
+    )
+    ''')
+    
+    # Create bets table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS bets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        match_id INTEGER,
+        bet_type TEXT,
+        amount INTEGER,
+        status TEXT DEFAULT 'pending',
+        timestamp TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (username),
+        FOREIGN KEY (match_id) REFERENCES matches (id)
+    )
+    ''')
+    
+    # Insert default admin user if not exists
+    c.execute("SELECT * FROM users WHERE username = 'admin'")
+    if not c.fetchone():
+        hashed_password = hashlib.sha256("123".encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+                 ("admin", hashed_password, 1000, 1))
+    
+    # Insert default teams if not exists
+    default_teams = ["Tropa da Sônia", "Cubanos", "Dynamos", "Os Feras", "Gaviões", "Leões do Recreio"]
+    for team in default_teams:
+        c.execute("SELECT * FROM teams WHERE name = ?", (team,))
+        if not c.fetchone():
+            c.execute("INSERT INTO teams (name) VALUES (?)", (team,))
+    
+    conn.commit()
+    conn.close()
 
-# Inicializar estado da sessão
-if 'historico_paciente' not in st.session_state:
-    st.session_state.historico_paciente = {}
-if 'logado' not in st.session_state:
-    st.session_state.logado = False
-if 'nome_usuario' not in st.session_state:
-    st.session_state.nome_usuario = None
-if 'setores_usuario' not in st.session_state:
-    st.session_state.setores_usuario = []
-if 'paginas_acessiveis' not in st.session_state:
-    st.session_state.paginas_acessiveis = []
+# Get team name by ID
+def get_team_name(team_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT name FROM teams WHERE id = ?", (team_id,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else "Unknown Team"
 
-# Arquivo para armazenar informações de login
-ARQUIVO_LOGIN = 'info_login.xlsx'
+# Login function
+def login(username, password):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
+    user = c.fetchone()
+    conn.close()
+    return user
 
-# Definição dos caminhos dos modelos e rótulos
-caminhos_modelos = {
-    "Pneumologia": {
-        "Torax Raio x": "pneumoniatorax_model.h5",
-        "Câncer de Pulmão": "cancer_pulmao_model.h5"
-    },
-    "Neurologia": {
-        "Tumor Cerebral": "tumor_cerebral_model.h5"
-    },
-    "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_model.h5",
-        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_model.h5",
-        "ACL": "acl_model.h5",
-        "Entorse de Tornozelo": "ankle_sprain_model.h5",
-        "Fratura de Calcâneo": "calcaneus_fracture_model.h5"
-    }
-}
-
-caminhos_rotulos = {
-    "Pneumologia": {
-        "Torax Raio x": "pneumoniatorax_labels.txt",
-        "Câncer de Pulmão": "cancer_pulmao_labels.txt"
-    },
-    "Neurologia": {
-        "Tumor Cerebral": "tumor_cerebral_labels.txt"
-    },
-    "Ortopedia": {
-        "Braço Fraturado": "fractured_arm_labels.txt",
-        "Ruptura do Tendão de Aquiles": "achilles_tendon_rupture_labels.txt",
-        "ACL": "acl_labels.txt",
-        "Entorse de Tornozelo": "ankle_sprain_labels.txt",
-        "Fratura de Calcâneo": "calcaneus_fracture_labels.txt"
-    }
-}
-
-def custom_depthwise_conv2d(*args, **kwargs):
-    kwargs.pop('groups', None)
-    return DepthwiseConv2D(*args, **kwargs)
-
-def carregar_modelo_e_rotulos(caminho_modelo, caminho_rotulos):
+# Register function
+def register(username, password):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
     try:
-        if not os.path.exists(caminho_modelo):
-            raise FileNotFoundError(f"Arquivo de modelo não encontrado: {caminho_modelo}")
-        if not os.path.exists(caminho_rotulos):
-            raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {caminho_rotulos}")
-        
-        with custom_object_scope({'DepthwiseConv2D': custom_depthwise_conv2d}):
-            modelo = load_model(caminho_modelo, compile=False)
-        
-        with open(caminho_rotulos, "r") as f:
-            nomes_classes = f.readlines()
-        return modelo, nomes_classes
-    except Exception as e:
-        st.error(f"Erro ao carregar modelo e rótulos: {str(e)}")
-        return None, None
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+                 (username, hashed_password, 100, 0))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        conn.close()
+        return False
 
-def prever(modelo, dados, nomes_classes):
-    try:
-        previsao = modelo.predict(dados)
-        indice = np.argmax(previsao)
-        nome_classe = nomes_classes[indice]
-        pontuacao_confianca = float(previsao[0][indice])
-        return nome_classe.strip(), pontuacao_confianca
-    except Exception as e:
-        st.error(f"Erro durante a previsão: {str(e)}")
-        return None, None
+# Get upcoming matches
+def get_upcoming_matches():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+    SELECT m.id, m.team1_id, m.team2_id, m.date, m.time, m.status, m.team1_score, m.team2_score,
+           o.team1_win, o.draw, o.team2_win
+    FROM matches m
+    LEFT JOIN odds o ON m.id = o.match_id
+    WHERE m.status = 'upcoming' OR m.status = 'live'
+    ORDER BY m.date, m.time
+    ''')
+    matches = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return matches
 
-def preprocessar_imagem(arquivo_carregado):
-    try:
-        bytes_imagem = arquivo_carregado.getvalue()
-        imagem = Image.open(io.BytesIO(bytes_imagem)).convert("RGB")
-        tamanho = (224, 224)
-        imagem = ImageOps.fit(imagem, tamanho, Image.Resampling.LANCZOS)
-        array_imagem = np.asarray(imagem)
-        array_imagem_normalizado = (array_imagem.astype(np.float32) / 127.5) - 1
-        dados = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-        dados[0] = array_imagem_normalizado
-        return dados
-    except Exception as e:
-        st.error(f"Erro ao pré-processar imagem: {str(e)}")
-        return None
-def gerar_laudo(nome_classe, pontuacao_confianca, setor, modelo):
-    laudo = f"""
-    LAUDO MÉDICO
+# Get match history
+def get_match_history():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+    SELECT m.id, m.team1_id, m.team2_id, m.date, m.time, m.status, m.team1_score, m.team2_score,
+           o.team1_win, o.draw, o.team2_win
+    FROM matches m
+    LEFT JOIN odds o ON m.id = o.match_id
+    WHERE m.status = 'completed'
+    ORDER BY m.date DESC, m.time DESC
+    ''')
+    matches = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return matches
+
+# Get user bets
+def get_user_bets(username):
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+    SELECT b.id, b.match_id, b.bet_type, b.amount, b.status, b.timestamp,
+           m.team1_id, m.team2_id, m.date, m.time, m.status as match_status, m.team1_score, m.team2_score
+    FROM bets b
+    JOIN matches m ON b.match_id = m.id
+    WHERE b.user_id = ?
+    ORDER BY b.timestamp DESC
+    ''', (username,))
+    bets = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return bets
+
+# Place bet function
+def place_bet(username, match_id, bet_type, amount):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
     
-    Data: {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
-    Setor: {setor}
-    Tipo de Exame: {modelo}
+    # Check if user has enough points
+    c.execute("SELECT points FROM users WHERE username = ?", (username,))
+    user_points = c.fetchone()[0]
     
-    ANÁLISE:
-    Com base na imagem de raio-x fornecida, o sistema de inteligência artificial 
-    MedVision classificou o exame como:
+    if user_points < amount:
+        conn.close()
+        return False, "Pontos insuficientes"
     
-    Resultado: {nome_classe}
-    Confiança: {pontuacao_confianca:.2%}
+    # Check if match is still open for betting
+    c.execute("SELECT status FROM matches WHERE id = ?", (match_id,))
+    match_status = c.fetchone()[0]
     
-    INTERPRETAÇÃO:
-    """
+    if match_status != 'upcoming':
+        conn.close()
+        return False, "Apostas fechadas para este jogo"
     
-    if setor == "Pneumologia":
-        if modelo == "Torax Raio x":
-            if "pneumonia" in nome_classe.lower():
-                laudo += """
-    A imagem apresenta características consistentes com pneumonia. 
-    Observam-se opacidades pulmonares difusas, sugestivas de infiltrado inflamatório.
-    Recomenda-se correlação clínica e, se apropriado, início de tratamento antibiótico.
-                """
-            elif "normal" in nome_classe.lower():
-                laudo += """
-    A imagem do tórax não apresenta alterações significativas. 
-    Os campos pulmonares estão claros e bem expandidos, sem evidências de consolidações ou infiltrados.
-                """
-        elif modelo == "Câncer de Pulmão":
-            if "cancer" in nome_classe.lower():
-                laudo += """
-    A imagem revela uma massa pulmonar suspeita, compatível com neoplasia pulmonar. 
-    Recomenda-se urgentemente realizar exames adicionais, como tomografia computadorizada 
-    e possivelmente biópsia para confirmação diagnóstica.
-                """
-            else:
-                laudo += """
-    Não foram identificadas massas ou nódulos suspeitos de malignidade nos campos pulmonares.
-    Contudo, acompanhamento regular é aconselhável, especialmente em pacientes de alto risco.
-                """
+    # Update user points
+    c.execute("UPDATE users SET points = points - ? WHERE username = ?", (amount, username))
     
-    elif setor == "Neurologia":
-        if "tumor" in nome_classe.lower():
-            laudo += """
-    A imagem cerebral revela uma área de densidade anormal, sugestiva de processo expansivo intracraniano. 
-    A localização e características são compatíveis com tumor cerebral.
-    Recomenda-se ressonância magnética com contraste para melhor caracterização da lesão e planejamento terapêutico.
-            """
+    # Record the bet
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute('''
+    INSERT INTO bets (user_id, match_id, bet_type, amount, status, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ''', (username, match_id, bet_type, amount, 'pending', timestamp))
+    
+    conn.commit()
+    conn.close()
+    return True, "Aposta realizada com sucesso!"
+
+# Admin functions
+def add_match(team1_id, team2_id, date, time):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute('''
+    INSERT INTO matches (team1_id, team2_id, date, time, status)
+    VALUES (?, ?, ?, ?, ?)
+    ''', (team1_id, team2_id, date, time, 'upcoming'))
+    
+    match_id = c.lastrowid
+    
+    # Generate random odds (slightly favoring team1 for this example)
+    team1_win = round(random.uniform(1.5, 3.0), 2)
+    draw = round(random.uniform(2.0, 4.0), 2)
+    team2_win = round(random.uniform(1.8, 3.5), 2)
+    
+    c.execute('''
+    INSERT INTO odds (match_id, team1_win, draw, team2_win)
+    VALUES (?, ?, ?, ?)
+    ''', (match_id, team1_win, draw, team2_win))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def update_match_result(match_id, team1_score, team2_score):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    # Update match status and scores
+    c.execute('''
+    UPDATE matches 
+    SET status = 'completed', team1_score = ?, team2_score = ?
+    WHERE id = ?
+    ''', (team1_score, team2_score, match_id))
+    
+    # Determine match result
+    if team1_score > team2_score:
+        result = 'team1_win'
+    elif team1_score < team2_score:
+        result = 'team2_win'
+    else:
+        result = 'draw'
+    
+    # Get all bets for this match
+    c.execute('''
+    SELECT id, user_id, bet_type, amount FROM bets 
+    WHERE match_id = ? AND status = 'pending'
+    ''', (match_id,))
+    bets = c.fetchall()
+    
+    # Get odds for this match
+    c.execute('''
+    SELECT team1_win, draw, team2_win FROM odds
+    WHERE match_id = ?
+    ''', (match_id,))
+    odds = c.fetchone()
+    
+    # Process bets
+    for bet_id, user_id, bet_type, amount in bets:
+        if bet_type == result:
+            # Winning bet
+            winnings = int(amount * odds[['team1_win', 'draw', 'team2_win'].index(bet_type)])
+            c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings, user_id))
+            c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
         else:
-            laudo += """
-    Não foram identificadas massas intracranianas ou alterações estruturais significativas. 
-    O parênquima cerebral apresenta densidade normal, sem evidências de efeito de massa ou desvio da linha média.
-            """
+            # Losing bet
+            c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
     
-    elif setor == "Ortopedia":
-        if "fratura" in nome_classe.lower():
-            laudo += """
-    A imagem radiográfica demonstra uma linha de descontinuidade óssea, 
-    compatível com fratura. Observa-se desalinhamento dos fragmentos ósseos.
-    Recomenda-se imobilização adequada e acompanhamento ortopédico para manejo apropriado.
-            """
-        elif "ruptura" in nome_classe.lower():
-            laudo += """
-    A imagem sugere descontinuidade na região do tendão de Aquiles, 
-    consistente com ruptura tendinosa. Nota-se aumento do ângulo de Kager.
-    Recomenda-se avaliação ortopédica imediata para determinar a necessidade de intervenção cirúrgica.
-            """
-        else:
-            laudo += """
-    Não foram identificadas fraturas ou rupturas evidentes. 
-    A estrutura óssea e os tecidos moles adjacentes apresentam-se sem alterações significativas.
-            """
+    conn.commit()
+    conn.close()
+    return True
+
+def set_match_live(match_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("UPDATE matches SET status = 'live' WHERE id = ?", (match_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def add_team(name):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        conn.close()
+        return False
+
+def add_user(username, password, points):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    try:
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+                 (username, hashed_password, points, 0))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        conn.close()
+        return False
+
+def get_all_teams():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM teams ORDER BY name")
+    teams = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return teams
+
+def get_all_users():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT username, points, is_admin FROM users ORDER BY points DESC")
+    users = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return users
+
+def update_user_points(username, points):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("UPDATE users SET points = ? WHERE username = ?", (points, username))
+    conn.commit()
+    conn.close()
+    return True
+
+# Page setup
+def main():
+    st.set_page_config(
+        page_title="GuimaBet",
+        page_icon="⚽",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    laudo += """
+    # Initialize database
+    init_db()
     
-    RESSALVA:
-    Este laudo foi gerado por um sistema de inteligência artificial e deve ser 
-    revisado e validado por um profissional médico qualificado antes de ser utilizado 
-    para decisões clínicas. Correlação com achados clínicos e exames complementares 
-    é sempre recomendada.
+    # Custom CSS
+    st.markdown("""
+    <style>
+    .main {
+        background-color: #121212;
+        color: white;
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        width: 100%;
+    }
+    .stTextInput>div>div>input, .stSelectbox>div>div>select {
+        color: white;
+        background-color: #333;
+    }
+    .bet-card {
+        background-color: #222;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    .match-card {
+        background-color: #1E1E1E;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border-left: 4px solid #4CAF50;
+    }
+    .live-indicator {
+        background-color: #FF4136;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 5px;
+        font-size: 12px;
+        animation: blink 1s infinite;
+    }
+    @keyframes blink {
+        0% {opacity: 1;}
+        50% {opacity: 0.5;}
+        100% {opacity: 1;}
+    }
+    .odds-button {
+        background-color: #2C2C2C;
+        border: 1px solid #4CAF50;
+        color: white;
+        padding: 10px;
+        text-align: center;
+        border-radius: 5px;
+        cursor: pointer;
+        margin: 5px;
+        transition: all 0.3s;
+    }
+    .odds-button:hover {
+        background-color: #4CAF50;
+    }
+    .header {
+        padding: 20px;
+        text-align: center;
+        background: linear-gradient(135deg, #4CAF50, #2E7D32);
+        color: white;
+        font-size: 25px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
-    Assinatura Digital: MedVision AI
-    """
+    # Session state
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = ""
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
+    if 'selected_match' not in st.session_state:
+        st.session_state.selected_match = None
+    if 'bet_amount' not in st.session_state:
+        st.session_state.bet_amount = 10
+    if 'bet_type' not in st.session_state:
+        st.session_state.bet_type = None
     
-    return laudo
-def classificar_exame(id_paciente, opcao_modelo, arquivo_carregado):
-    if arquivo_carregado is not None:
-        st.write(f"Opção de modelo selecionada: {opcao_modelo}")
-        
-        setor, modelo = opcao_modelo.split('_', 1)
-        if setor not in caminhos_modelos or modelo not in caminhos_modelos[setor]:
-            st.error(f"Opção de modelo '{opcao_modelo}' não encontrada nos modelos disponíveis.")
-            return None
-        
-        try:
-            modelo, nomes_classes = carregar_modelo_e_rotulos(caminhos_modelos[setor][modelo], caminhos_rotulos[setor][modelo])
+    # Title
+    st.markdown('<div class="header"><h1 style="color: white;">⚽ GuimaBet</h1><p>Apostas no Futebol do Recreio do CIB</p></div>', unsafe_allow_html=True)
+    
+    # If not logged in, show login/register page
+    if not st.session_state.logged_in:
+        login_register_page()
+    else:
+        # Sidebar for navigation
+        with st.sidebar:
+            st.write(f"Bem-vindo, **{st.session_state.username}**!")
             
-            if modelo is not None and nomes_classes is not None:
-                imagem_processada = preprocessar_imagem(arquivo_carregado)
+            # Get user points
+            conn = sqlite3.connect('guimabet.db')
+            c = conn.cursor()
+            c.execute("SELECT points FROM users WHERE username = ?", (st.session_state.username,))
+            user_points = c.fetchone()[0]
+            conn.close()
+            
+            st.write(f"Seus pontos: **{user_points}**")
+            
+            st.subheader("Menu")
+            
+            if st.button("🏠 Início"):
+                st.session_state.page = "home"
+            
+            if st.button("📊 Histórico de Apostas"):
+                st.session_state.page = "bet_history"
+            
+            if st.button("🏆 Ranking"):
+                st.session_state.page = "ranking"
+            
+            if st.session_state.is_admin:
+                st.subheader("Admin Menu")
                 
-                if imagem_processada is not None:
-                    nome_classe, pontuacao_confianca = prever(modelo, imagem_processada, nomes_classes)
-                    
-                    if nome_classe is not None and pontuacao_confianca is not None:
-                        resultado = {
-                            'data': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'modelo': opcao_modelo,
-                            'classe': nome_classe,
-                            'confianca': pontuacao_confianca
-                        }
-                        
-                        if id_paciente not in st.session_state.historico_paciente:
-                            st.session_state.historico_paciente[id_paciente] = []
-                        st.session_state.historico_paciente[id_paciente].append(resultado)
-                        
-                        st.success("Exame classificado com sucesso!")
-                        
-                        # Gerar e exibir o laudo
-                        laudo = gerar_laudo(nome_classe, pontuacao_confianca, setor, modelo)
-                        st.subheader("Laudo do Exame")
-                        st.text(laudo)
-                        
-                        # Opção para baixar o laudo
-                        laudo_bytes = laudo.encode()
-                        st.download_button(
-                            label="Baixar Laudo",
-                            data=laudo_bytes,
-                            file_name=f"laudo_{id_paciente}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                            mime="text/plain"
-                        )
-                        
-                        return resultado
-                    else:
-                        st.error("Ocorreu um erro durante a previsão. Por favor, tente novamente.")
-                else:
-                    st.error("Falha ao pré-processar a imagem. Por favor, tente uma imagem diferente.")
+                if st.button("👨‍💼 Painel de Admin"):
+                    st.session_state.page = "admin"
+            
+            if st.button("🚪 Sair"):
+                st.session_state.logged_in = False
+                st.session_state.username = ""
+                st.session_state.is_admin = False
+                st.experimental_rerun()
+        
+        # Default page
+        if 'page' not in st.session_state:
+            st.session_state.page = "home"
+        
+        # Page router
+        if st.session_state.page == "home":
+            home_page()
+        elif st.session_state.page == "bet_history":
+            bet_history_page()
+        elif st.session_state.page == "ranking":
+            ranking_page()
+        elif st.session_state.page == "admin" and st.session_state.is_admin:
+            admin_page()
+
+# Login/Register page
+def login_register_page():
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Login")
+        login_username = st.text_input("Usuário", key="login_username")
+        login_password = st.text_input("Senha", type="password", key="login_password")
+        
+        if st.button("Entrar"):
+            if not login_username or not login_password:
+                st.error("Por favor, preencha todos os campos.")
             else:
-                st.error("Falha ao carregar o modelo e rótulos. Por favor, verifique os arquivos e tente novamente.")
-        except Exception as e:
-            st.error(f"Ocorreu um erro durante a classificação: {str(e)}")
-    else:
-        st.error("Por favor, faça o upload de uma imagem primeiro.")
-    return None
-
-def hash_senha(senha):
-    return hashlib.sha256(senha.encode()).hexdigest()
-
-def inicializar_arquivo_login():
-    if not os.path.exists(ARQUIVO_LOGIN):
-        wb = Workbook()
-        ws = wb.active
-        ws.append(['Nome de Usuário', 'Senha', 'Último Login', 'Data de Expiração', 'Função', 'Setores', 'Páginas Acessíveis'])
-        senha_admin = hash_senha('123')
-        ws.append(['admin', senha_admin, '', '', 'admin', 'Pneumologia,Neurologia,Ortopedia', 'Classificar Exame,Visualizar Histórico do Paciente,Comparar Pacientes,Visualização 3D de Raio-X,Gerenciamento de Usuários'])
-        wb.save(ARQUIVO_LOGIN)
-
-def verificar_login(nome_usuario, senha):
-    try:
-        wb = load_workbook(ARQUIVO_LOGIN)
-        ws = wb.active
-        for linha in ws.iter_rows(min_row=2, values_only=True):
-            if linha[0] == nome_usuario and linha[1] == hash_senha(senha):
-                eh_admin = len(linha) > 4 and linha[4] == 'admin'
-                
-                if not eh_admin:
-                    if len(linha) > 3 and linha[3]:
-                        data_expiracao = linha[3]
-                        if isinstance(data_expiracao, datetime) and datetime.now() > data_expiracao:
-                            return False, "Conta expirada", [], []
-                
-                setores = linha[5].split(',') if len(linha) > 5 and linha[5] else []
-                paginas_acessiveis = linha[6].split(',') if len(linha) > 6 and linha[6] else []
-                
-                # If the user is admin, give access to all pages
-                if eh_admin:
-                    paginas_acessiveis = ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X", "Gerenciamento de Usuários"]
-                
-                return True, "Sucesso", setores, paginas_acessiveis
+                user = login(login_username, login_password)
+                if user:
+                    st.session_state.logged_in = True
+                    st.session_state.username = login_username
+                    st.session_state.is_admin = (user[3] == 1)  # Check if user is admin
+                    st.experimental_rerun()
+                else:
+                    st.error("Usuário ou senha incorretos.")
+    
+    with col2:
+        st.subheader("Registrar")
+        reg_username = st.text_input("Usuário", key="reg_username")
+        reg_password = st.text_input("Senha", type="password", key="reg_password")
+        reg_password_confirm = st.text_input("Confirmar Senha", type="password", key="reg_password_confirm")
         
-        return False, "Credenciais inválidas", [], []
-    except Exception as e:
-        st.error(f"Ocorreu um erro ao verificar o login: {str(e)}")
-        return False, "Falha na verificação do login", [], []
+        if st.button("Registrar"):
+            if not reg_username or not reg_password or not reg_password_confirm:
+                st.error("Por favor, preencha todos os campos.")
+            elif reg_password != reg_password_confirm:
+                st.error("As senhas não coincidem.")
+            else:
+                if register(reg_username, reg_password):
+                    st.success("Registro bem-sucedido! Você pode fazer login agora.")
+                else:
+                    st.error("Nome de usuário já existe.")
 
-def atualizar_ultimo_login(nome_usuario):
-    wb = load_workbook(ARQUIVO_LOGIN)
-    ws = wb.active
-    for linha in ws.iter_rows(min_row=2):
-        if linha[0].value == nome_usuario:
-            linha[2].value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            break
-    wb.save(ARQUIVO_LOGIN)
+# Home page - Upcoming matches and betting
+def home_page():
+    st.subheader("Jogos Disponíveis para Apostas")
+    
+    upcoming_matches = get_upcoming_matches()
+    
+    if not upcoming_matches:
+        st.info("Não há jogos programados no momento.")
+    else:
+        for match in upcoming_matches:
+            team1 = get_team_name(match['team1_id'])
+            team2 = get_team_name(match['team2_id'])
+            
+            with st.container():
+                st.markdown(f"""
+                <div class="match-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h3>{team1} vs {team2}</h3>
+                            <p>Data: {match['date']} • Hora: {match['time']}</p>
+                        </div>
+                        <div>
+                            {'<span class="live-indicator">AO VIVO</span>' if match['status'] == 'live' else ''}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button(f"{team1} Vence (Odds: {match['team1_win']})", key=f"team1_{match['id']}"):
+                        st.session_state.selected_match = match
+                        st.session_state.bet_type = "team1_win"
+                
+                with col2:
+                    if st.button(f"Empate (Odds: {match['draw']})", key=f"draw_{match['id']}"):
+                        st.session_state.selected_match = match
+                        st.session_state.bet_type = "draw"
+                
+                with col3:
+                    if st.button(f"{team2} Vence (Odds: {match['team2_win']})", key=f"team2_{match['id']}"):
+                        st.session_state.selected_match = match
+                        st.session_state.bet_type = "team2_win"
+        
+        # If a match is selected, show betting form
+        if st.session_state.selected_match:
+            match = st.session_state.selected_match
+            team1 = get_team_name(match['team1_id'])
+            team2 = get_team_name(match['team2_id'])
+            
+            st.markdown("---")
+            st.subheader("Fazer Aposta")
+            
+            if st.session_state.bet_type == "team1_win":
+                bet_text = f"Aposta: {team1} vence"
+                odds = match['team1_win']
+            elif st.session_state.bet_type == "draw":
+                bet_text = "Aposta: Empate"
+                odds = match['draw']
+            else:
+                bet_text = f"Aposta: {team2} vence"
+                odds = match['team2_win']
+            
+            st.write(f"{team1} vs {team2}")
+            st.write(bet_text)
+            st.write(f"Odds: {odds}")
+            
+            # Get user points
+            conn = sqlite3.connect('guimabet.db')
+            c = conn.cursor()
+            c.execute("SELECT points FROM users WHERE username = ?", (st.session_state.username,))
+            user_points = c.fetchone()[0]
+            conn.close()
+            
+            st.write(f"Seus pontos: {user_points}")
+            
+            amount = st.number_input("Valor da aposta", min_value=10, max_value=user_points, value=10, step=10)
+            potential_win = int(amount * odds)
+            
+            st.write(f"Ganho potencial: {potential_win} pontos")
+            
+            if st.button("Confirmar Aposta"):
+                success, message = place_bet(st.session_state.username, match['id'], st.session_state.bet_type, amount)
+                if success:
+                    st.success(message)
+                    st.session_state.selected_match = None
+                    st.session_state.bet_type = None
+                    st.experimental_rerun()
+                else:
+                    st.error(message)
+            
+            if st.button("Cancelar"):
+                st.session_state.selected_match = None
+                st.session_state.bet_type = None
+                st.experimental_rerun()
 
-def pagina_login():
-    st.title("Login")
-    nome_usuario = st.text_input("Nome de Usuário")
-    senha = st.text_input("Senha", type="password")
-    if st.button("Entrar"):
-        sucesso_login, mensagem, setores, paginas_acessiveis = verificar_login(nome_usuario, senha)
-        if sucesso_login:
-            st.session_state.logado = True
-            st.session_state.nome_usuario = nome_usuario
-            st.session_state.setores_usuario = setores
-            st.session_state.paginas_acessiveis = paginas_acessiveis
-            atualizar_ultimo_login(nome_usuario)
-            st.success("Login realizado com sucesso!")
+# Bet history page
+def bet_history_page():
+    st.subheader("Seu Histórico de Apostas")
+    
+    bets = get_user_bets(st.session_state.username)
+    
+    if not bets:
+        st.info("Você ainda não fez nenhuma aposta.")
+    else:
+        for bet in bets:
+            team1 = get_team_name(bet['team1_id'])
+            team2 = get_team_name(bet['team2_id'])
+            
+            # Determine bet description
+            if bet['bet_type'] == 'team1_win':
+                bet_description = f"Vitória de {team1}"
+            elif bet['bet_type'] == 'team2_win':
+                bet_description = f"Vitória de {team2}"
+            else:
+                bet_description = "Empate"
+            
+            # Determine status text and color
+            if bet['status'] == 'pending':
+                status_text = "Pendente"
+                status_color = "orange"
+            elif bet['status'] == 'won':
+                status_text = "Ganhou"
+                status_color = "green"
+            else:
+                status_text = "Perdeu"
+                status_color = "red"
+            
+            # Format match result if available
+            match_result = ""
+            if bet['match_status'] == 'completed':
+                match_result = f"Resultado: {team1} {bet['team1_score']} x {bet['team2_score']} {team2}"
+            
+            st.markdown(f"""
+            <div class="bet-card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h4>{team1} vs {team2}</h4>
+                        <p>Data: {bet['date']} • Aposta: {bet_description}</p>
+                        <p>Valor: {bet['amount']} pontos • Data da aposta: {bet['timestamp']}</p>
+                        <p>{match_result}</p>
+                    </div>
+                    <div>
+                        <span style="background-color: {status_color}; color: white; padding: 5px 10px; border-radius: 5px;">{status_text}</span>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Ranking page
+def ranking_page():
+    st.subheader("Ranking de Usuários")
+    
+    users = get_all_users()
+    
+    # Create a pandas DataFrame
+    df = pd.DataFrame(users)
+    df.columns = ['Usuário', 'Pontos', 'Admin']
+    df = df.drop(columns=['Admin'])
+    
+    # Add rank column
+    df.insert(0, 'Posição', range(1, len(df) + 1))
+    
+    st.table(df)
+
+# Admin page
+def admin_page():
+    st.subheader("Painel de Administração")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["Gerenciar Jogos", "Adicionar Jogos", "Gerenciar Usuários", "Adicionar Times"])
+    
+    with tab1:
+        st.subheader("Gerenciar Jogos")
+        
+        upcoming_matches = get_upcoming_matches()
+        completed_matches = get_match_history()
+        
+        st.write("Jogos Próximos e Ao Vivo")
+        if not upcoming_matches:
+            st.info("Não há jogos próximos.")
         else:
-            st.error(mensagem)
-
-def visualizar_historico_paciente(id_paciente):
-    if id_paciente in st.session_state.historico_paciente:
-        historico = st.session_state.historico_paciente[id_paciente]
-        df = pd.DataFrame(historico)
-        st.dataframe(df)
+            for match in upcoming_matches:
+                team1 = get_team_name(match['team1_id'])
+                team2 = get_team_name(match['team2_id'])
+                
+                with st.container():
+                    st.markdown(f"""
+                    <div class="match-card">
+                        <h4>{team1} vs {team2}</h4>
+                        <p>Data: {match['date']} • Hora: {match['time']}</p>
+                        <p>Status: {match['status']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if match['status'] == 'upcoming':
+                            if st.button("Definir como Ao Vivo", key=f"live_{match['id']}"):
+                                set_match_live(match['id'])
+                                st.success("Jogo definido como Ao Vivo!")
+                                st.experimental_rerun()
+                    
+                    with col2:
+                        if st.button("Atualizar Resultado", key=f"result_{match['id']}"):
+                            st.session_state.update_match = match['id']
+                            st.session_state.page = "update_result"
+                    
+                    if 'update_match' in st.session_state and st.session_state.update_match == match['id']:
+                        st.subheader("Atualizar Resultado")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            team1_score = st.number_input(f"Placar {team1}", min_value=0, value=0, key=f"score1_{match['id']}")
+                        
+                        with col2:
+                            team2_score = st.number_input(f"Placar {team2}", min_value=0, value=0, key=f"score2_{match['id']}")
+                        
+                        if st.button("Salvar Resultado"):
+                            update_match_result(match['id'], team1_score, team2_score)
+                            st.success("Resultado atualizado com sucesso!")
+                            st.session_state.pop('update_match')
+                            st.experimental_rerun()
         
-        st.subheader("Visualização do Histórico de Exames do Paciente")
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.scatterplot(data=df, x='data', y='confianca', hue='modelo', size='confianca', ax=ax)
-        ax.set_title(f"Confiança dos Exames ao Longo do Tempo para o Paciente {id_paciente}")
-        ax.set_xlabel("Data")
-        ax.set_ylabel("Pontuação de Confiança")
-        st.pyplot(fig)
-    else:
-        st.info("Nenhum histórico encontrado para este paciente.")
-
-def comparar_pacientes():
-    st.subheader("Comparar Pacientes")
-    ids_pacientes = list(st.session_state.historico_paciente.keys())
-    if len(ids_pacientes) < 2:
-        st.warning("É necessário pelo menos dois pacientes com histórico para comparar.")
-        return
+        st.markdown("---")
+        st.write("Jogos Finalizados")
+        
+        if not completed_matches:
+            st.info("Não há jogos finalizados.")
+        else:
+            for match in completed_matches:
+                team1 = get_team_name(match['team1_id'])
+                team2 = get_team_name(match['team2_id'])
+                
+                st.markdown(f"""
+                <div class="match-card">
+                    <h4>{team1} {match['team1_score']} x {match['team2_score']} {team2}</h4>
+                    <p>Data: {match['date']} • Hora: {match['time']}</p>
+                </div>
+                """, unsafe_allow_html=True)
     
-    paciente1 = st.selectbox("Selecione o primeiro paciente", ids_pacientes)
-    paciente2 = st.selectbox("Selecione o segundo paciente", [id for id in ids_pacientes if id != paciente1])
+    with tab2:
+        st.subheader("Adicionar Novo Jogo")
+        
+        teams = get_all_teams()
+        team_options = {team['id']: team['name'] for team in teams}
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            team1_id = st.selectbox("Time 1", options=list(team_options.keys()), format_func=lambda x: team_options[x], key="add_team1")
+        
+        with col2:
+            team2_id = st.selectbox("Time 2", options=list(team_options.keys()), format_func=lambda x: team_options[x], key="add_team2")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            match_date = st.date_input("Data", key="add_date")
+        
+        with col2:
+            match_time = st.time_input("Hora", key="add_time")
+        
+        if st.button("Adicionar Jogo"):
+            if team1_id == team2_id:
+                st.error("Por favor, selecione times diferentes.")
+            else:
+                date_str = match_date.strftime("%Y-%m-%d")
+                time_str = match_time.strftime("%H:%M")
+                add_match(team1_id, team2_id, date_str, time_str)
+                st.success("Jogo adicionado com sucesso!")
     
-    if st.button("Comparar"):
-        df1 = pd.DataFrame(st.session_state.historico_paciente[paciente1])
-        df2 = pd.DataFrame(st.session_state.historico_paciente[paciente2])
+    with tab3:
+        st.subheader("Gerenciar Usuários")
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        users = get_all_users()
         
-        sns.boxplot(data=df1, x='modelo', y='confianca', ax=ax1)
-        ax1.set_title(f"Paciente {paciente1}")
-        ax1.set_ylim(0, 1)
+        st.write("Usuários Existentes")
         
-        sns.boxplot(data=df2, x='modelo', y='confianca', ax=ax2)
-        ax2.set_title(f"Paciente {paciente2}")
-        ax2.set_ylim(0, 1)
+        for user in users:
+            with st.container():
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                with col1:
+                    st.write(f"**{user['username']}**")
+                    st.write(f"Pontos: {user['points']}")
+                
+                with col2:
+                    new_points = st.number_input("Pontos", min_value=0, value=user['points'], step=10, key=f"points_{user['username']}")
+                
+                with col3:
+                    if st.button("Atualizar", key=f"update_{user['username']}"):
+                        update_user_points(user['username'], new_points)
+                        st.success(f"Pontos atualizados para {user['username']}!")
+                        st.experimental_rerun()
         
-        st.pyplot(fig)
-
-def gerenciar_usuarios():
-    st.header("Gerenciamento de Usuários")
-    
-    try:
-        wb = load_workbook(ARQUIVO_LOGIN)
-        ws = wb.active
-        dados_usuario = {linha[0]: linha for linha in ws.iter_rows(min_row=2, values_only=True)}
+        st.markdown("---")
+        st.subheader("Adicionar Novo Usuário")
         
-        dados_usuario_limpos = [
-            (linha if len(linha) == 7 else linha + (None,) * (7 - len(linha))) 
-            for linha in dados_usuario.values()
-        ]
+        col1, col2 = st.columns(2)
         
-        df_usuario = pd.DataFrame(dados_usuario_limpos, columns=["Nome de Usuário", "Senha", "Último Login", "Data de Expiração", "Função", "Setores", "Páginas Acessíveis"])
+        with col1:
+            new_username = st.text_input("Nome de Usuário", key="new_username")
         
-        st.dataframe(df_usuario)
-
-        st.subheader("Adicionar Usuário")
-        novo_nome_usuario = st.text_input("Novo Nome de Usuário")
-        nova_senha = st.text_input("Nova Senha", type="password")
-        nova_funcao = st.selectbox("Função", ["usuário", "admin"])
-        dias_validade = st.number_input("Validade da Conta (dias)", min_value=1, value=7, step=1)
-        novos_setores = st.multiselect("Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-        novas_paginas = st.multiselect("Páginas Acessíveis", ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"])
+        with col2:
+            new_password = st.text_input("Senha", type="password", key="new_password")
+        
+        new_points = st.number_input("Pontos Iniciais", min_value=0, value=100, step=10, key="new_points")
         
         if st.button("Adicionar Usuário"):
-            if novo_nome_usuario and nova_senha:
-                senha_hash = hash_senha(nova_senha)
-                data_expiracao = datetime.now() + timedelta(days=dias_validade) if nova_funcao != "admin" else None
-                ws.append([novo_nome_usuario, senha_hash, "", data_expiracao, nova_funcao, ",".join(novos_setores), ",".join(novas_paginas)])
-                wb.save(ARQUIVO_LOGIN)
-                st.success("Usuário adicionado com sucesso!")
+            if not new_username or not new_password:
+                st.error("Por favor, preencha todos os campos.")
             else:
-                st.error("Por favor, forneça nome de usuário e senha.")
-
-        st.subheader("Editar Usuário")
-        editar_nome_usuario = st.selectbox("Selecione o Usuário para Editar", list(dados_usuario.keys()))
-        senha_editada = st.text_input("Nova Senha para o Usuário Selecionado", type="password")
-        funcao_editada = st.selectbox("Nova Função", ["usuário", "admin"])
-        validade_editada = st.number_input("Nova Validade da Conta (dias)", min_value=1, value=7, step=1)
-        setores_editados = st.multiselect("Novos Setores", ["Pneumologia", "Neurologia", "Ortopedia"])
-        paginas_editadas = st.multiselect("Novas Páginas Acessíveis", ["Classificar Exame", "Visualizar Histórico do Paciente", "Comparar Pacientes", "Visualização 3D de Raio-X"])
+                if add_user(new_username, new_password, new_points):
+                    st.success("Usuário adicionado com sucesso!")
+                    st.experimental_rerun()
+                else:
+                    st.error("Nome de usuário já existe.")
+    
+    with tab4:
+        st.subheader("Adicionar Novo Time")
         
-        if st.button("Editar Usuário"):
-            if senha_editada:
-                senha_hash = hash_senha(senha_editada)
-                for linha in ws.iter_rows(min_row=2):
-                    if linha[0].value == editar_nome_usuario:
-                        linha[1].value = senha_hash
-                        linha[3].value = datetime.now() + timedelta(days=validade_editada) if funcao_editada != "admin" else None
-                        linha[4].value = funcao_editada
-                        linha[5].value = ",".join(setores_editados)
-                        linha[6].value = ",".join(paginas_editadas)
-                        break
-                wb.save(ARQUIVO_LOGIN)
-                st.success("Usuário editado com sucesso!")
+        team_name = st.text_input("Nome do Time", key="new_team")
+        
+        if st.button("Adicionar Time"):
+            if not team_name:
+                st.error("Por favor, insira um nome para o time.")
             else:
-                st.error("Por favor, forneça uma nova senha.")
-
-        st.subheader("Remover Usuário")
-        remover_nome_usuario = st.selectbox("Selecione o Usuário para Remover", list(dados_usuario.keys()))
-        if st.button("Remover Usuário"):
-            ws.delete_rows(list(dados_usuario.keys()).index(remover_nome_usuario) + 2)
-            wb.save(ARQUIVO_LOGIN)
-            st.success("Usuário removido com sucesso!")
-    
-    except Exception as e:
-        st.error(f"Ocorreu um erro durante o gerenciamento de usuários: {str(e)}")
-
-def reduzir_resolucao_matriz(matriz_3d, max_size=1_000_000):
-    """Reduz a resolução da matriz 3D para um tamanho máximo especificado."""
-    current_size = matriz_3d.size
-    if current_size <= max_size:
-        return matriz_3d
-    
-    fator = (max_size / current_size) ** (1/3)
-    return zoom(matriz_3d, (fator, fator, fator))
-
-def converter_raio_x_para_3d(imagem, profundidade=50):
-    """Converte a imagem de Raio-X para uma matriz 3D."""
-    imagem_cinza = imagem.convert('L')
-    array_imagem = np.array(imagem_cinza)
-    array_normalizado = array_imagem.astype(float) / 255.0
-    
-    matriz_3d = np.repeat(array_normalizado[np.newaxis, :, :], profundidade, axis=0)
-    gradiente = np.linspace(1, 0.5, profundidade)[:, np.newaxis, np.newaxis]
-    matriz_3d *= gradiente
-    
-    return matriz_3d
-
-def visualizar_raio_x_3d(imagem, profundidade=50, num_isosurfaces=5):
-    """Cria uma visualização 3D do Raio-X a partir da imagem."""
-    try:
-        matriz_3d = converter_raio_x_para_3d(imagem, profundidade)
-        matriz_3d = reduzir_resolucao_matriz(matriz_3d)
+                if add_team(team_name):
+                    st.success("Time adicionado com sucesso!")
+                    st.experimental_rerun()
+                else:
+                    st.error("Erro ao adicionar time.")
         
-        z, y, x = matriz_3d.shape
+        st.markdown("---")
+        st.subheader("Times Existentes")
         
-        fig = go.Figure()
+        teams = get_all_teams()
         
-        valores_iso = np.linspace(matriz_3d.min(), matriz_3d.max(), num_isosurfaces + 2)[1:-1]
-        for valor_iso in valores_iso:
-            verts, faces, _, _ = measure.marching_cubes(matriz_3d, valor_iso)
-            x_mesh, y_mesh, z_mesh = verts.T
-            i, j, k = faces.T
-            
-            fig.add_trace(go.Mesh3d(
-                x=x_mesh, y=y_mesh, z=z_mesh,
-                i=i, j=j, k=k,
-                opacity=0.3,
-                colorscale='Greys',
-                intensity=z_mesh,
-                intensitymode='vertex',
-            ))
-        
-        fig.update_layout(
-            scene=dict(
-                xaxis_title='X',
-                yaxis_title='Y',
-                zaxis_title='Z',
-                aspectmode='data'
-            ),
-            width=600,
-            height=600,
-            title="Visualização 3D de Raio-X"
-        )
-        
-        return fig
-    except Exception as e:
-        st.error(f"Erro ao gerar visualização 3D: {str(e)}")
-        return None
-
-def pagina_visualizacao_3d():
-    st.header("Visualização 3D de Raio-X")
-    
-    arquivo_carregado = st.file_uploader("Faça upload do Raio-X", type=["png", "jpg", "jpeg"], key="visualizacao_3d_uploader")
-    
-    if arquivo_carregado is not None:
-        try:
-            imagem = Image.open(arquivo_carregado)
-            st.image(imagem, caption="Raio-X Original", use_column_width=True)
-            
-            profundidade = st.slider("Profundidade da visualização 3D", min_value=10, max_value=100, value=50, step=10)
-            num_isosurfaces = st.slider("Número de isosuperfícies", min_value=1, max_value=10, value=5, step=1)
-            
-            if st.button("Converter para 3D"):
-                with st.spinner("Convertendo para 3D..."):
-                    fig_3d = visualizar_raio_x_3d(imagem, profundidade=profundidade, num_isosurfaces=num_isosurfaces)
-                    if fig_3d is not None:
-                        st.plotly_chart(fig_3d, use_container_width=True)
-                        st.success("Visualização 3D gerada com sucesso!")
-                    else:
-                        st.error("Não foi possível gerar a visualização 3D.")
-        
-        except Exception as e:
-            st.error(f"Erro ao processar a imagem: {str(e)}")
-    else:
-        st.info("Por favor, faça o upload de uma imagem de Raio-X.")
-
-def main():
-    st.title("MedVision")
-    
-    try:
-        inicializar_arquivo_login()  # Inicializa o arquivo de login
-        
-        if not st.session_state.logado:
-            pagina_login()  # Exibe a página de login se não estiver logado
+        if not teams:
+            st.info("Não há times cadastrados.")
         else:
-            st.sidebar.title(f"Bem-vindo, {st.session_state.nome_usuario}")
-            if st.sidebar.button("Sair"):
-                st.session_state.logado = False
-                st.session_state.nome_usuario = None
-                st.session_state.setores_usuario = []
-                st.session_state.paginas_acessiveis = []
-                st.rerun()  # Alterado de st.experimental_rerun() para st.rerun()
-                # Remova a linha de rerun completamente
-
-            # Use as páginas acessíveis definidas durante o login
-            opcoes_disponiveis = st.session_state.paginas_acessiveis
-            
-            if opcoes_disponiveis:
-                opcao_menu = st.sidebar.radio("Escolha uma opção:", opcoes_disponiveis)
-
-                # Chamando as funções correspondentes às opções selecionadas
-                if opcao_menu == "Classificar Exame":
-                    st.header("Classificar Exame")
-                    id_paciente = st.text_input("ID do Paciente")
-                    
-                    setor = st.selectbox("Escolha o setor", list(caminhos_modelos.keys()))
-                    modelo = st.selectbox("Escolha o modelo", list(caminhos_modelos[setor].keys()))
-                    
-                    opcao_modelo = f"{setor}_{modelo}"
-                    
-                    arquivo_carregado = st.file_uploader("Faça upload da imagem de exame", type=["png", "jpg", "jpeg"])
-                    
-                    if st.button("Classificar Exame"):
-                        classificar_exame(id_paciente, opcao_modelo, arquivo_carregado)
-                
-                elif opcao_menu == "Visualizar Histórico do Paciente":
-                    st.header("Histórico do Paciente")
-                    id_paciente = st.text_input("ID do Paciente para visualização do histórico")
-                    if st.button("Visualizar Histórico"):
-                        visualizar_historico_paciente(id_paciente)
-                
-                elif opcao_menu == "Comparar Pacientes":
-                    st.header("Comparar Pacientes")
-                    comparar_pacientes()
-                
-                elif opcao_menu == "Visualização 3D de Raio-X":
-                    pagina_visualizacao_3d()
-                
-                elif opcao_menu == "Gerenciamento de Usuários":
-                    gerenciar_usuarios()
-
-    except Exception as e:
-        st.error(f"Ocorreu um erro inesperado: {str(e)}")
+            for team in teams:
+                st.write(f"• {team['name']}")
 
 if __name__ == "__main__":
     main()
+
