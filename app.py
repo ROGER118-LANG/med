@@ -487,7 +487,7 @@ def update_user_points(username, points):
 def main():
     st.set_page_config(
         page_title="GuimaBet",
-        page_icon="⚽",
+        page_icon="",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -581,7 +581,7 @@ def main():
         st.session_state.custom_bet_id = None
     
     # Title
-    st.markdown('<div class="header"><h1 style="color: white;">⚽ GuimaBet</h1><p>Apostas no Futebol do Recreio do CIB</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header"><h1 style="color: white;"> GuimaBet</h1><p>Apostas no Futebol do Recreio do CIB</p></div>', unsafe_allow_html=True)
     
     # If not logged in, show login/register page
     if not st.session_state.logged_in:
@@ -602,22 +602,22 @@ def main():
             
             st.subheader("Menu")
             
-            if st.button("🏠 Início"):
+            if st.button(" Início"):
                 st.session_state.page = "home"
             
-            if st.button("📊 Histórico de Apostas"):
+            if st.button(" Histórico de Apostas"):
                 st.session_state.page = "bet_history"
             
-            if st.button("🏆 Ranking"):
+            if st.button(" Ranking"):
                 st.session_state.page = "ranking"
             
             if st.session_state.is_admin:
                 st.subheader("Admin Menu")
                 
-                if st.button("👨‍💼 Painel de Admin"):
+                if st.button(" Painel de Admin"):
                     st.session_state.page = "admin"
             
-            if st.button("🚪 Sair"):
+            if st.button(" Sair"):
                 st.session_state.logged_in = False
                 st.session_state.username = ""
                 st.session_state.is_admin = False
@@ -832,6 +832,7 @@ def bet_history_page():
             # Determine bet description
             if bet['custom_bet_id']:
                 conn = sqlite3.connect('guimabet.db')
+                conn.row_factory = sqlite3.Row
                 c = conn.cursor()
                 c.execute("SELECT description, player_id FROM custom_bets WHERE id = ?", (bet['custom_bet_id'],))
                 custom_bet = c.fetchone()
