@@ -483,6 +483,49 @@ def update_user_points(username, points):
     conn.close()
     return True
 
+def update_user(username, new_username=None, new_points=None, is_admin=None):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    if new_username and new_username != username:
+        # Check if new username already exists
+        c.execute("SELECT * FROM users WHERE username = ?", (new_username,))
+        if c.fetchone():
+            conn.close()
+            return False, "Nome de usuário já existe."
+        
+        # Update username in users table
+        c.execute("UPDATE users SET username = ? WHERE username = ?", (new_username, username))
+        
+        # Update username in bets table
+        c.execute("UPDATE bets SET user_id = ? WHERE user_id = ?", (new_username, username))
+        
+        username = new_username
+    
+    if new_points is not None:
+        c.execute("UPDATE users SET points = ? WHERE username = ?", (new_points, username))
+    
+    if is_admin is not None:
+        c.execute("UPDATE users SET is_admin = ? WHERE username = ?", (1 if is_admin else 0, username))
+    
+    conn.commit()
+    conn.close()
+    return True, "Usuário atualizado com sucesso!"
+
+def delete_user(username):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    # Delete user's bets first
+    c.execute("DELETE FROM bets WHERE user_id = ?", (username,))
+    
+    # Delete user
+    c.execute("DELETE FROM users WHERE username = ?", (username,))
+    
+    conn.commit()
+    conn.close()
+    return True
+
 # Page setup
 def main():
     st.set_page_config(
@@ -832,7 +875,6 @@ def bet_history_page():
             # Determine bet description
             if bet['custom_bet_id']:
                 conn = sqlite3.connect('guimabet.db')
-                conn.row_factory = sqlite3.Row
                 c = conn.cursor()
                 c.execute("SELECT description, player_id FROM custom_bets WHERE id = ?", (bet['custom_bet_id'],))
                 custom_bet = c.fetchone()
@@ -904,7 +946,7 @@ def ranking_page():
 def admin_page():
     st.subheader("Painel de Administração")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Gerenciar Jogos", "Adicionar Jogos", "Apostas Personalizadas", "Jogadores", "Times"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Gerenciar Jogos", "Adicionar Jogos", "Gerenciar Usuários", "Jogadores", "Times"])
     
     with tab1:
         st.subheader("Gerenciar Jogos")
@@ -1013,94 +1055,72 @@ def admin_page():
                 st.success("Jogo adicionado com sucesso!")
     
     with tab3:
-        st.subheader("Apostas Personalizadas")
+        st.subheader("Gerenciar Usuários")
         
-        # Add new custom bet
-        st.write("Adicionar Nova Aposta Personalizada")
+        users = get_all_users()
         
-        matches = get_upcoming_matches()
-        match_options = {match['id']: f"{get_team_name(match['team1_id'])} vs {get_team_name(match['team2_id'])} ({match['date']})" for match in matches}
-        
-        selected_match_id = st.selectbox("Selecione um Jogo", options=list(match_options.keys()), format_func=lambda x: match_options[x], key="custom_bet_match")
-        
-        custom_bet_text = st.text_input("Descrição da Aposta", placeholder="Ex: Gol contra, Hat-trick, etc.", key="custom_bet_text")
-        
-        custom_bet_odds = st.number_input("Odds", min_value=1.1, value=2.0, step=0.1, key="custom_bet_odds")
-        
-        # Only show player selection if a match is selected
-        selected_player_id = None
-        if selected_match_id:
-            match_players = get_match_players(selected_match_id)
-            if match_players:
-                player_options = {player['id']: f"{player['name']} ({get_team_name(player['team_id'])})" for player in match_players}
-                player_options[0] = "Selecione um jogador (opcional)"
+        for user in users:
+            with st.expander(f"Usuário: {user['username']}", expanded=False):
+                with st.form(key=f"user_form_{user['username']}"):
+                    new_username = st.text_input("Nome de Usuário", value=user['username'])
+                    new_points = st.number_input("Pontos", min_value=0, value=user['points'], step=10)
+                    is_admin = st.checkbox("Administrador", value=user['is_admin'] == 1)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        update_button = st.form_submit_button("Atualizar Usuário")
+                    with col2:
+                        delete_button = st.form_submit_button("Excluir Usuário", help="Esta ação não pode ser desfeita")
                 
-                selected_player_id = st.selectbox("Jogador (opcional)", options=list(player_options.keys()), format_func=lambda x: player_options[x], key="custom_bet_player")
-                if selected_player_id == 0:
-                    selected_player_id = None
-        
-        if st.button("Adicionar Aposta Personalizada"):
-            if not selected_match_id or not custom_bet_text or custom_bet_odds <= 1.0:
-                st.error("Por favor, preencha todos os campos corretamente.")
-            else:
-                if add_custom_bet(selected_match_id, custom_bet_text, custom_bet_odds, selected_player_id):
-                    st.success("Aposta personalizada adicionada com sucesso!")
-                    st.experimental_rerun()
-                else:
-                    st.error("Erro ao adicionar aposta personalizada.")
+                if update_button:
+                    success, message = update_user(user['username'], new_username, new_points, is_admin)
+                    if success:
+                        st.success(message)
+                        st.experimental_rerun()
+                    else:
+                        st.error(message)
+                
+                if delete_button:
+                    if user['username'] == 'admin':
+                        st.error("Não é possível excluir o usuário administrador padrão.")
+                    else:
+                        if st.button(f"Confirmar exclusão de {user['username']}?", key=f"confirm_delete_{user['username']}"):
+                            delete_user(user['username'])
+                            st.success(f"Usuário {user['username']} excluído com sucesso!")
+                            st.experimental_rerun()
         
         st.markdown("---")
+        st.subheader("Adicionar Novo Usuário")
         
-        # Manage existing custom bets
-        st.write("Apostas Personalizadas Pendentes")
+        with st.form(key="add_user_form"):
+            new_user_username = st.text_input("Nome de Usuário", key="new_user_username")
+            new_user_password = st.text_input("Senha", type="password", key="new_user_password")
+            new_user_points = st.number_input("Pontos Iniciais", min_value=0, value=100, step=10, key="new_user_points")
+            new_user_admin = st.checkbox("Administrador", value=False, key="new_user_admin")
+            
+            submit_button = st.form_submit_button("Adicionar Usuário")
         
-        custom_bets = get_custom_bets()
-        if not custom_bets:
-            st.info("Não há apostas personalizadas pendentes.")
-        else:
-            for custom_bet in custom_bets:
+        if submit_button:
+            if not new_user_username or not new_user_password:
+                st.error("Por favor, preencha todos os campos.")
+            else:
                 conn = sqlite3.connect('guimabet.db')
                 c = conn.cursor()
-                c.execute("SELECT team1_id, team2_id, date, time, status FROM matches WHERE id = ?", (custom_bet['match_id'],))
-                match = c.fetchone()
-                conn.close()
-                
-                if match:
-                    team1 = get_team_name(match[0])
-                    team2 = get_team_name(match[1])
-                    
-                    player_info = ""
-                    if custom_bet['player_id']:
-                        player_info = f" - {get_player_name(custom_bet['player_id'])}"
-                    
-                    st.markdown(f"""
-                    <div class="match-card">
-                        <h4>{team1} vs {team2}</h4>
-                        <p>Data: {match[2]} • Hora: {match[3]}</p>
-                        <p>Aposta: {custom_bet['description']}{player_info}</p>
-                        <p>Odds: {custom_bet['odds']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if match[4] == 'completed':
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            if st.button("Ocorreu", key=f"yes_{custom_bet['id']}"):
-                                update_custom_bet_result(custom_bet['id'], 'yes')
-                                st.success("Resultado da aposta personalizada atualizado!")
-                                st.experimental_rerun()
-                        
-                        with col2:
-                            if st.button("Não Ocorreu", key=f"no_{custom_bet['id']}"):
-                                update_custom_bet_result(custom_bet['id'], 'no')
-                                st.success("Resultado da aposta personalizada atualizado!")
-                                st.experimental_rerun()
+                try:
+                    hashed_password = hashlib.sha256(new_user_password.encode()).hexdigest()
+                    c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+                             (new_user_username, hashed_password, new_user_points, 1 if new_user_admin else 0))
+                    conn.commit()
+                    conn.close()
+                    st.success("Usuário adicionado com sucesso!")
+                    st.experimental_rerun()
+                except:
+                    conn.close()
+                    st.error("Nome de usuário já existe.")
     
     with tab4:
         st.subheader("Jogadores")
         
-        # Add new player
         st.write("Adicionar Novo Jogador")
         
         player_name = st.text_input("Nome do Jogador", key="player_name")
@@ -1122,7 +1142,6 @@ def admin_page():
         
         st.markdown("---")
         
-        # Show existing players
         st.write("Jogadores Cadastrados")
         
         players = get_all_players()
@@ -1135,7 +1154,6 @@ def admin_page():
     with tab5:
         st.subheader("Times")
         
-        # Add new team
         st.write("Adicionar Novo Time")
         
         team_name = st.text_input("Nome do Time", key="team_name")
@@ -1152,7 +1170,6 @@ def admin_page():
         
         st.markdown("---")
         
-        # Show existing teams
         st.write("Times Cadastrados")
         
         teams = get_all_teams()
