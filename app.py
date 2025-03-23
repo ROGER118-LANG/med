@@ -73,28 +73,6 @@ def init_db():
     )
     ''')
     
-    # Create players table
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS players (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        team_id INTEGER,
-        FOREIGN KEY (team_id) REFERENCES teams (id)
-    )
-    ''')
-    
-    # Create custom bets table
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS custom_bets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        match_id INTEGER,
-        description TEXT,
-        odds REAL,
-        result INTEGER DEFAULT 0,
-        FOREIGN KEY (match_id) REFERENCES matches (id)
-    )
-    ''')
-    
     # Insert default admin user if not exists
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if not c.fetchone():
@@ -292,17 +270,14 @@ def update_match_result(match_id, team1_score, team2_score):
     
     # Process bets
     for bet_id, user_id, bet_type, amount in bets:
-        if bet_type in ['team1_win', 'draw', 'team2_win']:
-            if bet_type == result:
-                # Winning bet - user gets back stake + winnings based on odds
-                winnings = int(amount * odds[['team1_win', 'draw', 'team2_win'].index(bet_type)])
-                c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings + amount, user_id))
-                c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
-            else:
-                # Losing bet - user already lost stake when placing bet, just update status
-                c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
-    
-    # Custom bets are handled separately via update_custom_bet_result
+        if bet_type == result:
+            # Winning bet - user gets back stake + winnings based on odds
+            winnings = int(amount * odds[['team1_win', 'draw', 'team2_win'].index(bet_type)])
+            c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings + amount, user_id))
+            c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
+        else:
+            # Losing bet - user already lost stake when placing bet, just update status
+            c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
     
     conn.commit()
     conn.close()
@@ -364,114 +339,6 @@ def update_user_points(username, points):
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
     c.execute("UPDATE users SET points = ? WHERE username = ?", (points, username))
-    conn.commit()
-    conn.close()
-    return True
-
-# Custom Bets Functions
-def add_custom_bet(match_id, description, odds):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute('''
-    INSERT INTO custom_bets (match_id, description, odds)
-    VALUES (?, ?, ?)
-    ''', (match_id, description, odds))
-    conn.commit()
-    conn.close()
-    return True
-
-def get_custom_bets(match_id):
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute('''
-    SELECT id, description, odds, result
-    FROM custom_bets
-    WHERE match_id = ?
-    ''', (match_id,))
-    custom_bets = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return custom_bets
-
-def update_custom_bet_result(bet_id, result):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute('''
-    UPDATE custom_bets 
-    SET result = ?
-    WHERE id = ?
-    ''', (result, bet_id))
-    
-    # Get the custom bet details
-    c.execute('''
-    SELECT match_id, description, odds FROM custom_bets
-    WHERE id = ?
-    ''', (bet_id,))
-    custom_bet = c.fetchone()
-    
-    if custom_bet:
-        match_id, description, odds = custom_bet
-        
-        # Process user bets on this custom bet
-        if result == 1:  # If the custom bet occurred
-            # Get all pending bets for this custom bet
-            c.execute('''
-            SELECT id, user_id, amount FROM bets 
-            WHERE match_id = ? AND bet_type = ? AND status = 'pending'
-            ''', (match_id, f"custom_{bet_id}"))
-            bets = c.fetchall()
-            
-            # Process winning bets
-            for bet_id, user_id, amount in bets:
-                winnings = int(amount * odds)
-                c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings + amount, user_id))
-                c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
-        else:
-            # Mark all bets on this custom bet as lost
-            c.execute('''
-            UPDATE bets SET status = 'lost' 
-            WHERE match_id = ? AND bet_type = ? AND status = 'pending'
-            ''', (match_id, f"custom_{bet_id}"))
-    
-    conn.commit()
-    conn.close()
-    return True
-
-# Player Functions
-def add_player(name, team_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("INSERT INTO players (name, team_id) VALUES (?, ?)", (name, team_id))
-    conn.commit()
-    conn.close()
-    return True
-
-def get_players_by_team(team_id):
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT id, name FROM players WHERE team_id = ?", (team_id,))
-    players = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return players
-
-def get_player_name(player_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT name FROM players WHERE id = ?", (player_id,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else "Unknown Player"
-
-# Update odds function
-def update_match_odds(match_id, team1_win, draw, team2_win):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute('''
-    UPDATE odds 
-    SET team1_win = ?, draw = ?, team2_win = ?
-    WHERE match_id = ?
-    ''', (team1_win, draw, team2_win, match_id))
     conn.commit()
     conn.close()
     return True
@@ -712,20 +579,6 @@ def home_page():
                         st.session_state.selected_match = match
                         st.session_state.bet_type = "team2_win"
         
-        # Display custom bets if available
-        for match in upcoming_matches:
-            custom_bets = get_custom_bets(match['id'])
-            if custom_bets:
-                st.markdown("---")
-                st.write("Apostas Especiais:")
-                
-                for custom_bet in custom_bets:
-                    if custom_bet['result'] == 0:  # Only show if result not yet determined
-                        if st.button(f"{custom_bet['description']} (Odds: {custom_bet['odds']})", 
-                                    key=f"custom_{match['id']}_{custom_bet['id']}"):
-                            st.session_state.selected_match = match
-                            st.session_state.bet_type = f"custom_{custom_bet['id']}"
-        
         # If a match is selected, show betting form
         if st.session_state.selected_match:
             match = st.session_state.selected_match
@@ -851,8 +704,7 @@ def ranking_page():
 def admin_page():
     st.subheader("Painel de Administração")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Gerenciar Jogos", "Adicionar Jogos", "Gerenciar Usuários", 
-                                          "Adicionar Times", "Gerenciar Jogadores"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Gerenciar Jogos", "Adicionar Jogos", "Gerenciar Usuários", "Adicionar Times"])
     
     with tab1:
         st.subheader("Gerenciar Jogos")
@@ -1027,47 +879,7 @@ def admin_page():
         else:
             for team in teams:
                 st.write(f"• {team['name']}")
-    
-    with tab5:
-        st.subheader("Gerenciar Jogadores")
-        
-        # Add player section
-        st.write("Adicionar Novo Jogador")
-        
-        teams = get_all_teams()
-        team_options = {team['id']: team['name'] for team in teams}
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            player_name = st.text_input("Nome do Jogador", key="new_player_name")
-        
-        with col2:
-            player_team = st.selectbox("Time", options=list(team_options.keys()), 
-                                     format_func=lambda x: team_options[x], key="new_player_team")
-        
-        if st.button("Adicionar Jogador"):
-            if not player_name:
-                st.error("Por favor, insira o nome do jogador.")
-            else:
-                add_player(player_name, player_team)
-                st.success("Jogador adicionado com sucesso!")
-                st.experimental_rerun()
-        
-        # Show players by team
-        st.markdown("---")
-        st.write("Jogadores por Time")
-        
-        selected_team = st.selectbox("Selecione um Time", options=list(team_options.keys()), 
-                                   format_func=lambda x: team_options[x], key="view_team_players")
-        
-        players = get_players_by_team(selected_team)
-        if not players:
-            st.info(f"Não há jogadores cadastrados para {team_options[selected_team]}.")
-        else:
-            st.write(f"Jogadores de {team_options[selected_team]}:")
-            for player in players:
-                st.write(f"• {player['name']}")
 
 if __name__ == "__main__":
     main()
+
