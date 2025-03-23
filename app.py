@@ -756,11 +756,12 @@ def home_page():
             else:  # Custom bet
                 custom_bet = next((cb for cb in get_custom_bets() if cb['id'] == st.session_state.custom_bet_id), None)
                 if custom_bet:
+                    bet_description = custom_bet['description']
                     player_info = ""
                     if custom_bet['player_id']:
                         player_info = f" - {get_player_name(custom_bet['player_id'])}"
                     
-                    bet_text = f"Aposta Personalizada: {custom_bet['description']}{player_info}"
+                    bet_text = f"Aposta Personalizada: {bet_description}{player_info}"
                     odds = custom_bet['odds']
                 else:
                     st.error("Aposta personalizada não encontrada.")
@@ -831,7 +832,6 @@ def bet_history_page():
             # Determine bet description
             if bet['custom_bet_id']:
                 conn = sqlite3.connect('guimabet.db')
-                conn.row_factory = sqlite3.Row
                 c = conn.cursor()
                 c.execute("SELECT description, player_id FROM custom_bets WHERE id = ?", (bet['custom_bet_id'],))
                 custom_bet = c.fetchone()
