@@ -81,7 +81,7 @@ def init_db():
                  ("admin", hashed_password, 1000, 1))
     
     # Insert default teams if not exists
-    default_teams = ["Tropa da Sônia", "Cubanos", "Dynamos", "Os Feras", "Gaviões", "Leões do Recreio"]
+    default_teams = ["Tropa da Sônia", "Cubanos", "Dynamos"]
     for team in default_teams:
         c.execute("SELECT * FROM teams WHERE name = ?", (team,))
         if not c.fetchone():
@@ -439,7 +439,7 @@ def main():
         st.session_state.bet_type = None
     
     # Title
-    st.markdown('<div class="header"><h1 style="color: white;">⚽ GuimaBet</h1><p>Apostas no Futebol do Recreio do CIB</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="header"><h1 style="color: white;">⚽ GuimaBet</h1><p>Apostas na CIB LEAGUE</p></div>', unsafe_allow_html=True)
     
     # If not logged in, show login/register page
     if not st.session_state.logged_in:
