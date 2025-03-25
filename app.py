@@ -947,7 +947,6 @@ def admin_page():
                 add_match(team1_id, team2_id, date_str, time_str, team1_odds, draw_odds, team2_odds)
                 st.success("Jogo adicionado com sucesso!")
     
-    # New tab for custom bets
     with tab3:
         st.subheader("Adicionar Apostas Personalizadas")
         
@@ -981,7 +980,78 @@ def admin_page():
                     </div>
                     """, unsafe_allow_html=True)
     
-    # ... existing code ...
+    with tab4:
+        st.subheader("Gerenciar Usuários")
+        
+        users = get_all_users()
+        
+        st.write("Usuários Cadastrados")
+        for user in users:
+            with st.container():
+                st.markdown(f"""
+                <div class="bet-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h4>{user['username']}</h4>
+                            <p>Pontos: {user['points']}</p>
+                        </div>
+                        <div>
+                            <span style="background-color: {'green' if user['is_admin'] else 'blue'}; color: white; padding: 5px 10px; border-radius: 5px;">{'Admin' if user['is_admin'] else 'Usuário'}</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.subheader("Adicionar Novo Usuário")
+        new_username = st.text_input("Nome de Usuário", key="new_username")
+        new_password = st.text_input("Senha", type="password", key="new_password")
+        initial_points = st.number_input("Pontos Iniciais", min_value=0, value=100, key="initial_points")
+        
+        if st.button("Adicionar Usuário"):
+            if not new_username or not new_password:
+                st.error("Por favor, preencha todos os campos.")
+            else:
+                if add_user(new_username, new_password, initial_points):
+                    st.success(f"Usuário {new_username} adicionado com sucesso!")
+                    st.experimental_rerun()
+                else:
+                    st.error("Nome de usuário já existe.")
+        
+        st.subheader("Atualizar Pontos de Usuário")
+        username_to_update = st.selectbox("Selecionar Usuário", options=[user['username'] for user in users], key="username_to_update")
+        new_points = st.number_input("Novos Pontos", min_value=0, value=100, key="new_points")
+        
+        if st.button("Atualizar Pontos"):
+            if update_user_points(username_to_update, new_points):
+                st.success(f"Pontos de {username_to_update} atualizados com sucesso!")
+                st.experimental_rerun()
+            else:
+                st.error("Erro ao atualizar pontos.")
+    
+    with tab5:
+        st.subheader("Adicionar Novo Time")
+        
+        teams = get_all_teams()
+        
+        st.write("Times Cadastrados")
+        for team in teams:
+            st.markdown(f"""
+            <div class="bet-card">
+                <h4>{team['name']}</h4>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        new_team_name = st.text_input("Nome do Time", key="new_team_name")
+        
+        if st.button("Adicionar Time"):
+            if not new_team_name:
+                st.error("Por favor, digite o nome do time.")
+            else:
+                if add_team(new_team_name):
+                    st.success(f"Time {new_team_name} adicionado com sucesso!")
+                    st.experimental_rerun()
+                else:
+                    st.error("Este time já existe ou ocorreu um erro.")
 
 if __name__ == "__main__":
     main()
