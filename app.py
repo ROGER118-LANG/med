@@ -1334,20 +1334,16 @@ def render_player_management():
                      st.session_state[confirm_key] = st.checkbox(f"**Confirmar remoção de {selected_player.get('name')}?** Esta ação não pode ser desfeita.", key=f"check_confirm_{selected_player_id}")
 
                      if st.session_state[confirm_key]:
-                         # Check minimum player count before removing
-                         if len(team_players) <= min_players:
-                              st.error(f"Não é possível remover o jogador. Seu time precisa ter no mínimo {min_players} jogadores.")
-                         else:
-                             # Proceed with removal
-                             st.session_state.db['players'] = [p for p in st.session_state.db.get('players', []) if p.get('id') != selected_player_id]
+                         # Proceed with removal
+                         st.session_state.db['players'] = [p for p in st.session_state.db.get('players', []) if p.get('id') != selected_player_id]
 
-                             # Also remove any goals associated with this player
-                             st.session_state.db['goals'] = [g for g in st.session_state.db.get('goals', []) if g.get('playerId') != selected_player_id]
+                         # Also remove any goals associated with this player
+                         st.session_state.db['goals'] = [g for g in st.session_state.db.get('goals', []) if g.get('playerId') != selected_player_id]
 
-                             save_database()
-                             st.success(f"Jogador {selected_player.get('name')} removido com sucesso!")
-                             del st.session_state[confirm_key] # Clean up confirmation state
-                             st.rerun()
+                         save_database()
+                         st.success(f"Jogador {selected_player.get('name')} removido com sucesso!")
+                         del st.session_state[confirm_key] # Clean up confirmation state
+                         st.rerun()
                      else:
                           # If checkbox is unchecked after being checked (or initially)
                           st.info("Remoção cancelada.")
