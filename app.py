@@ -671,14 +671,14 @@ def render_matches():
         upcoming = get_upcoming_matches()
         if upcoming:
             for match in upcoming:
-                team_a = match.get('teamA', 'Time A')
-                score_a = match.get('scoreA', '?')
-                team_b = match.get('teamB', 'Time B')
-                score_b = match.get('scoreB', '?')
-                match_date = match.get('date', 'Data indefinida')
-                match_id = match.get('id')
+                 team_a = match.get('teamA', 'Time A')
+                 score_a = match.get('scoreA', '?')
+                 team_b = match.get('teamB', 'Time B')
+                 score_b = match.get('scoreB', '?')
+                 match_date = match.get('date', 'Data indefinida')
+                 match_id = match.get('id')
 
-                with st.expander(f"{team_a} {score_a} x {score_b} {team_b} - {match_date}"):
+                 with st.expander(f"{team_a} {score_a} x {score_b} {team_b} - {match_date}"):
                     st.write(f"Data: {match_date}")
                     st.write(f"ID do Jogo: {match_id}") # Display ID for reference
 
@@ -733,7 +733,7 @@ def render_matches():
 
                 with st.expander(f"{team_a} {score_a} x {score_b} {team_b} - {match_date}"):
                     st.write(f"Data: {match_date}")
-                    st.write(f"ID do Jogo: {match_id}")
+                    st.write(f"ID do Jogo: {match_id}") # Display ID for reference
 
                     # Show match goals
                     match_goals = [g for g in st.session_state.db.get('goals', []) if g.get('matchId') == match_id]
@@ -1679,8 +1679,8 @@ def render_admin_add_team_form():
                     errors.append(f"O nome de usuário '{new_username}' já está em uso.")
 
                 if errors:
-                    for error in errors:
-                        st.error(error)
+                     for error in errors:
+                         st.error(error)
                 else:
                     team_id = f"team_{str(uuid.uuid4())[:8]}"
                     new_team = {
@@ -1698,7 +1698,7 @@ def render_admin_add_team_form():
 
                     save_database()
                     st.success(f"Time '{new_team_name}' adicionado com sucesso!")
-                    st.rerun()
+                    st.rerun() # Refresh the teams list
 
 
 def render_admin_results():
