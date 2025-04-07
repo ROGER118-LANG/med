@@ -1296,7 +1296,6 @@ def render_player_management():
 
                      new_name = st.text_input("Nome do Jogador", value=current_name, key=f"edit_name_{selected_player_id}")
                      new_birth_date = st.date_input("Data de Nascimento", value=current_birth_date, key=f"edit_birth_{selected_player_id}",
-                                                      min_value=datetime.date(1990, 1, 1), # Reasonable min
                                                       max_value=datetime.date.today(), # Cannot be born in future
                                                       value=datetime.date.today()) # Set default date
 
@@ -1367,8 +1366,7 @@ def render_player_management():
             default_birth_date = datetime.date.today() - datetime.timedelta(days=12*365) # Sensible default
             new_player_birth = st.date_input("Data de Nascimento*", key="add_player_birth",
                                            value=default_birth_date,
-                                           min_value=datetime.date(1990, 1, 1),
-                                           max_value=datetime.date.today())
+                                           max_value=datetime.date.today()) # Cannot be born in future
 
             add_submitted = st.form_submit_button("Adicionar Jogador")
 
@@ -1840,7 +1838,7 @@ def render_add_edit_result_form(match):
              st.write("**Gols Registrados:**")
              for i, goal in enumerate(goal_entries):
                  player = get_player_by_id(goal.get('playerId'))
-                 goal_team = get_team_by_id(goal.get('teamId'))
+                 goal_team = get_team_by_id(goal.get('teamId')) # Team of the player who scored
                  player_name = player.get('name', 'N/A') if player else 'N/A'
                  goal_team_name = goal_team.get('name', 'N/A') if goal_team else 'N/A'
                  goal_type = goal.get('type', 'normal')
