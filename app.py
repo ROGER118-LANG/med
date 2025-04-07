@@ -5,6 +5,73 @@ import uuid
 import json
 import os
 from streamlit_option_menu import option_menu
+import plotly.express as px
+import plotly.graph_objects as go
+from PIL import Image
+import base64
+import io
+
+# Page configuration
+st.set_page_config(
+    page_title="Matheuzinho League - Copa Sub-13 de Futsal",
+    page_icon="⚽",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for better aesthetics
+st.markdown("""
+<style>
+    .main .block-container {padding-top: 2rem; padding-bottom: 2rem;}
+    h1, h2, h3 {color: #1a2a3a; margin-bottom: 1rem;}
+    .stButton > button {
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 0.6rem 1.2rem;
+        transition: all 0.3s;
+    }
+    .stButton > button:hover {background-color: #3e9142;}
+    .css-1aumxhk {background-color: #1e3a5f;}
+    .stat-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+    }
+    .matches-card {
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background-color: white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .highlighted {background-color: #e8f5e9 !important;}
+    .sidebar .sidebar-content {background-color: #1a2a3a;}
+    
+    /* League Logo styling */
+    .logo-container {
+        text-align: center;
+        padding: 1rem;
+        background-color: #1a2a3a;
+        border-radius: 10px;
+        margin-bottom: 1.5rem;
+    }
+    .logo-title {color: white; margin-bottom: 0;}
+    .logo-subtitle {color: #4CAF50; margin-top: 0;}
+    
+    /* Form styling */
+    .form-container {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state for database storage
 if 'db' not in st.session_state:
@@ -37,16 +104,16 @@ def save_database():
     with open('database.json', 'w') as f:
         json.dump(st.session_state.db, f)
 
-# Initialize authentication state
+# Initialize session states
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.current_user = None
     st.session_state.user_type = None
     st.session_state.user_team = None
 
-# Initialize navigation state
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = 'home'
+# Navigation state
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
 
 # Helper functions
 def get_team_by_id(team_id):
@@ -199,121 +266,202 @@ def logout():
     st.session_state.current_user = None
     st.session_state.user_type = None
     st.session_state.user_team = None
-    st.session_state.current_page = 'home'
 
-# UI Components
-def render_header():
-    st.markdown("""
-    <div style="background-color: #1a2a3a; padding: 15px; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px">
-        <div style="display: flex; align-items: center;">
-            <div style="background-color: #1a2a3a; padding: 10px; border-radius: 10px; border: 2px solid #4CAF50; margin-right: 20px">
-                <h1 style="color: white; margin: 0; font-size: 24px">MATHEUZINHO</h1>
-                <h2 style="color: #4CAF50; margin: 0; font-size: 28px">LEAGUE</h2>
-            </div>
-            <h3 style="color: white; margin: 0">Copa Sub-13 de Futsal</h3>
+# Updated UI Components with modern streamlit widgets
+def render_sidebar():
+    with st.sidebar:
+        # Logo
+        st.markdown("""
+        <div class="logo-container">
+            <h2 class="logo-title">MATHEUZINHO</h2>
+            <h3 class="logo-subtitle">LEAGUE</h3>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Main navigation with nice icons
-    selected = option_menu(
-        menu_title=None,
-        options=["Início", "Classificação", "Artilharia", "Jogos", 
-                 "Login" if not st.session_state.logged_in else "Painel", 
-                 "Cadastro" if not st.session_state.logged_in else "Sair"],
-        icons=["house", "trophy", "star", "calendar", 
-               "box-arrow-in-right" if not st.session_state.logged_in else "speedometer", 
-               "person-plus" if not st.session_state.logged_in else "box-arrow-right"],
-        menu_icon="cast",
-        default_index=0,
-        orientation="horizontal",
-        styles={
-            "container": {"padding": "0!important", "background-color": "#f0f2f6"},
-            "icon": {"color": "#4CAF50", "font-size": "14px"}, 
-            "nav-link": {"font-size": "14px", "text-align": "center", "margin":"0px", "--hover-color": "#eee"},
-            "nav-link-selected": {"background-color": "#4CAF50"},
-        }
-    )
-    
-    # Handle navigation based on selection
-    if selected == "Início":
-        st.session_state.current_page = 'home'
-    elif selected == "Classificação":
-        st.session_state.current_page = 'classification'
-    elif selected == "Artilharia":
-        st.session_state.current_page = 'topScorers'
-    elif selected == "Jogos":
-        st.session_state.current_page = 'matches'
-    elif selected == "Login":
-        st.session_state.current_page = 'login'
-    elif selected == "Cadastro":
-        st.session_state.current_page = 'register'
-    elif selected == "Painel":
-        st.session_state.current_page = 'dashboard'
-    elif selected == "Sair":
-        logout()
-        st.experimental_rerun()
+        """, unsafe_allow_html=True)
+        
+        # Navigation menu
+        if st.session_state.logged_in:
+            # User info
+            st.markdown(f"**Olá, {st.session_state.current_user['name']}!**")
+            st.markdown(f"Tipo: {st.session_state.user_type.capitalize()}")
+            
+            # Sidebar menu - different options based on user type
+            if st.session_state.user_type == 'admin':
+                selected = option_menu(
+                    "Menu Principal", 
+                    ["Início", "Classificação", "Artilharia", "Jogos", "Dashboard", "Times", "Resultados", "Apostas", "Configurações", "Sair"],
+                    icons=['house', 'trophy', 'star', 'calendar2', 'speedometer2', 'people', 'clipboard-check', 'currency-exchange', 'gear', 'box-arrow-right'],
+                    menu_icon="cast", default_index=0
+                )
+            elif st.session_state.user_type == 'team':
+                selected = option_menu(
+                    "Menu Principal", 
+                    ["Início", "Classificação", "Artilharia", "Jogos", "Meu Time", "Jogadores", "Estatísticas", "Sair"],
+                    icons=['house', 'trophy', 'star', 'calendar2', 'shield', 'person-badge', 'graph-up', 'box-arrow-right'],
+                    menu_icon="cast", default_index=0
+                )
+            else:  # fan
+                selected = option_menu(
+                    "Menu Principal", 
+                    ["Início", "Classificação", "Artilharia", "Jogos", "Minhas Apostas", "Sair"],
+                    icons=['house', 'trophy', 'star', 'calendar2', 'cash-coin', 'box-arrow-right'],
+                    menu_icon="cast", default_index=0
+                )
+            
+            # Handle menu selection
+            if selected == "Sair":
+                logout()
+                st.rerun()
+            else:
+                page_mapping = {
+                    "Início": "home",
+                    "Classificação": "classification",
+                    "Artilharia": "topScorers",
+                    "Jogos": "matches",
+                    "Dashboard": "dashboard",
+                    "Times": "teams",
+                    "Resultados": "results",
+                    "Apostas": "betting",
+                    "Configurações": "settings",
+                    "Meu Time": "my_team",
+                    "Jogadores": "players",
+                    "Estatísticas": "stats",
+                    "Minhas Apostas": "my_bets"
+                }
+                st.session_state.page = page_mapping.get(selected, "home")
+        else:
+            # Login/Register options
+            selected = option_menu(
+                "Menu Principal", 
+                ["Início", "Classificação", "Artilharia", "Jogos", "Login", "Cadastro"],
+                icons=['house', 'trophy', 'star', 'calendar2', 'box-arrow-in-right', 'person-plus'],
+                menu_icon="cast", default_index=0
+            )
+            
+            # Handle selection
+            page_mapping = {
+                "Início": "home",
+                "Classificação": "classification",
+                "Artilharia": "topScorers",
+                "Jogos": "matches",
+                "Login": "login",
+                "Cadastro": "register_choice"
+            }
+            st.session_state.page = page_mapping.get(selected, "home")
 
-# Page Rendering
+# Add new enhanced rendering functions for each page
 def render_home():
-    # Hero section with card layout
-    st.markdown("""
-    <div style="background: linear-gradient(to right, #1a2a3a, #293e54); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px">
-        <h1 style="color: white; font-size: 36px">Copa Sub-13 de Futsal</h1>
-        <h2 style="color: #4CAF50; font-size: 24px">Condomínio Terrara</h2>
-        <p style="color: white; font-size: 18px; margin: 20px 0">A melhor competição de futsal para jovens talentos!</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Create a more visually appealing home page
+    st.title("Copa Sub-13 de Futsal")
+    
+    # Hero section with columns
+    col1, col2 = st.columns([3, 2])
+    
+    with col1:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #1a2a3a 0%, #2c3e50 100%); padding: 2rem; border-radius: 10px; color: white;">
+            <h2 style="color: white;">Condomínio Terrara</h2>
+            <p style="font-size: 1.2rem;">A melhor competição de futsal para jovens talentos!</p>
+            <p>Uma oportunidade única para jovens atletas mostrarem seu potencial e desenvolverem suas habilidades em um ambiente competitivo e saudável.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if not st.session_state.logged_in:
+            st.write("### Participe!")
+            reg_col1, reg_col2 = st.columns(2)
+            with reg_col1:
+                if st.button("Cadastrar Time", use_container_width=True):
+                    st.session_state.page = 'register_team'
+                    st.rerun()
+            with reg_col2:
+                if st.button("Cadastro de Torcedor", use_container_width=True):
+                    st.session_state.page = 'register_fan'
+                    st.rerun()
+    
+    with col2:
+        # Next matches highlight
+        st.markdown("""
+        <h3 style="color: #4CAF50;">Próximos Jogos</h3>
+        """, unsafe_allow_html=True)
+        
+        upcoming = get_upcoming_matches()
+        if upcoming:
+            for i, match in enumerate(upcoming[:3]):
+                st.markdown(f"""
+                <div class="matches-card {'highlighted' if i == 0 else ''}">
+                    <strong>{match['teamA']} vs {match['teamB']}</strong><br>
+                    <small>Data: {match['date']}</small>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("Não há jogos agendados no momento.")
+    
+    # League statistics
+    st.markdown("---")
+    st.subheader("Estatísticas da Liga")
+    
+    stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+    with stats_col1:
+        st.markdown("""
+        <div class="stat-card">
+            <h4 style="margin-top:0">Times</h4>
+            <h2 style="color:#4CAF50; margin-bottom:0">{}</h2>
+        </div>
+        """.format(len(st.session_state.db['teams'])), unsafe_allow_html=True)
+    
+    with stats_col2:
+        st.markdown("""
+        <div class="stat-card">
+            <h4 style="margin-top:0">Jogadores</h4>
+            <h2 style="color:#4CAF50; margin-bottom:0">{}</h2>
+        </div>
+        """.format(len(st.session_state.db['players'])), unsafe_allow_html=True)
+    
+    with stats_col3:
+        st.markdown("""
+        <div class="stat-card">
+            <h4 style="margin-top:0">Jogos Realizados</h4>
+            <h2 style="color:#4CAF50; margin-bottom:0">{}</h2>
+        </div>
+        """.format(len(get_completed_matches())), unsafe_allow_html=True)
+    
+    with stats_col4:
+        # Total goals
+        total_goals = len(st.session_state.db['goals'])
+        st.markdown("""
+        <div class="stat-card">
+            <h4 style="margin-top:0">Gols Marcados</h4>
+            <h2 style="color:#4CAF50; margin-bottom:0">{}</h2>
+        </div>
+        """.format(total_goals), unsafe_allow_html=True)
+    
+    # Top scorers & classification preview
+    st.markdown("---")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("""
-        <div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); height: 100%">
-            <h3 style="color: #1a2a3a; text-align: center; margin-bottom: 20px">Cadastrar Time</h3>
-            <p style="text-align: center; margin-bottom: 20px">Registre seu time para participar da competição!</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Cadastrar Time", key="home_register", use_container_width=True):
-            st.session_state.current_page = 'register'
-            st.experimental_rerun()
+        st.subheader("Artilheiros")
+        scorers = get_scorers()[:5]  # Top 5
+        if scorers:
+            scorers_df = pd.DataFrame([
+                {"Pos": i+1, "Jogador": s['name'], "Time": s['team'], "Gols": s['goals']['total']}
+                for i, s in enumerate(scorers)
+            ])
+            st.table(scorers_df)
+        else:
+            st.info("Nenhum gol registrado ainda.")
     
     with col2:
-        st.markdown("""
-        <div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); height: 100%">
-            <h3 style="color: #1a2a3a; text-align: center; margin-bottom: 20px">Seja um Torcedor</h3>
-            <p style="text-align: center; margin-bottom: 20px">Registre-se como torcedor e faça apostas!</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Cadastro de Torcedor", key="home_fan_register", use_container_width=True):
-            st.session_state.current_page = 'fanRegister'
-            st.experimental_rerun()
-    
-    st.markdown("<h2 style='text-align: center; margin: 40px 0 20px 0; color: #1a2a3a'>Próximos Jogos</h2>", unsafe_allow_html=True)
-    
-    upcoming = get_upcoming_matches()
-    if upcoming:
-        # Display matches in a card grid
-        cols = st.columns(min(3, len(upcoming)))
-        for i, match in enumerate(upcoming[:3]):
-            with cols[i % 3]:
-                st.markdown(f"""
-                <div style="background-color: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px">
-                    <div style="background-color: #4CAF50; color: white; padding: 8px; border-radius: 5px 5px 0 0; text-align: center; font-weight: bold">
-                        Próximo Jogo
-                    </div>
-                    <div style="padding: 15px; text-align: center">
-                        <div style="font-weight: bold; font-size: 18px">
-                            {match['teamA']} <span style="color: #999; margin: 0 8px">VS</span> {match['teamB']}
-                        </div>
-                        <div style="color: #666; margin-top: 10px">
-                            {match['date']}
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        st.info("Não há jogos agendados no momento.")
+        st.subheader("Classificação")
+        teams = get_sorted_teams()[:5]  # Top 5
+        if teams:
+            teams_df = pd.DataFrame([
+                {"Pos": i+1, "Time": t['name'], "Pts": t['points'], "J": t['games'], "V": t['wins']}
+                for i, t in enumerate(teams)
+            ])
+            st.table(teams_df)
+        else:
+            st.info("Nenhum time registrado ainda.")
 
 def render_classification():
     st.title("Classificação")
@@ -483,8 +631,8 @@ def render_login():
     
     if st.button("Entrar"):
         if login(username, password):
-            st.session_state.current_page = 'dashboard'
-            st.experimental_rerun()
+            st.session_state.page = 'dashboard'
+            st.rerun()
         else:
             st.error("Usuário ou senha incorretos.")
     
@@ -493,15 +641,15 @@ def render_login():
     
     with col1:
         if st.button("Cadastrar seu time"):
-            st.session_state.current_page = 'register'
-            st.experimental_rerun()
+            st.session_state.page = 'register_team'
+            st.rerun()
     
     with col2:
         if st.button("Seja um torcedor"):
-            st.session_state.current_page = 'fanRegister'
-            st.experimental_rerun()
+            st.session_state.page = 'register_fan'
+            st.rerun()
 
-def render_register():
+def render_register_team():
     st.title("Cadastrar Time")
     
     team_name = st.text_input("Nome do Time")
@@ -558,12 +706,12 @@ def render_register():
             st.session_state.current_user = new_user
             st.session_state.user_type = 'team'
             st.session_state.user_team = new_team
-            st.session_state.current_page = 'dashboard'
+            st.session_state.page = 'dashboard'
             
             st.success("Time cadastrado com sucesso!")
-            st.experimental_rerun()
+            st.rerun()
 
-def render_fan_register():
+def render_register_fan():
     st.title("Cadastro de Torcedor")
     
     name = st.text_input("Nome Completo")
@@ -607,187 +755,694 @@ def render_fan_register():
             st.session_state.logged_in = True
             st.session_state.current_user = new_fan
             st.session_state.user_type = 'fan'
-            st.session_state.current_page = 'dashboard'
+            st.session_state.page = 'dashboard'
             
             st.success("Cadastro realizado com sucesso! Você recebeu 1000 pontos para começar suas apostas.")
-            st.experimental_rerun()
+            st.rerun()
 
 def render_dashboard():
-    # Custom header for dashboard
-    st.markdown(f"""
-    <h1 style="text-align: center; color: #1a2a3a; margin-bottom: 30px">Painel de Controle</h1>
-    <h3 style="text-align: center; color: #4CAF50; margin-bottom: 30px">Bem-vindo, {st.session_state.current_user['name']}</h3>
-    """, unsafe_allow_html=True)
+    st.title("Painel de Controle")
     
     if not st.session_state.logged_in:
         st.error("Você precisa estar logado para acessar esta página.")
         return
     
-    # Create better dashboard tabs with icons
     tabs = []
-    icons = []
     
     # All user types have overview
     tabs.append("Visão Geral")
-    icons.append("speedometer2")
     
     # Team specific tabs
     if st.session_state.user_type == 'team':
         tabs.extend(["Meu Time", "Jogadores"])
-        icons.extend(["shield", "people"])
     
     # Admin specific tabs
     if st.session_state.user_type == 'admin':
         tabs.extend(["Times", "Resultados", "Apostas"])
-        icons.extend(["diagram-3", "list-check", "coin"])
     
     # Fan specific tabs
     if st.session_state.user_type == 'fan':
         tabs.append("Minhas Apostas")
-        icons.append("cash-coin")
     
-    # Create dashboard sidebar
-    with st.sidebar:
-        selected_tab = option_menu(
-            menu_title="Dashboard",
-            options=tabs,
-            icons=icons,
-            menu_icon="house",
-            default_index=0,
-            styles={
-                "container": {"padding": "5px", "background-color": "#f9f9f9"},
-                "icon": {"color": "#4CAF50", "font-size": "20px"}, 
-                "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#eee"},
-                "nav-link-selected": {"background-color": "#4CAF50"},
-            }
-        )
+    selected_tab = st.tabs(tabs)
     
     # Overview Tab
-    if selected_tab == "Visão Geral":
+    with selected_tab[0]:
+        st.header(f"Bem-vindo ao seu Painel, {st.session_state.current_user['name']}")
+        
         if st.session_state.user_type == 'team':
             team = st.session_state.user_team
             
-            # Metric cards in 3 columns
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.markdown("""
-                <div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center">
-                    <h4 style="color: #666; margin-bottom: 10px">Jogadores Registrados</h4>
-                """, unsafe_allow_html=True)
-                st.metric("", f"{len(get_team_players(team['id']))} / 15")
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.metric("Jogadores Registrados", 
+                          f"{len(get_team_players(team['id']))} / 15")
             
             with col2:
                 next_match = next((m for m in get_upcoming_matches() 
                                 if m['teamAId'] == team['id'] or m['teamBId'] == team['id']), None)
-                
-                st.markdown("""
-                <div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center">
-                    <h4 style="color: #666; margin-bottom: 10px">Próximo Jogo</h4>
-                """, unsafe_allow_html=True)
-                
                 if next_match:
-                    st.metric("", f"{next_match['teamA']} vs {next_match['teamB']}", next_match['date'])
+                    st.metric("Próximo Jogo", 
+                              f"{next_match['teamA']} vs {next_match['teamB']}",
+                              next_match['date'])
                 else:
-                    st.metric("", "Nenhum jogo agendado")
-                st.markdown("</div>", unsafe_allow_html=True)
+                    st.metric("Próximo Jogo", "Nenhum jogo agendado")
             
             with col3:
-                st.markdown("""
-                <div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center">
-                    <h4 style="color: #666; margin-bottom: 10px">Posição na Tabela</h4>
-                """, unsafe_allow_html=True)
-                st.metric("", f"{get_team_position(team['id'])}º")
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.metric("Posição na Tabela", f"{get_team_position(team['id'])}º")
+        
+        elif st.session_state.user_type == 'admin':
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total de Times", len(st.session_state.db['teams']))
+            
+            with col2:
+                st.metric("Total de Jogadores", len(st.session_state.db['players']))
+            
+            with col3:
+                st.metric("Jogos Realizados", len(get_completed_matches()))
+            
+            with col4:
+                st.metric("Apostas Ativas", len(get_active_bets()))
+        
+        elif st.session_state.user_type == 'fan':
+            user = st.session_state.current_user
+            user_bets = [ub for ub in st.session_state.db['userBets'] if ub['userId'] == user['id']]
+            won_bets = [ub for ub in user_bets if 
+                       get_bet_by_id(ub['betId']) and get_bet_by_id(ub['betId']).get('result')]
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Pontos Disponíveis", user['points'])
+            
+            with col2:
+                st.metric("Apostas Realizadas", len(user_bets))
+            
+            with col3:
+                st.metric("Apostas Ganhas", len(won_bets))
+    
+    # Team Management Tab
+    if st.session_state.user_type == 'team' and len(tabs) > 1:
+        with selected_tab[1]:
+            st.header("Gerenciar Time")
+            
+            team = st.session_state.user_team
+            
+            team_name = st.text_input("Nome do Time", value=team['name'])
+            rep_name = st.text_input("Nome do Representante", value=team['representative']['name'])
+            rep_phone = st.text_input("Telefone do Representante", value=team['representative']['phone'])
+            
+            if st.button("Atualizar Informações"):
+                team['name'] = team_name
+                team['representative']['name'] = rep_name
+                team['representative']['phone'] = rep_phone
+                
+                # Update user name if it's tied to the team
+                if st.session_state.current_user and st.session_state.current_user['teamId'] == team['id']:
+                    st.session_state.current_user['name'] = team_name
+                
+                # Save database
+                save_database()
+                
+                st.success("Informações atualizadas com sucesso!")
+    
+    # Players Management Tab
+    if st.session_state.user_type == 'team' and len(tabs) > 2:
+        with selected_tab[2]:
+            st.header("Gerenciar Jogadores")
+            
+            team = st.session_state.user_team
+            team_players = get_team_players(team['id'])
+            
+            st.subheader(f"Jogadores Registrados ({len(team_players)}/15)")
+            
+            if team_players:
+                player_data = []
+                for player in team_players:
+                    player_data.append({
+                        "ID": player['id'],
+                        "Nome": player['name'],
+                        "Data Nascimento": player['birthDate'],
+                        "Gols": get_player_goals(player['id'])
+                    })
+                
+                df = pd.DataFrame(player_data)
+                player_table = st.dataframe(df)
+                
+                # Edit and Remove functionality
+                selected_player_id = st.selectbox("Selecione um jogador para editar ou remover", 
+                                       options=[p['id'] for p in team_players],
+                                       format_func=lambda x: next((p['name'] for p in team_players if p['id'] == x), ""))
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if selected_player_id:
+                        selected_player = next((p for p in team_players if p['id'] == selected_player_id), None)
+                        
+                        if selected_player:
+                            edit_name = st.text_input("Nome do Jogador", value=selected_player['name'])
+                            edit_birth = st.date_input("Data de Nascimento", 
+                                                 value=datetime.datetime.strptime(selected_player['birthDate'], '%Y-%m-%d').date() 
+                                                 if selected_player['birthDate'] else datetime.date.today())
+                            
+                            if st.button("Salvar Alterações"):
+                                # Find player index in database
+                                player_index = next((i for i, p in enumerate(st.session_state.db['players']) 
+                                              if p['id'] == selected_player_id), None)
+                                
+                                if player_index is not None:
+                                    st.session_state.db['players'][player_index]['name'] = edit_name
+                                    st.session_state.db['players'][player_index]['birthDate'] = edit_birth.strftime('%Y-%m-%d')
+                                    
+                                    # Save database
+                                    save_database()
+                                    
+                                    st.success("Jogador atualizado com sucesso!")
+                                    st.rerun()
+                
+                with col2:
+                    if selected_player_id and st.button("Remover Jogador", type="primary"):
+                        # Confirm removal
+                        if st.checkbox("Confirma a remoção deste jogador?"):
+                            # Find player index in database
+                            st.session_state.db['players'] = [p for p in st.session_state.db['players'] if p['id'] != selected_player_id]
+                            
+                            # Save database
+                            save_database()
+                            
+                            st.success("Jogador removido com sucesso!")
+                            st.rerun()
+            
+            # Add player form
+            if len(team_players) < 15:
+                st.subheader("Adicionar Jogador")
+                
+                new_player_name = st.text_input("Nome Completo", key="new_player_name")
+                new_player_birth = st.date_input("Data de Nascimento", 
+                                           value=datetime.date.today())
+                
+                if st.button("Adicionar Jogador"):
+                    # Validate birth date for sub-13 category
+                    today = datetime.date.today()
+                    age = today.year - new_player_birth.year - ((today.month, today.day) < (new_player_birth.month, new_player_birth.day))
+                    
+                    if age >= 13:
+                        st.error("O jogador deve ter menos de 13 anos para esta categoria.")
+                    elif not new_player_name:
+                        st.error("O nome do jogador é obrigatório.")
+                    else:
+                        player_id = f"player_{team['id']}_{str(uuid.uuid4())[:8]}"
+                        
+                        new_player = {
+                            'id': player_id,
+                            'name': new_player_name,
+                            'teamId': team['id'],
+                            'birthDate': new_player_birth.strftime('%Y-%m-%d')
+                        }
+                        
+                        st.session_state.db['players'].append(new_player)
+                        
+                        # Save database
+                        save_database()
+                        
+                        st.success("Jogador adicionado com sucesso!")
+                        st.rerun()
+            else:
+                st.warning("Seu time já possui o máximo de 15 jogadores.")
+    
+    # Teams Management Tab (Admin)
+    if st.session_state.user_type == 'admin' and "Times" in tabs:
+        with selected_tab[tabs.index("Times")]:
+            st.header("Gerenciar Times")
+            
+            teams = st.session_state.db['teams']
+            
+            if teams:
+                team_data = []
+                for team in teams:
+                    team_data.append({
+                        "ID": team['id'],
+                        "Time": team['name'],
+                        "Representante": team['representative']['name'],
+                        "Contato": team['representative']['phone'],
+                        "Jogadores": len(get_team_players(team['id'])),
+                        "Pontos": team['points']
+                    })
+                
+                df = pd.DataFrame(team_data)
+                team_table = st.dataframe(df)
+                
+                # Team Actions
+                selected_team_id = st.selectbox("Selecione um time", 
+                                      options=[t['id'] for t in teams],
+                                      format_func=lambda x: next((t['name'] for t in teams if t['id'] == x), ""))
+                
+                if selected_team_id:
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("Editar Time"):
+                            selected_team = next((t for t in teams if t['id'] == selected_team_id), None)
+                            
+                            if selected_team:
+                                edit_team_name = st.text_input("Nome do Time", value=selected_team['name'])
+                                edit_rep_name = st.text_input("Nome do Representante", value=selected_team['representative']['name'])
+                                edit_rep_phone = st.text_input("Telefone", value=selected_team['representative']['phone'])
+                                
+                                if st.button("Salvar Alterações do Time"):
+                                    # Find team index in database
+                                    team_index = next((i for i, t in enumerate(st.session_state.db['teams']) 
+                                               if t['id'] == selected_team_id), None)
+                                    
+                                    if team_index is not None:
+                                        st.session_state.db['teams'][team_index]['name'] = edit_team_name
+                                        st.session_state.db['teams'][team_index]['representative']['name'] = edit_rep_name
+                                        st.session_state.db['teams'][team_index]['representative']['phone'] = edit_rep_phone
+                                        
+                                        # Update user name if it's tied to the team
+                                        if st.session_state.current_user and st.session_state.current_user['teamId'] == selected_team_id:
+                                            st.session_state.current_user['name'] = edit_team_name
+                                        
+                                        # Update match names
+                                        for match in st.session_state.db['matches']:
+                                            if match['teamAId'] == selected_team_id:
+                                                match['teamA'] = edit_team_name
+                                            elif match['teamBId'] == selected_team_id:
+                                                match['teamB'] = edit_team_name
+                                        
+                                        # Save database
+                                        save_database()
+                                        
+                                        st.success("Time atualizado com sucesso!")
+                                        st.rerun()
+                    
+                    with col2:
+                        if st.button("Ver Jogadores"):
+                            selected_team = next((t for t in teams if t['id'] == selected_team_id), None)
+                            team_players = get_team_players(selected_team_id)
+                            
+                            if selected_team and team_players:
+                                st.subheader(f"Jogadores do {selected_team['name']}")
+                                
+                                player_data = []
+                                for player in team_players:
+                                    player_data.append({
+                                        "Nome": player['name'],
+                                        "Data Nascimento": player['birthDate'],
+                                        "Gols": get_player_goals(player['id'])
+                                    })
+                                
+                                df = pd.DataFrame(player_data)
+                                st.dataframe(df)
+                            elif selected_team:
+                                st.info(f"O time {selected_team['name']} ainda não tem jogadores registrados.")
+                    
+                    with col3:
+                        if st.button("Remover Time", type="primary"):
+                            # Confirm removal
+                            if st.checkbox("Confirma a remoção deste time? Esta ação não pode ser desfeita."):
+                                # Find team index in database
+                                team_index = next((i for i, t in enumerate(st.session_state.db['teams']) 
+                                           if t['id'] == selected_team_id), None)
+                                
+                                if team_index is not None:
+                                    # Remove team
+                                    st.session_state.db['teams'].pop(team_index)
+                                    
+                                    # Remove team user account
+                                    st.session_state.db['users'] = [u for u in st.session_state.db['users'] 
+                                                              if not u.get('teamId') == selected_team_id]
+                                    
+                                    # Remove team players
+                                    st.session_state.db['players'] = [p for p in st.session_state.db['players'] 
+                                                               if p['teamId'] != selected_team_id]
+                                    
+                                    # Cancel future matches for this team
+                                    for match in st.session_state.db['matches']:
+                                        if (match['teamAId'] == selected_team_id or match['teamBId'] == selected_team_id) and not match.get('played', False):
+                                            match['cancelled'] = True
+                                    
+                                    # Save database
+                                    save_database()
+                                    
+                                    st.success("Time removido com sucesso!")
+                                    st.rerun()
+                
+                # Add new team
+                st.subheader("Adicionar Novo Time")
+                
+                new_team_name = st.text_input("Nome do Time", key="new_team_name")
+                new_rep_name = st.text_input("Nome do Representante", key="new_rep_name")
+                new_rep_phone = st.text_input("Telefone", key="new_rep_phone")
+                new_username = st.text_input("Nome de Usuário", key="new_username")
+                new_password = st.text_input("Senha", type="password", key="new_password")
+                
+                if st.button("Adicionar Time"):
+                    # Check if username already exists
+                    if any(u['username'] == new_username for u in st.session_state.db['users']):
+                        st.error("Este nome de usuário já está em uso.")
+                    elif not new_team_name or not new_rep_name or not new_rep_phone or not new_username or not new_password:
+                        st.error("Todos os campos são obrigatórios.")
+                    else:
+                        team_id = f"team_{len(st.session_state.db['teams']) + 1}"
+                        
+                        # Create team
+                        new_team = {
+                            'id': team_id,
+                            'name': new_team_name,
+                            'representative': {
+                                'name': new_rep_name,
+                                'phone': new_rep_phone
+                            },
+                            'points': 0,
+                            'games': 0,
+                            'wins': 0,
+                            'draws': 0,
+                            'losses': 0,
+                            'goalsFor': 0,
+                            'goalsAgainst': 0
+                        }
+                        
+                        st.session_state.db['teams'].append(new_team)
+                        
+                        # Create user account
+                        new_user = {
+                            'id': team_id,
+                            'username': new_username,
+                            'password': new_password,
+                            'type': 'team',
+                            'teamId': team_id,
+                            'name': new_team_name
+                        }
+                        
+                        st.session_state.db['users'].append(new_user)
+                        
+                        # Save database
+                        save_database()
+                        
+                        st.success("Time adicionado com sucesso!")
+                        st.rerun()
+            else:
+                st.info("Nenhum time cadastrado ainda.")
+                
+                # Add new team form here
+    
+    # Results Management Tab (Admin)
+    if st.session_state.user_type == 'admin' and "Resultados" in tabs:
+        with selected_tab[tabs.index("Resultados")]:
+            st.header("Gerenciar Resultados")
+            
+            subtab1, subtab2, subtab3 = st.tabs(["Próximos Jogos", "Jogos Completos", "Agendar Jogo"])
+            
+            with subtab1:
+                upcoming = get_upcoming_matches()
+                
+                if upcoming:
+                    for match in upcoming:
+                        with st.expander(f"{match['teamA']} vs {match['teamB']} - {match['date']}"):
+                            st.write(f"Data: {match['date']}")
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if st.button("Adicionar Resultado", key=f"add_result_{match['id']}"):
+                                    st.write("Funcionalidade em desenvolvimento - Próxima versão")
+                            with col2:
+                                if st.button("Cancelar Jogo", key=f"cancel_{match['id']}"):
+                                    # Confirm removal
+                                    if st.checkbox(f"Confirma o cancelamento do jogo {match['teamA']} vs {match['teamB']}?"):
+                                        # Find match index in database
+                                        st.session_state.db['matches'] = [m for m in st.session_state.db['matches'] if m['id'] != match['id']]
+                                        
+                                        # Save database
+                                        save_database()
+                                        
+                                        st.success("Jogo cancelado com sucesso!")
+                                        st.rerun()
+                else:
+                    st.info("Não há jogos agendados no momento.")
+            
+            with subtab2:
+                completed = get_completed_matches()
+                
+                if completed:
+                    for match in completed:
+                        with st.expander(f"{match['teamA']} {match['scoreA']} x {match['scoreB']} {match['teamB']} - {match['date']}"):
+                            st.write(f"Data: {match['date']}")
+                            
+                            # Show match goals
+                            match_goals = [g for g in st.session_state.db['goals'] if g['matchId'] == match['id']]
+                            if match_goals:
+                                st.subheader("Gols:")
+                                for goal in match_goals:
+                                    player = get_player_by_id(goal['playerId'])
+                                    team = get_team_by_id(goal['teamId'])
+                                    
+                                    if goal['type'] == 'own':
+                                        for_team = get_team_by_id(goal['forTeamId'])
+                                        st.write(f"{player['name']} ({team['name']}) - Gol contra para {for_team['name']}")
+                                    else:
+                                        st.write(f"{player['name']} ({team['name']}) - Gol {'de pênalti' if goal['type'] == 'penalty' else 'normal'}")
+                else:
+                    st.info("Nenhum jogo realizado ainda.")
+            
+            with subtab3:
+                st.subheader("Agendar Novo Jogo")
+                
+                teams = st.session_state.db['teams']
+                
+                team_a_idx = st.selectbox("Time A", 
+                                   options=range(len(teams)),
+                                   format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
+                
+                team_b_idx = st.selectbox("Time B", 
+                                   options=range(len(teams)),
+                                   format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
+                
+                match_date = st.date_input("Data do Jogo", 
+                                    value=datetime.date.today())
+                
+                match_time = st.time_input("Horário", 
+                                    value=datetime.time(15, 0))
+                
+                if st.button("Agendar Jogo"):
+                    if team_a_idx == team_b_idx:
+                        st.error("Os times devem ser diferentes.")
+                    elif team_a_idx >= len(teams) or team_b_idx >= len(teams):
+                        st.error("Selecione times válidos.")
+                    else:
+                        team_a = teams[team_a_idx]
+                        team_b = teams[team_b_idx]
+                        
+                        match_datetime = datetime.datetime.combine(match_date, match_time)
+                        formatted_date = match_datetime.strftime('%d/%m/%Y %H:%M')
+                        
+                        new_match = {
+                            'id': f"match_{len(st.session_state.db['matches']) + 1}",
+                            'teamAId': team_a['id'],
+                            'teamBId': team_b['id'],
+                            'teamA': team_a['name'],
+                            'teamB': team_b['name'],
+                            'date': formatted_date,
+                            'played': False
+                        }
+                        
+                        st.session_state.db['matches'].append(new_match)
+                        
+                        # Save database
+                        save_database()
+                        
+                        st.success("Jogo agendado com sucesso!")
+                        st.rerun()
 
-def render_page():
-    # Render the appropriate page based on current_page
-    if st.session_state.current_page == 'home':
-        render_home()
-    elif st.session_state.current_page == 'classification':
-        render_classification()
-    elif st.session_state.current_page == 'topScorers':
-        render_top_scorers()
-    elif st.session_state.current_page == 'matches':
-        render_matches()
-    elif st.session_state.current_page == 'login':
-        render_login()
-    elif st.session_state.current_page == 'register':
-        render_register()
-    elif st.session_state.current_page == 'fanRegister':
-        render_fan_register()
-    elif st.session_state.current_page == 'dashboard':
-        render_dashboard()
+    # Betting Management Tab (Admin)
+    if st.session_state.user_type == 'admin' and "Apostas" in tabs:
+        with selected_tab[tabs.index("Apostas")]:
+            st.header("Gerenciar Apostas")
+            
+            subtab1, subtab2, subtab3 = st.tabs(["Apostas Ativas", "Criar Aposta", "Histórico"])
+            
+            with subtab1:
+                st.subheader("Apostas Ativas")
+                active_bets = get_active_bets()
+                
+                if active_bets:
+                    for bet in active_bets:
+                        with st.expander(f"{bet['description']} (Odd: {bet['odd']})"):
+                            st.write(f"Criada em: {format_date(bet.get('createdAt', ''))}")
+                            
+                            if bet.get('matchId'):
+                                st.write(f"Jogo: {get_match_name(bet['matchId'])}")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                if st.button("Finalizar (Ganhou)", key=f"win_{bet['id']}"):
+                                    # Implementation for resolving bet as won
+                                    st.success("Funcionalidade será implementada na próxima versão")
+                            
+                            with col2:
+                                if st.button("Finalizar (Perdeu)", key=f"lose_{bet['id']}"):
+                                    # Implementation for resolving bet as lost
+                                    st.success("Funcionalidade será implementada na próxima versão")
+                            
+                            with col3:
+                                if st.button("Editar", key=f"edit_{bet['id']}"):
+                                    # Implementation for editing bet
+                                    st.success("Funcionalidade será implementada na próxima versão")
+                else:
+                    st.info("Não há apostas ativas no momento.")
+            
+            with subtab2:
+                st.subheader("Criar Nova Aposta")
+                
+                bet_type = st.selectbox("Tipo de Aposta",
+                                options=["match", "team", "custom"],
+                                format_func=lambda x: "Resultado de Jogo" if x == "match" else 
+                                                  "Time Específico" if x == "team" else "Personalizada")
+                
+                if bet_type == "match":
+                    matches = get_upcoming_matches()
+                    if matches:
+                        match_idx = st.selectbox("Jogo",
+                                        options=range(len(matches)),
+                                        format_func=lambda x: f"{matches[x]['teamA']} vs {matches[x]['teamB']} ({matches[x]['date']})" if x < len(matches) else "Selecione um jogo")
+                        
+                        if match_idx < len(matches):
+                            selected_match = matches[match_idx]
+                            outcome = st.selectbox("Resultado",
+                                          options=["teamA", "draw", "teamB"],
+                                          format_func=lambda x: f"{selected_match['teamA']} vence" if x == "teamA" else
+                                                             "Empate" if x == "draw" else f"{selected_match['teamB']} vence")
+                    else:
+                        st.warning("Não há jogos agendados para criar apostas de resultados.")
+                
+                elif bet_type == "team":
+                    teams = st.session_state.db['teams']
+                    if teams:
+                        team_idx = st.selectbox("Time",
+                                       options=range(len(teams)),
+                                       format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
+                        
+                        bet_desc = st.text_input("Descrição da Aposta", placeholder="Ex: Será campeão")
+                    else:
+                        st.warning("Não há times cadastrados para criar apostas específicas.")
+                
+                elif bet_type == "custom":
+                    bet_desc = st.text_input("Descrição da Aposta", placeholder="Ex: Haverá um gol contra na rodada")
+                
+                bet_odd = st.number_input("Odd (multiplicador)", min_value=1.0, value=2.0, step=0.1)
+                
+                if st.button("Criar Aposta"):
+                    if bet_type == "match" and (match_idx >= len(matches) or not outcome):
+                        st.error("Selecione um jogo e um resultado válidos.")
+                    elif bet_type == "team" and (team_idx >= len(teams) or not bet_desc):
+                        st.error("Selecione um time e forneça uma descrição.")
+                    elif bet_type == "custom" and not bet_desc:
+                        st.error("Forneça uma descrição para a aposta personalizada.")
+                    else:
+                        description = ""
+                        match_id = None
+                        
+                        if bet_type == "match":
+                            selected_match = matches[match_idx]
+                            match_id = selected_match['id']
+                            
+                            if outcome == "teamA":
+                                description = f"{selected_match['teamA']} vence {selected_match['teamB']}"
+                            elif outcome == "draw":
+                                description = f"Empate entre {selected_match['teamA']} e {selected_match['teamB']}"
+                            elif outcome == "teamB":
+                                description = f"{selected_match['teamB']} vence {selected_match['teamA']}"
+                        
+                        elif bet_type == "team":
+                            selected_team = teams[team_idx]
+                            description = f"{selected_team['name']} {bet_desc}"
+                        
+                        elif bet_type == "custom":
+                            description = bet_desc
+                        
+                        new_bet = {
+                            'id': f"bet_{len(st.session_state.db['bets']) + 1}",
+                            'description': description,
+                            'odd': float(bet_odd),
+                            'matchId': match_id,
+                            'status': 'active',
+                            'createdAt': datetime.datetime.now().isoformat()
+                        }
+                        
+                        st.session_state.db['bets'].append(new_bet)
+                        
+                        # Save database
+                        save_database()
+                        
+                        st.success("Aposta criada com sucesso!")
+                        st.rerun()
+            
+            with subtab3:
+                st.subheader("Histórico de Apostas")
+                
+                completed_bets = get_completed_bets()
+                
+                if completed_bets:
+                    bet_data = []
+                    for bet in completed_bets:
+                        bet_data.append({
+                            "Descrição": bet['description'],
+                            "Odd": bet['odd'],
+                            "Status": bet['status'],
+                            "Resultado": "Ganhou" if bet.get('result', False) else "Perdeu",
+                            "Finalizada em": format_date(bet.get('resolvedAt', ''))
+                        })
+                    
+                    df = pd.DataFrame(bet_data)
+                    st.dataframe(df)
+                else:
+                    st.info("Não há apostas finalizadas no histórico.")
+    
+    # Fan Bets Management Tab
+    if st.session_state.user_type == 'fan' and "Minhas Apostas" in tabs:
+        with selected_tab[tabs.index("Minhas Apostas")]:
+            # Implementation for fan bets management
+            st.header("Minhas Apostas")
+            
+            # Display user points
+            st.metric("Pontos Disponíveis", st.session_state.current_user['points'])
+            
+            subtab1, subtab2, subtab3 = st.tabs(["Apostas Ativas", "Histórico", "Apostar"])
+            
+            # Implementation details for fan betting tabs would go here
+            st.info("Funcionalidade de apostas para torcedores será implementada na próxima versão")
 
-# Main app execution
+
+# Main application flow
 def main():
-    st.set_page_config(
-        page_title="Matheuzinho League - Copa Sub-13 de Futsal",
-        page_icon="⚽",
-        layout="wide"
-    )
+    # Render sidebar for navigation
+    render_sidebar()
     
-    # Custom CSS
-    st.markdown("""
-    <style>
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-        max-width: 1200px !important;
-    }
-    h1, h2, h3 {
-        color: #1a2a3a;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .stButton > button {
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 0.5rem 1rem;
-        font-weight: bold;
-        transition: all 0.3s ease;
-    }
-    .stButton > button:hover {
-        background-color: #3e9142;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
-    .stDataFrame {
-        border-radius: 10px;
-        overflow: hidden;
-        border: none !important;
-    }
-    .dataframe {
-        border-collapse: collapse;
-        border: none !important;
-    }
-    .dataframe th {
-        background-color: #1a2a3a;
-        color: white;
-        font-weight: bold;
-        padding: 10px !important;
-        border: none !important;
-    }
-    .dataframe td {
-        padding: 10px !important;
-        border-bottom: 1px solid #eee !important;
-        border-right: none !important;
-        border-left: none !important;
-        border-top: none !important;
-    }
-    .dataframe tr:nth-child(even) {
-        background-color: #f9f9f9;
-    }
-    .dataframe tr:hover {
-        background-color: #f0f7f0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Main content area based on current page
+    if st.session_state.page == 'home':
+        render_home()
+    elif st.session_state.page == 'classification':
+        render_classification()
+    elif st.session_state.page == 'topScorers':
+        render_top_scorers()
+    elif st.session_state.page == 'matches':
+        render_matches()
+    elif st.session_state.page == 'login':
+        render_login()
+    elif st.session_state.page == 'register_choice':
+        render_login()
+    elif st.session_state.page == 'register_team':
+        render_register_team()
+    elif st.session_state.page == 'register_fan':
+        render_register_fan()
+    elif st.session_state.page == 'dashboard':
+        render_dashboard()
     
-    render_header()
-    render_page()
-
 if __name__ == "__main__":
     main()
