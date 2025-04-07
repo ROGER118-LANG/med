@@ -672,48 +672,40 @@ def render_matches():
         if upcoming:
             for match in upcoming:
                 team_a = match.get('teamA', 'Time A')
+                score_a = match.get('scoreA', '?')
                 team_b = match.get('teamB', 'Time B')
+                score_b = match.get('scoreB', '?')
                 match_date = match.get('date', 'Data indefinida')
                 match_id = match.get('id')
 
-                with st.expander(f"{team_a} vs {team_b} - {match_date}"):
+                with st.expander(f"{team_a} {score_a} x {score_b} {team_b} - {match_date}"):
                     st.write(f"Data: {match_date}")
                     st.write(f"ID do Jogo: {match_id}") # Display ID for reference
 
-                    if st.session_state.user_type == 'fan':
-                        active_bets_for_match = [
-                            b for b in get_active_bets()
-                            if b.get('matchId') == match_id
-                        ]
-                        if active_bets_for_match:
-                           st.write("---")
-                           st.write("**Apostas disponíveis para este jogo:**")
-                           for bet in active_bets_for_match:
-                               bet_id = bet.get('id')
-                               bet_desc = bet.get('description', 'Aposta')
-                               bet_odd = bet.get('odd', 1.0)
+                    # Show match goals
+                    match_goals = [g for g in st.session_state.db.get('goals', []) if g.get('matchId') == match_id]
+                    if match_goals:
+                        st.write("---")
+                        st.subheader("Gols:")
+                        for goal in match_goals:
+                            player = get_player_by_id(goal.get('playerId'))
+                            goal_team = get_team_by_id(goal.get('teamId')) # Team of the player who scored
+                            player_name = player.get('name', 'Desconhecido') if player else 'Desconhecido'
+                            goal_team_name = goal_team.get('name', 'Desconhecido') if goal_team else 'Desconhecido'
 
-                               # Check if user already placed this bet
-                               user_has_bet = any(ub.get('betId') == bet_id and ub.get('userId') == st.session_state.current_user.get('id')
-                                                   for ub in st.session_state.db.get('userBets', []))
+                            if goal.get('type') == 'own':
+                                # Find which team the own goal was scored against (credited to)
+                                for_team = get_team_by_id(goal.get('forTeamId'))
+                                for_team_name = for_team.get('name', 'Desconhecido') if for_team else 'Desconhecido'
+                                st.write(f"⚽ {player_name} ({goal_team_name}) - Gol contra para {for_team_name}")
+                            else:
+                                goal_type_str = 'Pênalti' if goal.get('type') == 'penalty' else 'Gol'
+                                st.write(f"⚽ {player_name} ({goal_team_name}) - {goal_type_str}")
+                    else:
+                        st.info("Nenhum gol registrado para esta partida.")
 
-                               col_bet, col_amount, col_button = st.columns([3, 2, 2])
-                               with col_bet:
-                                   st.write(f"{bet_desc} (Odd: {bet_odd:.2f})")
-                               if user_has_bet:
-                                    with col_button:
-                                        st.success("Apostado!")
-                               else:
-                                   with col_amount:
-                                        amount = st.number_input("Pontos", min_value=10, max_value=st.session_state.current_user.get('points', 0), step=10, key=f"amount_{bet_id}_{match_id}")
-                                   with col_button:
-                                        if st.button("Apostar", key=f"bet_{bet_id}_{match_id}"):
-                                            place_bet(bet_id, amount)
-                                            st.rerun() # Update UI after betting
-                        else:
-                           st.info("Nenhuma aposta ativa disponível para este jogo no momento.")
-
-                    elif st.session_state.user_type == 'admin':
+                    # Admin can edit results or view details
+                    if st.session_state.user_type == 'admin':
                         # Option for admin to add result directly from upcoming matches view
                         if st.button("Adicionar Resultado", key=f"add_result_upcoming_{match_id}"):
                             # Navigate or show modal to add result - Simplification: redirect to results page
@@ -796,7 +788,7 @@ def render_login():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("Cadastrar seu time", key="login_reg_team", use_container_width=True):
+        if st.button("Cadastrar Time", key="login_reg_team", use_container_width=True):
             st.session_state.page = 'register_team'
             st.rerun()
 
@@ -1028,7 +1020,6 @@ def render_register_fan():
 
                 st.session_state.db['users'].append(new_fan)
                 save_database()
-
                 st.success(f"Cadastro de torcedor para '{name}' realizado com sucesso!")
                 st.info("Você recebeu 1000 pontos para começar a apostar.")
 
@@ -1049,6 +1040,7 @@ def render_register_fan():
         st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
+
 
 def render_dashboard():
     st.title("Painel de Controle")
@@ -1101,6 +1093,7 @@ def render_dashboard_overview():
 
     if user_type == 'team':
         team = st.session_state.user_team
+
         if not team or not team.get('id'): # Check if team data is loaded
              st.warning("Dados do time não encontrados. Tente recarregar a página ou contate o suporte.")
              return
@@ -1111,7 +1104,7 @@ def render_dashboard_overview():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Jogadores Registrados", f"{len(players)} / 15")
+            st.metric("Jogadores Registrados", f"{len(players)}/15")
         with col2:
             # Find next match for this specific team
             next_match = None
@@ -1123,8 +1116,8 @@ def render_dashboard_overview():
 
             if next_match:
                 st.metric("Próximo Jogo",
-                          f"{next_match.get('teamA', '?')} vs {next_match.get('teamB', '?')}",
-                           next_match.get('date', 'Sem data'))
+                          f"{next_match.get('teamA')} vs {next_match.get('teamB')}",
+                           next_match.get('date'))
             else:
                 st.metric("Próximo Jogo", "Nenhum jogo agendado")
         with col3:
@@ -1258,7 +1251,7 @@ def render_player_management():
                 # Calculate age
                 today = datetime.date.today()
                 age = today.year - birth_date_obj.year - ((today.month, today.day) < (birth_date_obj.month, birth_date_obj.day))
-            except (ValueError, TypeError):
+            except:
                 birth_date_display = 'Inválida'
                 age = 'N/A'
 
@@ -1303,7 +1296,9 @@ def render_player_management():
 
                      new_name = st.text_input("Nome do Jogador", value=current_name, key=f"edit_name_{selected_player_id}")
                      new_birth_date = st.date_input("Data de Nascimento", value=current_birth_date, key=f"edit_birth_{selected_player_id}",
-                                                      min_value=datetime.date(1990, 1, 1), max_value=datetime.date.today())
+                                                      min_value=datetime.date(1990, 1, 1), # Reasonable min
+                                                      max_value=datetime.date.today(), # Cannot be born in future
+                                                      value=datetime.date.today()) # Set default date
 
                      edit_submitted = st.form_submit_button("Salvar Alterações")
 
@@ -1720,6 +1715,11 @@ def render_admin_results():
 
         # Select Match: Show completed first, then upcoming
         matches_for_results = get_completed_matches() + get_upcoming_matches()
+        
+        if not matches_for_results:
+            st.info("Não há jogos disponíveis. Agende um jogo primeiro.")
+            return
+            
         match_options = {m.get('id'): f"{m.get('teamA')} vs {m.get('teamB')} ({m.get('date')}) {' - JÁ REALIZADO' if m.get('played') else ''}"
                          for m in matches_for_results}
 
@@ -2123,7 +2123,7 @@ def render_admin_betting():
                 match_id = bet.get('matchId')
                 match_name = get_match_name(match_id) if match_id else "Geral/Custom"
 
-                with st.expander(f"{bet.get('description', 'Aposta')} (Odd: {bet.get('odd', 1.0):.2f}) - {match_name}"):
+                with st.expander(f"{bet.get('description', 'Aposta')} (Odd: {bet.get('odd'):.2f}) - {match_name}"):
                     st.write(f"ID da Aposta: {bet_id}")
                     st.write(f"Criada em: {format_date(bet.get('createdAt', ''))}")
 
@@ -2181,7 +2181,7 @@ def render_admin_betting():
                 total_payout = sum(ub.get('payout',0) for ub in user_bets_on_this) # payout stored when resolved
 
                 history_data.append({
-                    "Descrição": bet.get('description', 'N/A'),
+                    "Descrição": bet.get('description', 'Aposta'),
                     "Odd": f"{bet.get('odd', 1.0):.2f}",
                     "Status": status,
                     "Resultado": result,
@@ -2216,7 +2216,7 @@ def render_admin_create_bet_form():
             upcoming_matches = get_upcoming_matches()
             if not upcoming_matches:
                 st.warning("Não há jogos futuros agendados para criar apostas de resultado.")
-                st.form_submit_button("Criar Aposta", disabled=True) # Disable if no matches
+                submitted = st.form_submit_button("Criar Aposta", disabled=True) # Disable if no matches
                 return # Exit form rendering if no matches
 
             match_options = {m.get('id'): f"{m.get('teamA')} vs {m.get('teamB')} ({m.get('date')})" for m in upcoming_matches}
@@ -2741,4 +2741,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
