@@ -1295,9 +1295,9 @@ def render_player_management():
                          current_birth_date = datetime.date.today() - datetime.timedelta(days=12*365) # Default if invalid
 
                      new_name = st.text_input("Nome do Jogador", value=current_name, key=f"edit_name_{selected_player_id}")
-                     new_birth_date = st.date_input("Data de Nascimento", value=current_birth_date, key=f"edit_birth_{selected_player_id}",
+                  new_birth_date = st.date_input("Data de Nascimento", value=current_birth_date, key=f"edit_birth_{selected_player_id}",
                                                       # Cannot be born in future
-                                                      value=datetime.date.today()) # Set default date
+                                                      max_value=datetime.date.today()) # Set max date
 
                      edit_submitted = st.form_submit_button("Salvar Alterações")
 
