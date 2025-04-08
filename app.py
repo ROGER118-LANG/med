@@ -1298,7 +1298,7 @@ def render_player_management():
                  new_birth_date = st.date_input("Data de Nascimento", value=current_birth_date, key=f"edit_birth_{selected_player_id}",
                                   # Cannot be born in future
                                   max_value=datetime.date.today()) # Set max datedate
-                     edit_submitted = st.form_submit_button("Salvar Alterações")
+                     
 
                      if edit_submitted:
                          # Validate age again on edit
