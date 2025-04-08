@@ -1300,8 +1300,8 @@ def render_player_management():
                                   max_value=datetime.date.today()) # Set max datedate
                      
 
-                     if edit_submitted:
-                         # Validate age again on edit
+                            if edit_submitted:
+                 # Indentação corrigida
                          today = datetime.date.today()
                          age = today.year - new_birth_date.year - ((today.month, today.day) < (new_birth_date.month, new_birth_date.day))
 
