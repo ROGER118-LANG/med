@@ -1419,7 +1419,386 @@ def render_dashboard():
                         st.success("Jogo agendado com sucesso!")
                         st.rerun()
 
-# Main application flow
+def render_register_choice():
+    st.title("Escolha o tipo de cadastro")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("Cadastrar Time", use_container_width=True):
+            st.session_state.page = 'register_team'
+            st.rerun()
+    
+    with col2:
+        if st.button("Cadastro de Torcedor", use_container_width=True):
+            st.session_state.page = 'register_fan'
+            st.rerun()
+
+def render_settings():
+    st.title("Configurações")
+    
+    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
+        st.error("Acesso restrito ao administrador.")
+        return
+    
+    st.subheader("Configurações do Sistema")
+    
+    # Backup and restore
+    if st.button("Fazer Backup do Banco de Dados"):
+        with open('database_backup.json', 'w') as f:
+            json.dump(st.session_state.db, f)
+        st.success("Backup realizado com sucesso!")
+    
+    # Reset database
+    if st.button("Limpar todos os dados", type="primary"):
+        if st.checkbox("Confirma que deseja limpar todos os dados? Esta ação não pode ser desfeita."):
+            st.session_state.db = {
+                'users': [
+                    {
+                        'id': 'admin',
+                        'username': 'admin',
+                        'password': '2312',
+                        'type': 'admin',
+                        'name': 'Administrador'
+                    }
+                ],
+                'teams': [],
+                'players': [],
+                'matches': [],
+                'bets': [],
+                'userBets': [],
+                'goals': []
+            }
+            save_database()
+            st.success("Banco de dados limpo com sucesso!")
+            st.rerun()
+
+def render_betting():
+    st.title("Gerenciar Apostas")
+    
+    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
+        st.error("Acesso restrito ao administrador.")
+        return
+    
+    subtab1, subtab2, subtab3 = st.tabs(["Apostas Ativas", "Criar Aposta", "Histórico"])
+    
+    with subtab1:
+        active_bets = get_active_bets()
+        
+        if active_bets:
+            for bet in active_bets:
+                with st.expander(bet['description']):
+                    st.write(f"Odd: {bet['odd']}")
+                    if bet.get('matchId'):
+                        st.write(f"Jogo: {get_match_name(bet['matchId'])}")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        if st.button("Finalizar (Ganhou)", key=f"win_{bet['id']}"):
+                            # Resolve bet as won
+                            bet_index = next((i for i, b in enumerate(st.session_state.db['bets']) 
+                                      if b['id'] == bet['id']), None)
+                            
+                            if bet_index is not None:
+                                st.session_state.db['bets'][bet_index]['status'] = 'completed'
+                                st.session_state.db['bets'][bet_index]['result'] = True
+                                st.session_state.db['bets'][bet_index]['resolvedAt'] = datetime.datetime.now().isoformat()
+                                
+                                # Process payouts
+                                bet_participants = [ub for ub in st.session_state.db['userBets'] if ub['betId'] == bet['id']]
+                                
+                                for user_bet in bet_participants:
+                                    user_index = next((i for i, u in enumerate(st.session_state.db['users']) 
+                                               if u['id'] == user_bet['userId']), None)
+                                    
+                                    if user_index is not None:
+                                        winnings = int(user_bet['amount'] * bet['odd'])
+                                        st.session_state.db['users'][user_index]['points'] += winnings
+                                
+                                save_database()
+                                st.success("Aposta finalizada como ganha!")
+                                st.rerun()
+                    
+                    with col2:
+                        if st.button("Finalizar (Perdeu)", key=f"lose_{bet['id']}"):
+                            # Resolve bet as lost
+                            bet_index = next((i for i, b in enumerate(st.session_state.db['bets']) 
+                                      if b['id'] == bet['id']), None)
+                            
+                            if bet_index is not None:
+                                st.session_state.db['bets'][bet_index]['status'] = 'completed'
+                                st.session_state.db['bets'][bet_index]['result'] = False
+                                st.session_state.db['bets'][bet_index]['resolvedAt'] = datetime.datetime.now().isoformat()
+                                
+                                save_database()
+                                st.success("Aposta finalizada como perdida!")
+                                st.rerun()
+                    
+                    with col3:
+                        if st.button("Editar", key=f"edit_{bet['id']}"):
+                            new_odd = st.number_input(f"Nova odd para {bet['description']}", 
+                                              min_value=1.0, value=float(bet['odd']), step=0.1)
+                            
+                            if st.button("Atualizar Odd"):
+                                bet_index = next((i for i, b in enumerate(st.session_state.db['bets']) 
+                                          if b['id'] == bet['id']), None)
+                                
+                                if bet_index is not None:
+                                    st.session_state.db['bets'][bet_index]['odd'] = new_odd
+                                    save_database()
+                                    st.success("Odd atualizada com sucesso!")
+                                    st.rerun()
+        else:
+            st.info("Não há apostas ativas no momento.")
+    
+    with subtab2:
+        st.subheader("Criar Nova Aposta")
+        
+        bet_type = st.selectbox("Tipo de Aposta", 
+                       options=["match", "team", "custom"],
+                       format_func=lambda x: "Resultado de Jogo" if x == "match" else 
+                                          "Time Específico" if x == "team" else "Personalizada")
+        
+        if bet_type == "match":
+            upcoming = get_upcoming_matches()
+            match_options = [m['id'] for m in upcoming]
+            match_display = [f"{m['teamA']} vs {m['teamB']} ({m['date']})" for m in upcoming]
+            
+            if match_options:
+                match_idx = st.selectbox("Jogo", 
+                                options=range(len(match_options)),
+                                format_func=lambda x: match_display[x] if x < len(match_display) else "Selecione um jogo")
+                
+                if match_idx < len(match_options):
+                    match_id = match_options[match_idx]
+                    match = get_match_by_id(match_id)
+                    
+                    outcome = st.selectbox("Resultado", 
+                                  options=["teamA", "draw", "teamB"],
+                                  format_func=lambda x: f"{match['teamA']} vence" if x == "teamA" else 
+                                                     "Empate" if x == "draw" else f"{match['teamB']} vence")
+                    
+                    description = ""
+                    if outcome == "teamA":
+                        description = f"{match['teamA']} vence {match['teamB']}"
+                    elif outcome == "draw":
+                        description = f"Empate entre {match['teamA']} e {match['teamB']}"
+                    else:
+                        description = f"{match['teamB']} vence {match['teamA']}"
+            else:
+                st.warning("Não há jogos futuros para criar apostas.")
+                match_id = None
+                description = ""
+        
+        elif bet_type == "team":
+            teams = st.session_state.db['teams']
+            team_options = [t['id'] for t in teams]
+            
+            if team_options:
+                team_idx = st.selectbox("Time", 
+                                options=range(len(team_options)),
+                                format_func=lambda x: next((t['name'] for t in teams if t['id'] == team_options[x]), "") 
+                                         if x < len(team_options) else "Selecione um time")
+                
+                if team_idx < len(team_options):
+                    team_id = team_options[team_idx]
+                    team = get_team_by_id(team_id)
+                    
+                    custom_desc = st.text_input("Descrição da Aposta (Ex: Será campeão)")
+                    description = f"{team['name']} {custom_desc}"
+                    match_id = None
+            else:
+                st.warning("Não há times cadastrados para criar apostas.")
+                description = ""
+                match_id = None
+        
+        else:  # custom
+            description = st.text_input("Descrição da Aposta (Ex: Haverá um gol contra na rodada)")
+            match_id = None
+        
+        odd = st.number_input("Odd (multiplicador)", min_value=1.0, value=2.0, step=0.1)
+        
+        if st.button("Criar Aposta"):
+            if not description:
+                st.error("É necessário fornecer uma descrição para a aposta.")
+            else:
+                new_bet = {
+                    'id': f"bet_{len(st.session_state.db['bets']) + 1}",
+                    'description': description,
+                    'odd': odd,
+                    'matchId': match_id,
+                    'status': 'active',
+                    'createdAt': datetime.datetime.now().isoformat()
+                }
+                
+                st.session_state.db['bets'].append(new_bet)
+                save_database()
+                
+                st.success("Aposta criada com sucesso!")
+                st.rerun()
+    
+    with subtab3:
+        completed_bets = get_completed_bets()
+        
+        if completed_bets:
+            bet_data = []
+            for bet in completed_bets:
+                participants = [ub for ub in st.session_state.db['userBets'] if ub['betId'] == bet['id']]
+                total_amount = sum(ub['amount'] for ub in participants)
+                
+                bet_data.append({
+                    "Descrição": bet['description'],
+                    "Odd": bet['odd'],
+                    "Status": bet['status'],
+                    "Participantes": len(participants),
+                    "Total Apostado": total_amount,
+                    "Resultado": "Ganhou" if bet.get('result') else "Perdeu" if bet['status'] == 'completed' else "Cancelada"
+                })
+            
+            df = pd.DataFrame(bet_data)
+            st.dataframe(df)
+        else:
+            st.info("Não há histórico de apostas finalizadas.")
+
+def render_teams():
+    # Call the existing team management code
+    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
+        st.error("Acesso restrito ao administrador.")
+        return
+        
+    # This will show the teams management tab
+    render_dashboard()
+
+def render_results():
+    # Call the existing results management code
+    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
+        st.error("Acesso restrito ao administrador.")
+        return
+        
+    st.title("Gerenciar Resultados")
+    # Re-use the admin results subtab from the dashboard
+    
+    subtab1, subtab2, subtab3 = st.tabs(["Próximos Jogos", "Jogos Completos", "Agendar Jogo"])
+    
+    # Re-implement the subtabs from render_dashboard function...
+    # (Same code as in the results subtab within render_dashboard function)
+
+def render_my_bets():
+    st.title("Minhas Apostas")
+    
+    if not st.session_state.logged_in or st.session_state.user_type != 'fan':
+        st.error("Você precisa estar logado como torcedor para ver suas apostas.")
+        return
+    
+    user = st.session_state.current_user
+    st.subheader(f"Pontos disponíveis: {user['points']} Terrara Coins")
+    
+    subtab1, subtab2, subtab3 = st.tabs(["Apostas Ativas", "Histórico", "Apostar"])
+    
+    with subtab1:
+        user_bets = [ub for ub in st.session_state.db['userBets'] if ub['userId'] == user['id']]
+        active_user_bets = [ub for ub in user_bets if get_bet_by_id(ub['betId']) and get_bet_by_id(ub['betId']).get('status') == 'active']
+        
+        if active_user_bets:
+            for user_bet in active_user_bets:
+                bet = get_bet_by_id(user_bet['betId'])
+                if bet:
+                    st.markdown(f"""
+                    <div class="bet-card">
+                        <h4>{bet['description']}</h4>
+                        <p>Odd: {bet['odd']}</p>
+                        <p>Valor Apostado: {user_bet['amount']} Terrara Coins</p>
+                        <p>Possível Retorno: {int(user_bet['amount'] * bet['odd'])} Terrara Coins</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.info("Você não tem apostas ativas no momento.")
+    
+    with subtab2:
+        user_bets = [ub for ub in st.session_state.db['userBets'] if ub['userId'] == user['id']]
+        completed_user_bets = [ub for ub in user_bets 
+                             if get_bet_by_id(ub['betId']) and 
+                             (get_bet_by_id(ub['betId']).get('status') == 'completed' or 
+                              get_bet_by_id(ub['betId']).get('status') == 'cancelled')]
+        
+        if completed_user_bets:
+            bet_data = []
+            for user_bet in completed_user_bets:
+                bet = get_bet_by_id(user_bet['betId'])
+                if bet:
+                    result = bet.get('result', False)
+                    status = bet.get('status', '')
+                    
+                    bet_data.append({
+                        "Aposta": bet['description'],
+                        "Odd": bet['odd'],
+                        "Valor Apostado": user_bet['amount'],
+                        "Resultado": "Ganhou" if result else "Perdeu" if status == 'completed' else "Cancelada",
+                        "Retorno": int(user_bet['amount'] * bet['odd']) if result else 0
+                    })
+            
+            df = pd.DataFrame(bet_data)
+            st.dataframe(df)
+        else:
+            st.info("Você não tem histórico de apostas finalizadas.")
+    
+    with subtab3:
+        active_bets = get_active_bets()
+        
+        if active_bets:
+            for bet in active_bets:
+                with st.expander(bet['description']):
+                    st.write(f"Odd: {bet['odd']}")
+                    if bet.get('matchId'):
+                        st.write(f"Jogo: {get_match_name(bet['matchId'])}")
+                    
+                    amount = st.number_input(f"Terrara Coins para apostar (disponível: {user['points']})", 
+                                    min_value=10, max_value=user['points'], value=100, 
+                                    key=f"amount_{bet['id']}")
+                    
+                    st.write(f"Retorno potencial: {int(amount * bet['odd'])} Terrara Coins")
+                    
+                    if st.button("Confirmar Aposta", key=f"place_{bet['id']}"):
+                        # Check if user has enough points
+                        if amount > user['points']:
+                            st.error("Você não tem Terrara Coins suficientes para esta aposta.")
+                        else:
+                            # Create user bet
+                            new_user_bet = {
+                                'id': f"userBet_{user['id']}_{bet['id']}_{str(uuid.uuid4())[:8]}",
+                                'userId': user['id'],
+                                'betId': bet['id'],
+                                'amount': amount,
+                                'placedAt': datetime.datetime.now().isoformat()
+                            }
+                            
+                            st.session_state.db['userBets'].append(new_user_bet)
+                            
+                            # Deduct points from user
+                            user_index = next((i for i, u in enumerate(st.session_state.db['users']) 
+                                       if u['id'] == user['id']), None)
+                            
+                            if user_index is not None:
+                                st.session_state.db['users'][user_index]['points'] -= amount
+                                st.session_state.current_user['points'] -= amount
+                            
+                            save_database()
+                            
+                            st.success("Aposta realizada com sucesso!")
+                            st.rerun()
+        else:
+            st.info("Não há apostas disponíveis no momento.")
+
+def render_my_team():
+    # Call the existing team management code
+    if not st.session_state.logged_in or st.session_state.user_type != 'team':
+        st.error("Acesso restrito a times.")
+        return
+        
+    # This will show the team management tab
+    render_dashboard()
+
 def main():
     # Render sidebar for navigation
     render_sidebar()
@@ -1436,13 +1815,29 @@ def main():
     elif st.session_state.page == 'login':
         render_login()
     elif st.session_state.page == 'register_choice':
-        render_login()
+        render_register_choice()
     elif st.session_state.page == 'register_team':
         render_register_team()
     elif st.session_state.page == 'register_fan':
         render_register_fan()
     elif st.session_state.page == 'dashboard':
         render_dashboard()
-    
+    elif st.session_state.page == 'teams':
+        render_teams()
+    elif st.session_state.page == 'results':
+        render_results()
+    elif st.session_state.page == 'betting':
+        render_betting()
+    elif st.session_state.page == 'settings':
+        render_settings()
+    elif st.session_state.page == 'my_team':
+        render_my_team()
+    elif st.session_state.page == 'players':
+        render_dashboard()  # Players tab is inside dashboard
+    elif st.session_state.page == 'my_bets':
+        render_my_bets()
+    elif st.session_state.page == 'stats':
+        render_dashboard()  # Stats tab is inside dashboard
+
 if __name__ == "__main__":
     main()
