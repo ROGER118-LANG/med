@@ -53,7 +53,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Configuração da OpenAI
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "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"
 
 class DatabaseManager:
     def __init__(self, db_path="survey_system.db"):
