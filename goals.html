@@ -1,0 +1,65 @@
+<!-- templates/goals.html - Lista de metas financeiras -->
+{% extends "layout.html" %}
+{% block title %}Metas Financeiras{% endblock %}
+{% block content %}
+<div class="container mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Metas Financeiras</h1>
+        <a href="{{ url_for('add_goal') }}" class="btn-primary">
+            <i class="fas fa-plus mr-1"></i> Nova Meta
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% if goals %}
+            {% for goal in goals %}
+                <div class="card">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-semibold">{{ goal.name }}</h3>
+                        <div class="flex space-x-2">
+                            <a href="{{ url_for('edit_goal', id=goal.id) }}" class="text-indigo-600 hover:text-indigo-800">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <a href="{{ url_for('delete_goal', id=goal.id) }}" class="text-red-600 hover:text-red-800" onclick="return confirm('Tem certeza que deseja excluir esta meta?')">
+                                <i class="fas fa-trash"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        {% set percentage = (goal.current_amount / goal.target_amount * 100) if goal.target_amount > 0 else 0 %}
+                        <div class="flex justify-between text-sm mb-1">
+                            <span>Progresso: {{ "%.1f"|format(percentage) }}%</span>
+                            <span>R$ {{ "%.2f"|format(goal.current_amount) }} / R$ {{ "%.2f"|format(goal.target_amount) }}</span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar {% if percentage < 30 %}progress-bar-danger{% elif percentage < 70 %}progress-bar-warning{% else %}progress-bar-success{% endif %}" style="width: {{ percentage }}%"></div>
+                        </div>
+                    </div>
+
+                    {% if goal.deadline %}
+                        <div class="text-sm text-gray-600">
+                            <i class="far fa-calendar-alt mr-1"></i> Prazo final: {{ goal.deadline.strftime('%d/%m/%Y') }}
+                            {% set days_remaining = (goal.deadline - datetime.utcnow()).days %}
+                            {% if days_remaining > 0 %}
+                                <span class="ml-2 text-indigo-600">Faltam {{ days_remaining }} dias</span>
+                            {% else %}
+                                <span class="ml-2 text-red-600">Prazo expirado</span>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="col-span-3">
+                <div class="card text-center py-8">
+                    <p class="text-gray-500">Nenhuma meta financeira encontrada.</p>
+                    <a href="{{ url_for('add_goal') }}" class="btn-primary inline-block mt-2">
+                        <i class="fas fa-plus mr-1"></i> Criar Meta
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

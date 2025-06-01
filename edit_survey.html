@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="text-white">
+                <i class="fas fa-edit me-2"></i>Editando: {{ survey.title }}
+            </h2>
+            <div>
+                <button class="btn btn-info me-2" onclick="copyLink('{{ url_for('public_survey', public_id=survey.public_id, _external=True) }}')">
+                    <i class="fas fa-link me-2"></i>Copiar Link Público
+                </button>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Voltar
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-question-circle me-2"></i>Perguntas da Pesquisa</h5>
+            </div>
+            <div class="card-body">
+                {% if questions %}
+                    {% for question in questions %}
+                    <div class="border rounded p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6>Pergunta {{ loop.index }}</h6>
+                                <p class="mb-2">{{ question.text }}</p>
+                                <div class="d-flex gap-3">
+                                    <small class="text-muted">
+                                        <i class="fas fa-tag me-1"></i>Tipo: {{ question.question_type }}
+                                    </small>
+                                    <small class="text-muted">
+                                        <i class="fas fa-star me-1"></i>Importância: {{ question.importance }}/5
+                                    </small>
+                                </div>
+                                {% if question.options %}
+                                    <div class="mt-2">
+                                        <small class="text-muted">Opções: {{ question.options }}</small>
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="text-end">
+                                <button class="btn btn-sm btn-outline-danger">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-question-circle fa-3x text-muted mb-3"></i>
+                        <h5>Nenhuma pergunta adicionada</h5>
+                        <p class="text-muted">Adicione perguntas para sua pesquisa usando o formulário ao lado.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h6><i class="fas fa-plus me-2"></i>Adicionar Pergunta</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('add_question', survey_id=survey.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">Texto da Pergunta</label>
+                        <textarea class="form-control" name="text" rows="3" required placeholder="Digite sua pergunta aqui..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Tipo de Pergunta</label>
+                        <select class="form-control" name="question_type" onchange="toggleOptions(this)">
+                            <option value="text">Texto Livre</option>
+                            <option value="multiple_choice">Múltipla Escolha</option>
+                            <option value="rating">Avaliação (1-5)</option>
+                            <option value="yesno">Sim/Não</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3" id="options-group" style="display: none;">
+                        <label class="form-label">Opções (separadas por vírgula)</label>
+                        <input type="text" class="form-control" name="options" placeholder="Opção 1, Opção 2, Opção 3">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Importância da Pergunta</label>
+                        <select class="form-control" name="importance">
+                            <option value="1">1 - Pouco Importante</option>
+                            <option value="2">2 - Baixa Importância</option>
+                            <option value="3" selected>3 - Importância Média</option>
+                            <option value="4">4 - Muito Importante</option>
+                            <option value="5">5 - Extremamente Importante</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-plus me-2"></i>Adicionar Pergunta
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header bg-info text-white">
+                <h6><i class="fas fa-info-circle me-2"></i>Link da Pesquisa</h6>
+            </div>
+            <div class="card-body">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="surveyLink" value="{{ url_for('public_survey', public_id=survey.public_id, _external=True) }}" readonly>
+                    <button class="btn btn-outline-secondary" onclick="copyLink('{{ url_for('public_survey', public_id=survey.public_id, _external=True) }}')">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                <small class="text-muted mt-2 d-block">Compartilhe este link para coletar respostas</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

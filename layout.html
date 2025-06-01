@@ -1,0 +1,270 @@
+<!-- templates/layout.html - Layout base para todas as páginas -->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinIA - {% block title %}{% endblock %}</title>
+    <!-- Fontes -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <!-- Plotly.js para gráficos -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Alpine.js para interações -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4F46E5;
+            --secondary-color: #10B981;
+            --danger-color: #EF4444;
+            --warning-color: #F59E0B;
+            --info-color: #3B82F6;
+            --dark-color: #1F2937;
+            --light-color: #F9FAFB;
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #F3F4F6;
+        }
+        .sidebar {
+            background-color: var(--dark-color);
+            color: white;
+            height: 100vh;
+            position: fixed;
+            width: 250px;
+            transition: all 0.3s;
+        }
+        .sidebar.collapsed {
+            width: 80px;
+        }
+        .content {
+            margin-left: 250px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+        .content.expanded {
+            margin-left: 80px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #4338CA;
+        }
+        .btn-success {
+            background-color: var(--secondary-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-success:hover {
+            background-color: #059669;
+        }
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+        .form-control {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #D1D5DB;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            color: #E5E7EB;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            background-color: #374151;
+        }
+        .nav-link.active {
+            background-color: #374151;
+            border-left: 4px solid var(--primary-color);
+        }
+        .nav-icon {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+        .positive {
+            color: var(--secondary-color);
+        }
+        .negative {
+            color: var(--danger-color);
+        }
+        .alert {
+            padding: 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+        .alert-success {
+            background-color: #D1FAE5;
+            border-left: 4px solid var(--secondary-color);
+            color: #065F46;
+        }
+        .alert-danger {
+            background-color: #FEE2E2;
+            border-left: 4px solid var(--danger-color);
+            color: #991B1B;
+        }
+        .alert-warning {
+            background-color: #FEF3C7;
+            border-left: 4px solid var(--warning-color);
+            color: #92400E;
+        }
+        .alert-info {
+            background-color: #DBEAFE;
+            border-left: 4px solid var(--info-color);
+            color: #1E40AF;
+        }
+        .progress {
+            height: 10px;
+            background-color: #E5E7EB;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            border-radius: 5px;
+        }
+        .progress-bar-success {
+            background-color: var(--secondary-color);
+        }
+        .progress-bar-warning {
+            background-color: var(--warning-color);
+        }
+        .progress-bar-danger {
+            background-color: var(--danger-color);
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .table th {
+            background-color: #F9FAFB;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: #4B5563;
+        }
+        .table td {
+            padding: 0.75rem;
+            border-top: 1px solid #E5E7EB;
+        }
+        .table tr:hover {
+            background-color: #F9FAFB;
+        }
+    </style>
+    {% block styles %}{% endblock %}
+</head>
+<body class="bg-gray-100">
+    <!-- Sidebar -->
+    <div class="sidebar" x-data="{ collapsed: false }">
+        <div class="flex justify-between items-center p-4 border-b border-gray-700">
+            <div class="flex items-center">
+                <img src="https://via.placeholder.com/40" alt="Logo" class="w-10 h-10 mr-3">
+                <h1 class="text-xl font-bold" x-show="!collapsed">FinançasAI</h1>
+            </div>
+            <button @click="collapsed = !collapsed; document.querySelector('.content').classList.toggle('expanded')" class="text-gray-400 hover:text-white">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+        <nav class="mt-4">
+            <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <i class="fas fa-tachometer-alt nav-icon"></i>
+                <span x-show="!collapsed">Dashboard</span>
+            </a>
+            <a href="{{ url_for('transactions') }}" class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}">
+                <i class="fas fa-exchange-alt nav-icon"></i>
+                <span x-show="!collapsed">Transações</span>
+            </a>
+            <a href="{{ url_for('categories') }}" class="nav-link {% if request.endpoint == 'categories' %}active{% endif %}">
+                <i class="fas fa-tags nav-icon"></i>
+                <span x-show="!collapsed">Categorias</span>
+            </a>
+            <a href="{{ url_for('goals') }}" class="nav-link {% if request.endpoint == 'goals' %}active{% endif %}">
+                <i class="fas fa-bullseye nav-icon"></i>
+                <span x-show="!collapsed">Metas</span>
+            </a>
+            <a href="{{ url_for('reports') }}" class="nav-link {% if request.endpoint == 'reports' %}active{% endif %}">
+                <i class="fas fa-chart-pie nav-icon"></i>
+                <span x-show="!collapsed">Relatórios</span>
+            </a>
+            <a href="{{ url_for('ai_insights') }}" class="nav-link {% if request.endpoint == 'ai_insights' %}active{% endif %}">
+                <i class="fas fa-robot nav-icon"></i>
+                <span x-show="!collapsed">Análise IA</span>
+            </a>
+            <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">
+                <i class="fas fa-cog nav-icon"></i>
+                <span x-show="!collapsed">Configurações</span>
+            </a>
+            <a href="{{ url_for('logout') }}" class="nav-link">
+                <i class="fas fa-sign-out-alt nav-icon"></i>
+                <span x-show="!collapsed">Sair</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="content">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category if category else 'info' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Page Content -->
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // Inicializa os tooltips
+        document.addEventListener('DOMContentLoaded', function() {
+            // Código de inicialização
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

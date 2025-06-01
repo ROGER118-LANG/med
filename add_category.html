@@ -1,0 +1,26 @@
+<!-- templates/add_category.html - Adicionar categoria -->
+{% extends "layout.html" %}
+{% block title %}Nova Categoria{% endblock %}
+{% block content %}
+<div class="container mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Nova Categoria</h1>
+        <a href="{{ url_for('categories') }}" class="text-indigo-600 hover:underline">
+            <i class="fas fa-arrow-left mr-1"></i> Voltar
+        </a>
+    </div>
+
+    <div class="card max-w-lg mx-auto">
+        <form method="POST" action="{{ url_for('add_category') }}">
+            <div class="mb-6">
+                <label for="name" class="form-label">Nome da Categoria</label>
+                <input type="text" id="name" name="name" class="form-control" required>
+            </div>
+
+            <div class="flex justify-end">
+                <button type="submit" class="btn-primary">Salvar Categoria</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

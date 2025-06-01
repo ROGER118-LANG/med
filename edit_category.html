@@ -1,0 +1,29 @@
+<!-- templates/edit_category.html - Editar categoria -->
+{% extends "layout.html" %}
+{% block title %}Editar Categoria{% endblock %}
+{% block content %}
+<div class="container mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Editar Categoria</h1>
+        <a href="{{ url_for('categories') }}" class="text-indigo-600 hover:underline">
+            <i class="fas fa-arrow-left mr-1"></i> Voltar
+        </a>
+    </div>
+
+    <div class="card max-w-lg mx-auto">
+        <form method="POST" action="{{ url_for('edit_category', id=category.id) }}">
+            <div class="mb-6">
+                <label for="name" class="form-label">Nome da Categoria</label>
+                <input type="text" id="name" name="name" class="form-control" value="{{ category.name }}" required>
+            </div>
+
+            <div class="flex justify-between">
+                <a href="{{ url_for('delete_category', id=category.id) }}" class="btn-danger" onclick="return confirm('Tem certeza que deseja excluir esta categoria?')">
+                    <i class="fas fa-trash mr-1"></i> Excluir
+                </a>
+                <button type="submit" class="btn-primary">Salvar Alterações</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

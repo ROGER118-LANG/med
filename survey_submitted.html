@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card text-center">
+            <div class="card-body py-5">
+                <i class="fas fa-check-circle fa-4x text-success mb-4"></i>
+                <h3>Obrigado!</h3>
+                <p class="lead">Suas respostas foram enviadas com sucesso.</p>
+                <p class="text-muted">Agradecemos sua participação na pesquisa "{{ survey.title }}".</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

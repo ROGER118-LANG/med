@@ -1,0 +1,445 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="text-white">
+                <i class="fas fa-chart-bar me-2"></i>Analytics - {{ survey.title }}
+            </h2>
+            <div>
+                <button onclick="refreshAnalysis()" class="btn btn-info me-2">
+                    <i class="fas fa-sync-alt me-2"></i>Atualizar Análise
+                </button>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Voltar
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-users fa-2x text-primary mb-2"></i>
+                <h4>{{ responses|length }}</h4>
+                <p class="mb-0">Total de Respostas</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-question-circle fa-2x text-info mb-2"></i>
+                <h4>{{ questions|length }}</h4>
+                <p class="mb-0">Perguntas</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-calendar fa-2x text-success mb-2"></i>
+                <h4>{{ survey.created_at.strftime('%d/%m') }}</h4>
+                <p class="mb-0">Data de Criação</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-eye fa-2x text-warning mb-2"></i>
+                <h4 id="real-time-views">{{ responses|length }}</h4>
+                <p class="mb-0">Visualizações</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line me-2"></i>Respostas ao Longo do Tempo</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="timeChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-brain me-2"></i>Análise Geral IA</h5>
+                <span class="badge bg-primary">Geral</span>
+            </div>
+            <div class="card-body">
+                <div id="general-analysis">
+                    {% if ai_analysis %}
+                        <div class="ai-analysis">
+                            {{ ai_analysis.analysis_data|safe }}
+                        </div>
+                        <small class="text-muted">
+                            Última atualização: {{ ai_analysis.updated_at.strftime('%d/%m/%Y %H:%M') }}
+                        </small>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-brain fa-3x text-muted mb-3"></i>
+                            <p>Análise será gerada quando houver respostas suficientes.</p>
+                        </div>
+                    {% endif %}
+                </div>
+                <div id="loading-general" style="display: none;" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                    <p class="mt-2">Atualizando análise...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-list me-2"></i>Respostas e Análises Individuais</h5>
+            </div>
+            <div class="card-body">
+                {% if responses %}
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Respondente</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for response in responses %}
+                                <tr>
+                                    <td>{{ response.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                                    <td>
+                                        <small class="text-muted">ID: {{ response.respondent_id[:8] }}</small>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <button class="btn btn-sm btn-outline-primary"
+                                                    onclick="viewResponse({{ response.id }}, '{{ response.responses_data|e }}')">
+                                                <i class="fas fa-eye me-1"></i>Ver Detalhes
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-success"
+                                                    onclick="viewIndividualAnalysis({{ response.id }})">
+                                                <i class="fas fa-brain me-1"></i>Análise IA
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5>Nenhuma resposta ainda</h5>
+                        <p class="text-muted">Compartilhe o link da pesquisa para começar a coletar dados!</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para detalhes da resposta -->
+<div class="modal fade" id="responseModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-file-alt me-2"></i>Detalhes da Resposta
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="responseContent">
+                <!-- Conteúdo será carregado dinamicamente -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para análise individual -->
+<div class="modal fade" id="individualAnalysisModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-brain me-2"></i>Análise Individual IA
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-clipboard-list me-2"></i>Respostas do Usuário</h6>
+                        <div id="individualResponseData" class="border rounded p-3 mb-3 bg-light">
+                            <!-- Dados da resposta serão carregados aqui -->
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-robot me-2"></i>Análise IA</h6>
+                        <div id="individualAnalysisContent" class="border rounded p-3 bg-light">
+                            <!-- Análise será carregada aqui -->
+                        </div>
+                    </div>
+                </div>
+                <div id="loadingIndividual" class="text-center py-4" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Carregando análise...</span>
+                    </div>
+                    <p class="mt-2">Gerando análise individual...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Criar objeto de perguntas manualmente a partir dos dados do template
+const questions = [
+    {% for question in questions %}
+    {
+        id: {{ question.id }},
+        text: "{{ question.text|e }}",
+        type: "{{ question.type if question.type else '' }}"
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+
+// Atualização em tempo real
+function updateRealTimeData() {
+    fetch(`/api/survey/{{ survey.id }}/data`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('real-time-views').textContent = data.total_responses;
+            updateChart(data.responses_over_time);
+        })
+        .catch(error => console.error('Erro:', error));
+}
+
+// Gráfico de linha do tempo
+let timeChart;
+function initChart() {
+    const ctx = document.getElementById('timeChart').getContext('2d');
+    timeChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Respostas por Dia',
+                data: [],
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.1,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true
+                }
+            }
+        }
+    });
+}
+
+function updateChart(data) {
+    if (timeChart && data) {
+        timeChart.data.labels = data.map(item => {
+            const date = new Date(item.date);
+            return date.toLocaleDateString('pt-BR');
+        });
+        timeChart.data.datasets[0].data = data.map(item => item.count);
+        timeChart.update();
+    }
+}
+
+// Função para ver detalhes da resposta
+function viewResponse(responseId, responseData) {
+    try {
+        const data = JSON.parse(responseData);
+        let content = '<div class="response-details">';
+        content += '<h6 class="mb-3"><i class="fas fa-info-circle me-2"></i>Respostas Fornecidas:</h6>';
+
+        const questionsMap = {};
+        questions.forEach(q => {
+            questionsMap[q.id] = q.text;
+        });
+
+        content += '<div class="list-group">';
+        for (const [key, value] of Object.entries(data)) {
+            const questionId = key.replace('question_', '');
+            const questionText = questionsMap[questionId] || `Pergunta ${questionId}`;
+
+            content += `
+                <div class="list-group-item">
+                    <h6 class="mb-1">${questionText}</h6>
+                    <p class="mb-0 text-muted">${value || 'Não respondido'}</p>
+                </div>
+            `;
+        }
+        content += '</div></div>';
+
+        document.getElementById('responseContent').innerHTML = content;
+
+        // Abre o modal usando Bootstrap 5
+        const modal = new bootstrap.Modal(document.getElementById('responseModal'));
+        modal.show();
+    } catch (error) {
+        console.error('Erro ao processar resposta:', error);
+        alert('Erro ao carregar detalhes da resposta');
+    }
+}
+
+// Função para ver análise individual
+function viewIndividualAnalysis(responseId) {
+    const modal = new bootstrap.Modal(document.getElementById('individualAnalysisModal'));
+    modal.show();
+
+    // Mostra loading
+    document.getElementById('loadingIndividual').style.display = 'block';
+    document.getElementById('individualResponseData').innerHTML = '';
+    document.getElementById('individualAnalysisContent').innerHTML = '';
+
+    // Busca análise individual
+    fetch(`/api/response/${responseId}/analysis`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('loadingIndividual').style.display = 'none';
+
+            // Exibe dados da resposta
+            let responseHtml = '<div class="response-data">';
+            responseHtml += `<p class="mb-2"><strong>Data:</strong> ${data.created_at}</p>`;
+            responseHtml += '<div class="mt-3">';
+
+            const questionsMap = {};
+            questions.forEach(q => {
+                questionsMap[q.id] = q.text;
+            });
+
+            for (const [key, value] of Object.entries(data.response_data)) {
+                const questionId = key.replace('question_', '');
+                const questionText = questionsMap[questionId] || `Pergunta ${questionId}`;
+
+                responseHtml += `
+                    <div class="mb-2">
+                        <small class="text-muted d-block">${questionText}</small>
+                        <strong>${value || 'Não respondido'}</strong>
+                    </div>
+                `;
+            }
+            responseHtml += '</div></div>';
+
+            document.getElementById('individualResponseData').innerHTML = responseHtml;
+
+            // Exibe análise IA
+            document.getElementById('individualAnalysisContent').innerHTML = data.analysis || 'Análise não disponível';
+        })
+        .catch(error => {
+            document.getElementById('loadingIndividual').style.display = 'none';
+            console.error('Erro:', error);
+            document.getElementById('individualAnalysisContent').innerHTML =
+                '<div class="alert alert-danger">Erro ao carregar análise individual</div>';
+        });
+}
+
+// Função para atualizar análise geral
+function refreshAnalysis() {
+    document.getElementById('loading-general').style.display = 'block';
+    document.getElementById('general-analysis').style.display = 'none';
+
+    fetch(`/api/survey/{{ survey.id }}/refresh-analysis`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Recarrega a página para mostrar a análise atualizada
+            location.reload();
+        } else {
+            throw new Error(data.message || 'Erro ao atualizar análise');
+        }
+    })
+    .catch(error => {
+        document.getElementById('loading-general').style.display = 'none';
+        document.getElementById('general-analysis').style.display = 'block';
+        console.error('Erro:', error);
+        alert('Erro ao atualizar análise: ' + error.message);
+    });
+}
+
+// Função para copiar link
+function copyLink(link) {
+    navigator.clipboard.writeText(link).then(() => {
+        // Cria um toast de sucesso
+        const toast = document.createElement('div');
+        toast.className = 'toast align-items-center text-white bg-success border-0';
+        toast.style.position = 'fixed';
+        toast.style.top = '20px';
+        toast.style.right = '20px';
+        toast.style.zIndex = '9999';
+        toast.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-check me-2"></i>Link copiado para a área de transferência!
+                </div>
+            </div>
+        `;
+        document.body.appendChild(toast);
+
+        // Remove o toast após 3 segundos
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }).catch(err => {
+        alert('Erro ao copiar link: ' + err);
+    });
+}
+
+// Inicializar quando a página carregar
+document.addEventListener('DOMContentLoaded', function() {
+    initChart();
+    updateRealTimeData();
+
+    // Atualizar dados a cada 30 segundos
+    setInterval(updateRealTimeData, 30000);
+});
+</script>
+{% endblock %}

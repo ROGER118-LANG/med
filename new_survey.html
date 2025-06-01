@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h4><i class="fas fa-plus-circle me-2"></i>Nova Pesquisa</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Título da Pesquisa</label>
+                        <input type="text" class="form-control" name="title" required
+                               placeholder="Digite o título da sua pesquisa">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Descrição</label>
+                        <textarea class="form-control" name="description" rows="4"
+                                  placeholder="Descreva o objetivo da sua pesquisa..."></textarea>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary me-md-2">
+                            <i class="fas fa-arrow-left me-1"></i>Cancelar
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save me-1"></i>Criar Pesquisa
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-info-circle me-2"></i>Próximos Passos</h5>
+            </div>
+            <div class="card-body">
+                <p class="mb-2">Após criar sua pesquisa, você poderá:</p>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success me-2"></i>Adicionar perguntas personalizadas</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Configurar tipos de resposta (texto, múltipla escolha, avaliação)</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Definir níveis de importância para cada pergunta</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Compartilhar o link público da pesquisa</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Acompanhar respostas em tempo real</li>
+                    <li><i class="fas fa-check text-success me-2"></i>Obter análises automáticas com IA</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
