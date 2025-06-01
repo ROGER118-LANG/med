@@ -1,0 +1,91 @@
+<!-- templates/add_transaction.html - Adicionar transação -->
+{% extends "layout.html" %}
+{% block title %}Nova Transação{% endblock %}
+{% block content %}
+<div class="container mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Nova Transação</h1>
+        <a href="{{ url_for('transactions') }}" class="text-indigo-600 hover:underline">
+            <i class="fas fa-arrow-left mr-1"></i> Voltar
+        </a>
+    </div>
+
+    <div class="card max-w-lg mx-auto">
+        <form method="POST" action="{{ url_for('add_transaction') }}">
+            <div class="mb-4">
+                <label for="description" class="form-label">Descrição</label>
+                <input type="text" id="description" name="description" class="form-control" required>
+            </div>
+
+            <div class="mb-4">
+                <label for="amount" class="form-label">Valor (R$)</label>
+                <input type="number" id="amount" name="amount" step="0.01" class="form-control" required>
+            </div>
+
+            <div class="mb-4">
+                <label for="date" class="form-label">Data</label>
+                <input type="date" id="date" name="date" class="form-control" value="{{ datetime.utcnow().strftime('%Y-%m-%d') }}" required>
+            </div>
+
+            <div class="mb-4">
+                <label for="category" class="form-label">Categoria</label>
+                <select id="category" name="category" class="form-control" required>
+                    {% for category in categories %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-6">
+                <label class="form-label">Tipo de Transação</label>
+                <div class="flex mt-2">
+                    <div class="mr-4">
+                        <input type="radio" id="income" name="type" value="income" checked>
+                        <label for="income" class="ml-1 text-green-600">Receita</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="expense" name="type" value="expense">
+                        <label for="expense" class="ml-1 text-red-600">Despesa</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Campo de parcelas posicionado dentro do formulário -->
+            <div class="mb-4" id="installments-group" style="display: none;">
+                <label for="installments" class="form-label">Número de Parcelas</label>
+                <input type="number" id="installments" name="installments" min="1" value="1" class="form-control">
+            </div>
+
+            <div class="flex justify-end">
+                <button type="submit" class="btn-primary">Salvar Transação</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Script para controlar a visibilidade do campo de parcelas -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const typeSelect = document.querySelector('input[name="type"][value="expense"]');
+    const incomeSelect = document.querySelector('input[name="type"][value="income"]');
+    const installmentsGroup = document.getElementById('installments-group');
+
+    // Função para verificar o estado e ajustar a visibilidade
+    function checkType() {
+        if (typeSelect.checked) {
+            installmentsGroup.style.display = 'block';
+        } else {
+            installmentsGroup.style.display = 'none';
+            document.getElementById('installments').value = '1';
+        }
+    }
+
+    // Adicionar listeners para os botões de rádio
+    typeSelect.addEventListener('change', checkType);
+    incomeSelect.addEventListener('change', checkType);
+
+    // Verificar estado inicial
+    checkType();
+});
+</script>
+{% endblock %}

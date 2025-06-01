@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="text-white">
+                <i class="fas fa-tachometer-alt me-2"></i>Dashboard - {{ session.company_name }}
+            </h2>
+            <a href="{{ url_for('new_survey') }}" class="btn btn-success">
+                <i class="fas fa-plus me-2"></i>Nova Pesquisa
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-poll fa-2x text-primary mb-2"></i>
+                <h4>{{ total_surveys }}</h4>
+                <p class="mb-0">Pesquisas Criadas</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-users fa-2x text-success mb-2"></i>
+                <h4>{{ total_responses }}</h4>
+                <p class="mb-0">Respostas Coletadas</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="fas fa-chart-line fa-2x text-info mb-2"></i>
+                <h4>{{ surveys|selectattr("is_active")|list|length }}</h4>
+                <p class="mb-0">Pesquisas Ativas</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-list me-2"></i>Suas Pesquisas</h5>
+            </div>
+            <div class="card-body">
+                {% if surveys %}
+                    <div class="row">
+                        {% for survey in surveys %}
+                        <div class="col-md-6 mb-3">
+                            <div class="card survey-card">
+                                <div class="card-body">
+                                    <h6 class="card-title">{{ survey.title }}</h6>
+                                    <p class="card-text text-muted">{{ survey.description[:100] }}...</p>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">
+                                            <i class="fas fa-calendar me-1"></i>{{ survey.created_at.strftime('%d/%m/%Y') }}
+                                        </small>
+                                        <span class="badge bg-{{ 'success' if survey.is_active else 'secondary' }}">
+                                            {{ 'Ativa' if survey.is_active else 'Inativa' }}
+                                        </span>
+                                    </div>
+                                    <div class="mt-3">
+                                        <a href="{{ url_for('edit_survey', survey_id=survey.id) }}" class="btn btn-sm btn-primary">
+                                            <i class="fas fa-edit me-1"></i>Editar
+                                        </a>
+                                        <a href="{{ url_for('survey_analytics', survey_id=survey.id) }}" class="btn btn-sm btn-info">
+                                            <i class="fas fa-chart-bar me-1"></i>Analytics
+                                        </a>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyLink('{{ url_for('public_survey', public_id=survey.public_id, _external=True) }}')">
+                                            <i class="fas fa-link me-1"></i>Link
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-poll fa-4x text-muted mb-3"></i>
+                        <h5>Nenhuma pesquisa criada ainda</h5>
+                        <p class="text-muted">Crie sua primeira pesquisa para começar a coletar feedback!</p>
+                        <a href="{{ url_for('new_survey') }}" class="btn btn-primary">
+                            <i class="fas fa-plus me-2"></i>Criar Primeira Pesquisa
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+<tfoot>
+    <tr class="fw-bold">
+        <td>Total</td>
+        {% for mes_index in range(labels_meses|length) %}
+            {% set total_mes = 0 %}
+            {% for dataset in datasets %}
+                {% set total_mes = total_mes + dataset.dados[mes_index] %}
+            {% endfor %}
+            <td class="text-end">{{ total_mes|format_currency }}</td>
+        {% endfor %}
+    </tr>
+</tfoot>

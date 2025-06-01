@@ -1,0 +1,157 @@
+<!-- templates/reports.html - Relatórios financeiros -->
+{% extends "layout.html" %}
+{% block title %}Relatorios{% endblock %}
+{% block content %}
+<div class="container mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Relatórios Financeiros</h1>
+        <a href="{{ url_for('export_data') }}" class="btn-primary">
+            <i class="fas fa-download mr-1"></i> Exportar Dados
+        </a>
+    </div>
+
+    <!-- Resumo Mensal -->
+    <div class="card mb-6">
+        <h2 class="text-xl font-semibold mb-4">Resumo do Mês Atual</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="bg-green-50 p-4 rounded-lg">
+                <div class="flex justify-between">
+                    <h3 class="font-semibold">Receitas</h3>
+                    <span class="text-green-600 font-bold">R$ {{ "%.2f"|format(income) }}</span>
+                </div>
+                {% if income_change != 0 %}
+                    <div class="text-sm mt-2 {% if income_change > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        <i class="fas fa-{% if income_change > 0 %}arrow-up{% else %}arrow-down{% endif %} mr-1"></i>
+                        {{ "%.1f"|format(income_change|abs) }}% em relação ao mês anterior
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="bg-red-50 p-4 rounded-lg">
+                <div class="flex justify-between">
+                    <h3 class="font-semibold">Despesas</h3>
+                    <span class="text-red-600 font-bold">R$ {{ "%.2f"|format(expenses) }}</span>
+                </div>
+                {% if expense_change != 0 %}
+                    <div class="text-sm mt-2 {% if expense_change < 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        <i class="fas fa-{% if expense_change < 0 %}arrow-down{% else %}arrow-up{% endif %} mr-1"></i>
+                        {{ "%.1f"|format(expense_change|abs) }}% em relação ao mês anterior
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <div class="flex justify-between">
+                    <h3 class="font-semibold">Saldo</h3>
+                    <span class="{% if income > expenses %}text-green-600{% else %}text-red-600{% endif %} font-bold">
+                        R$ {{ "%.2f"|format(income - expenses) }}
+                    </span>
+                </div>
+                <div class="text-sm mt-2">
+                    {% if income > 0 %}
+                        {{ "%.1f"|format((expenses / income * 100) if income > 0 else 0) }}% da receita foi gasto
+                    {% else %}
+                        Sem receitas no período
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfico de Categorias -->
+    <div class="card mb-6">
+        <h2 class="text-xl font-semibold mb-4">Gastos por Categoria</h2>
+
+        {% if graphJSON %}
+            <div id="categoryChart" style="height: 400px;"></div>
+        {% else %}
+            <div class="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
+                <p class="text-gray-500">Sem dados para exibir</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Tabela de Gastos por Categoria -->
+    <div class="card mb-6">
+        <h2 class="text-xl font-semibold mb-4">Detalhamento por Categoria</h2>
+
+        {% if category_expenses %}
+            <div class="overflow-x-auto">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Categoria</th>
+                            <th>Valor</th>
+                            <th>Percentual</th>
+                            <th>Progresso</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cat in category_expenses %}
+                            <tr>
+                                <td>{{ cat.name }}</td>
+                                <td class="text-red-600">R$ {{ "%.2f"|format(cat.amount) }}</td>
+                                <td>{{ "%.1f"|format(cat.percentage) }}%</td>
+                                <td>
+                                    <div class="progress">
+                                        <div class="progress-bar progress-bar-danger" style="width: {{ cat.percentage }}%"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <p class="text-gray-500">Nenhuma despesa registrada.</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Insights da IA -->
+    <div class="card">
+        <div class="flex items-center mb-4">
+            <div class="rounded-full bg-purple-100 p-2 mr-3">
+                <i class="fas fa-robot text-purple-600"></i>
+            </div>
+            <h2 class="text-xl font-semibold">Análise Detalhada (IA)</h2>
+        </div>
+
+        {% if ai_analysis and not ai_analysis.get('error') %}
+            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                <h3 class="font-semibold mb-2">Previsão</h3>
+                <p>{{ ai_analysis.get('forecast', 'Sem dados suficientes para gerar previsão.') }}</p>
+            </div>
+
+            <div class="flex justify-center">
+                <a href="{{ url_for('ai_insights') }}" class="btn-primary">
+                    <i class="fas fa-chart-line mr-1"></i> Ver Análise Completa
+                </a>
+            </div>
+        {% else %}
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <p>
+                    {% if ai_analysis and ai_analysis.get('error') %}
+                        {{ ai_analysis.get('error') }}
+                    {% else %}
+                        Adicione mais transações para receber uma análise detalhada dos seus gastos.
+                    {% endif %}
+                </p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if graphJSON %}
+            var graphData = {{ graphJSON | safe }};
+            Plotly.newPlot('categoryChart', graphData.data, graphData.layout);
+        {% endif %}
+    });
+</script>
+{% endblock %}

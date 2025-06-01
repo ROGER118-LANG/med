@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* Correções específicas para mobile */
+    .form-control, .form-check-input {
+        font-size: 16px !important; /* Evita zoom automático no iOS */
+    }
+
+    .form-control {
+        padding: 12px 15px;
+        border-radius: 8px;
+        border: 2px solid #dee2e6;
+        transition: border-color 0.3s ease;
+        -webkit-appearance: none; /* Remove estilo padrão do iOS */
+    }
+
+    .form-control:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        outline: none;
+    }
+
+    /* Melhorar radio buttons para mobile */
+    .form-check {
+        padding: 12px;
+        margin-bottom: 8px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .form-check:hover {
+        background: #e9ecef;
+        border-color: #007bff;
+    }
+
+    .form-check-input {
+        width: 20px;
+        height: 20px;
+        margin-top: 0;
+        cursor: pointer;
+    }
+
+    .form-check-label {
+        cursor: pointer;
+        margin-left: 10px;
+        font-weight: 500;
+    }
+
+    /* Rating específico para mobile */
+    .rating-container {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 15px 0;
+        flex-wrap: wrap;
+    }
+
+    .rating-item {
+        flex: 1;
+        min-width: 45px;
+        text-align: center;
+        padding: 12px 8px;
+        background: #f8f9fa;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 600;
+    }
+
+    .rating-item:hover {
+        border-color: #007bff;
+        background: #e9ecef;
+    }
+
+    .rating-item input {
+        display: none;
+    }
+
+    .rating-item.selected {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+
+    .submit-btn {
+        padding: 15px 30px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 8px;
+        background: linear-gradient(45deg, #28a745, #20c997);
+        border: none;
+        transition: all 0.3s ease;
+        width: 100%;
+        max-width: 300px;
+        margin: 0 auto;
+        display: block;
+    }
+
+    .submit-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(40,167,69,0.3);
+    }
+
+    .submit-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .loading {
+        display: none;
+        text-align: center;
+        margin-top: 20px;
+    }
+
+    .spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #28a745;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .error-message {
+        color: #dc3545;
+        font-size: 0.875rem;
+        margin-top: 5px;
+        display: none;
+    }
+
+    .is-invalid {
+        border-color: #dc3545 !important;
+    }
+
+    .is-invalid:focus {
+        box-shadow: 0 0 0 0.2rem rgba(220,53,69,.25) !important;
+    }
+
+    @media (max-width: 768px) {
+        .col-md-8 {
+            padding: 0 10px;
+        }
+
+        .card {
+            margin: 10px 0;
+        }
+
+        .card-body {
+            padding: 20px 15px;
+        }
+
+        .rating-container {
+            gap: 5px;
+        }
+
+        .rating-item {
+            min-width: 40px;
+            padding: 10px 5px;
+            font-size: 0.9rem;
+        }
+    }
+</style>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white text-center">
+                <h4><i class="fas fa-clipboard-list me-2"></i>{{ survey.title }}</h4>
+                {% if survey.description %}
+                    <p class="mb-0 mt-2">{{ survey.description }}</p>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('submit_survey', public_id=survey.public_id) }}" id="surveyForm" novalidate>
+                    {% for question in questions %}
+                    <div class="mb-4 question-group" data-question-id="{{ question.id }}">
+                        <label class="form-label fw-bold">
+                            {{ loop.index }}. {{ question.text }}
+                            {% if question.importance >= 4 %}
+                                <span class="text-danger">*</span>
+                            {% endif %}
+                        </label>
+
+                        {% if question.question_type == 'text' %}
+                            <textarea class="form-control"
+                                      name="question_{{ question.id }}"
+                                      rows="3"
+                                      placeholder="Digite sua resposta..."
+                                      {% if question.importance >= 4 %}required data-required="true"{% endif %}></textarea>
+                            <div class="error-message">Este campo é obrigatório.</div>
+
+                        {% elif question.question_type == 'multiple_choice' %}
+                            <div class="radio-group" {% if question.importance >= 4 %}data-required="true"{% endif %}>
+                                {% set options = question.options.split(',') %}
+                                {% for option in options %}
+                                    <div class="form-check" onclick="selectRadio(this)">
+                                        <input class="form-check-input"
+                                               type="radio"
+                                               name="question_{{ question.id }}"
+                                               value="{{ option.strip() }}"
+                                               id="q{{ question.id }}_{{ loop.index }}"
+                                               {% if question.importance >= 4 %}required{% endif %}>
+                                        <label class="form-check-label" for="q{{ question.id }}_{{ loop.index }}">
+                                            {{ option.strip() }}
+                                        </label>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                            <div class="error-message">Por favor, selecione uma opção.</div>
+
+                        {% elif question.question_type == 'rating' %}
+                            <div class="rating-container" data-question="{{ question.id }}" {% if question.importance >= 4 %}data-required="true"{% endif %}>
+                                {% for i in range(1, 6) %}
+                                    <div class="rating-item" onclick="selectRating(this, {{ question.id }}, {{ i }})">
+                                        <input type="radio"
+                                               name="question_{{ question.id }}"
+                                               value="{{ i }}"
+                                               id="rating{{ question.id }}_{{ i }}"
+                                               {% if question.importance >= 4 %}required{% endif %}>
+                                        <div>{{ i }}</div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                            <div class="text-center">
+                                <small class="text-muted">1 = Muito Ruim | 5 = Excelente</small>
+                            </div>
+                            <div class="error-message">Por favor, selecione uma avaliação.</div>
+
+                        {% elif question.question_type == 'yesno' %}
+                            <div class="radio-group" {% if question.importance >= 4 %}data-required="true"{% endif %}>
+                                <div class="form-check" onclick="selectRadio(this)">
+                                    <input class="form-check-input"
+                                           type="radio"
+                                           name="question_{{ question.id }}"
+                                           value="Sim"
+                                           id="yes{{ question.id }}"
+                                           {% if question.importance >= 4 %}required{% endif %}>
+                                    <label class="form-check-label" for="yes{{ question.id }}">Sim</label>
+                                </div>
+                                <div class="form-check" onclick="selectRadio(this)">
+                                    <input class="form-check-input"
+                                           type="radio"
+                                           name="question_{{ question.id }}"
+                                           value="Não"
+                                           id="no{{ question.id }}"
+                                           {% if question.importance >= 4 %}required{% endif %}>
+                                    <label class="form-check-label" for="no{{ question.id }}">Não</label>
+                                </div>
+                            </div>
+                            <div class="error-message">Por favor, selecione uma opção.</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn btn-success submit-btn" id="submitBtn">
+                            <i class="fas fa-paper-plane me-2"></i>Enviar Respostas
+                        </button>
+
+                        <div class="loading" id="loading">
+                            <div class="spinner"></div>
+                            <p class="mt-3">Enviando suas respostas...</p>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Funções para melhorar a UX no mobile
+function selectRadio(element) {
+    const input = element.querySelector('input[type="radio"]');
+    if (input) {
+        input.checked = true;
+        // Remove erro se existir
+        const errorMsg = element.closest('.question-group').querySelector('.error-message');
+        if (errorMsg) {
+            errorMsg.style.display = 'none';
+        }
+        element.closest('.question-group').classList.remove('has-error');
+    }
+}
+
+function selectRating(element, questionId, value) {
+    // Remove seleção anterior
+    const container = element.parentElement;
+    container.querySelectorAll('.rating-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+
+    // Adiciona seleção atual
+    element.classList.add('selected');
+    element.querySelector('input').checked = true;
+
+    // Remove erro se existir
+    const errorMsg = container.closest('.question-group').querySelector('.error-message');
+    if (errorMsg) {
+        errorMsg.style.display = 'none';
+    }
+    container.closest('.question-group').classList.remove('has-error');
+}
+
+// Validação do formulário
+document.getElementById('surveyForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const form = this;
+    const submitBtn = document.getElementById('submitBtn');
+    const loading = document.getElementById('loading');
+
+    // Validação
+    let isValid = true;
+    const requiredGroups = form.querySelectorAll('[data-required="true"]');
+
+    requiredGroups.forEach(group => {
+        const questionGroup = group.closest('.question-group');
+        const errorMsg = questionGroup.querySelector('.error-message');
+
+        if (group.classList.contains('radio-group')) {
+            const radios = group.querySelectorAll('input[type="radio"]');
+            const isChecked = Array.from(radios).some(radio => radio.checked);
+
+            if (!isChecked) {
+                isValid = false;
+                questionGroup.classList.add('has-error');
+                errorMsg.style.display = 'block';
+
+                // Scroll para o primeiro erro
+                if (isValid === false) {
+                    questionGroup.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        } else if (group.classList.contains('rating-container')) {
+            const radios = group.querySelectorAll('input[type="radio"]');
+            const isChecked = Array.from(radios).some(radio => radio.checked);
+
+            if (!isChecked) {
+                isValid = false;
+                questionGroup.classList.add('has-error');
+                errorMsg.style.display = 'block';
+            }
+        } else if (group.tagName === 'TEXTAREA') {
+            if (!group.value.trim()) {
+                isValid = false;
+                group.classList.add('is-invalid');
+                questionGroup.classList.add('has-error');
+                errorMsg.style.display = 'block';
+
+                // Scroll para o primeiro erro
+                if (isValid === false) {
+                    group.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+    });
+
+    if (!isValid) {
+        // Vibração no mobile se disponível
+        if (navigator.vibrate) {
+            navigator.vibrate(200);
+        }
+        return false;
+    }
+
+    // Se chegou aqui, o formulário é válido
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Enviando...';
+    loading.style.display = 'block';
+
+    // Submit real do formulário
+    setTimeout(() => {
+        form.submit();
+    }, 500);
+});
+
+// Remove erro ao digitar em textarea
+document.querySelectorAll('textarea[data-required="true"]').forEach(textarea => {
+    textarea.addEventListener('input', function() {
+        if (this.value.trim()) {
+            this.classList.remove('is-invalid');
+            const errorMsg = this.closest('.question-group').querySelector('.error-message');
+            if (errorMsg) {
+                errorMsg.style.display = 'none';
+            }
+            this.closest('.question-group').classList.remove('has-error');
+        }
+    });
+});
+
+// Previne zoom duplo no iOS
+document.addEventListener('touchend', function(e) {
+    const now = (new Date()).getTime();
+    if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+    }
+    lastTouchEnd = now;
+}, false);
+
+let lastTouchEnd = 0;
+</script>
+{% endblock %}
