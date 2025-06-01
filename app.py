@@ -1,2054 +1,624 @@
-import streamlit as st
-import pandas as pd
-import datetime
-import uuid
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+import sqlite3
+import requests
 import json
+from datetime import datetime
+import uuid
 import os
-from streamlit_option_menu import option_menu
-import plotly.express as px
-import plotly.graph_objects as go
-from PIL import Image
-import base64
-import io
 
-# Page configuration
-st.set_page_config(
-    page_title="Matheuzinho League - Copa Sub-13 de Futsal",
-    page_icon="⚽",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'sua-chave-secreta-aqui'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///survey_system.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Custom CSS for better aesthetics
-st.markdown("""
-<style>
-    .main .block-container {padding-top: 2rem; padding-bottom: 2rem;}
-    h1, h2, h3 {color: #1a2a3a; margin-bottom: 1rem;}
-    .stButton > button {
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 0.6rem 1.2rem;
-        transition: all 0.3s;
-    }
-    .stButton > button:hover {background-color: #3e9142;}
-    .css-1aumxhk {background-color: #1e3a5f;}
-    .stat-card {
-        background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
-    }
-    .matches-card {
-        border: 1px solid #eee;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        background-color: white;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-    .highlighted {background-color: #e8f5e9 !important;}
-    .sidebar .sidebar-content {background-color: #1a2a3a;}
-    
-    /* League Logo styling */
-    .logo-container {
-        text-align: center;
-        padding: 1rem;
-        background-color: #1a2a3a;
-        border-radius: 10px;
-        margin-bottom: 1.5rem;
-    }
-    .logo-title {color: white; margin-bottom: 0;}
-    .logo-subtitle {color: #4CAF50; margin-top: 0;}
-    
-    /* Form styling */
-    .form-container {
-        background-color: white;
-        padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-</style>
-""", unsafe_allow_html=True)
+db = SQLAlchemy(app)
 
-# Initialize session state for database storage
-if 'db' not in st.session_state:
-    # Check if we have a saved database
-    if os.path.exists('database.json'):
-        with open('database.json', 'r') as f:
-            st.session_state.db = json.load(f)
-    else:
-        # Initialize empty database
-        st.session_state.db = {
-            'users': [
-                {
-                    'id': 'admin',
-                    'username': 'admin',
-                    'password': '2312',
-                    'type': 'admin',
-                    'name': 'Administrador'
-                }
-            ],
-            'teams': [],
-            'players': [],
-            'matches': [],
-            'bets': [],
-            'userBets': [],
-            'goals': []
+
+# Modelos do Banco de Dados
+class Company(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    surveys = db.relationship('Survey', backref='company', lazy=True)
+
+
+class Survey(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False)
+    public_id = db.Column(db.String(36), unique=True, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    questions = db.relationship('Question', backref='survey', lazy=True, cascade='all, delete-orphan')
+    responses = db.relationship('Response', backref='survey', lazy=True, cascade='all, delete-orphan')
+
+
+class Question(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+    text = db.Column(db.Text, nullable=False)
+    question_type = db.Column(db.String(50), default='text')  # text, multiple_choice, rating
+    options = db.Column(db.Text)  # JSON string para opções múltiplas
+    importance = db.Column(db.Integer, default=1)  # 1-5 scale
+    order = db.Column(db.Integer, default=0)
+
+    def to_dict(self):
+        """Converte o objeto Question para dicionário"""
+        return {
+            'id': self.id,
+            'text': self.text,
+            'question_type': self.question_type,
+            'options': self.options,
+            'importance': self.importance,
+            'order': self.order
         }
 
-# Function to save database
-def save_database():
-    with open('database.json', 'w') as f:
-        json.dump(st.session_state.db, f)
 
-# Initialize session states
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.current_user = None
-    st.session_state.user_type = None
-    st.session_state.user_team = None
+class Response(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+    respondent_id = db.Column(db.String(36), default=lambda: str(uuid.uuid4()))
+    responses_data = db.Column(db.Text, nullable=False)  # JSON string
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ai_analysis = db.Column(db.Text)  # Análise individual da resposta
 
-# Navigation state
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
 
-# Helper functions
-def get_team_by_id(team_id):
-    teams = st.session_state.db['teams']
-    for team in teams:
-        if team['id'] == team_id:
-            return team
-    return {'name': 'Time Desconhecido'}
+class AIAnalysis(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('survey.id'), nullable=False)
+    analysis_data = db.Column(db.Text, nullable=False)  # JSON string
+    analysis_type = db.Column(db.String(50), default='general')  # general, individual
+    response_id = db.Column(db.Integer, db.ForeignKey('response.id'), nullable=True)  # Para análises individuais
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-def get_player_by_id(player_id):
-    players = st.session_state.db['players']
-    for player in players:
-        if player['id'] == player_id:
-            return player
-    return None
 
-def get_match_by_id(match_id):
-    matches = st.session_state.db['matches']
-    for match in matches:
-        if match['id'] == match_id:
-            return match
-    return None
+# OpenAI API Configuration
+OPENAI_API_KEY = "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"
 
-def get_match_name(match_id):
-    match = get_match_by_id(match_id)
-    if match:
-        return f"{match['teamA']} vs {match['teamB']}"
-    return 'Jogo Desconhecido'
 
-def get_bet_by_id(bet_id):
-    bets = st.session_state.db['bets']
-    for bet in bets:
-        if bet['id'] == bet_id:
-            return bet
-    return None
+def safe_json_serialize(obj):
+    """Função auxiliar para serialização segura de objetos"""
+    if hasattr(obj, 'to_dict'):
+        return obj.to_dict()
+    elif hasattr(obj, '__dict__'):
+        # Para objetos SQLAlchemy sem to_dict
+        return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+    else:
+        return str(obj)
 
-def get_team_players(team_id):
-    if not team_id:
-        return []
-    return [p for p in st.session_state.db['players'] if p['teamId'] == team_id]
 
-def get_player_goals(player_id):
-    goals = [g for g in st.session_state.db['goals'] 
-             if g['playerId'] == player_id and (g['type'] == 'normal' or g['type'] == 'penalty')]
-    return len(goals)
-
-def format_date(date_string):
+def analyze_with_openai(survey_data, responses_data, analysis_type='general'):
+    """Analisa respostas usando OpenAI API"""
     try:
-        date = datetime.datetime.fromisoformat(date_string.replace('Z', '+00:00'))
-        # Check if date is valid
-        if isinstance(date, datetime.datetime):
-            return date.strftime('%d/%m/%Y')
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
+        }
+
+        # Garantir que os dados são serializáveis
+        try:
+            responses_json = json.dumps(responses_data, indent=2, ensure_ascii=False, default=safe_json_serialize)
+        except Exception as e:
+            print(f"Erro na serialização: {e}")
+            responses_json = str(responses_data)
+
+        if analysis_type == 'general':
+            # Análise geral de todas as respostas
+            prompt = f"""
+            Analise as seguintes respostas de pesquisa e forneça insights detalhados de forma limpa e organizada:
+
+            **Pesquisa:** {survey_data['title']}
+            **Descrição:** {survey_data['description']}
+            **Total de Respostas:** {len(responses_data) if isinstance(responses_data, list) else 1}
+
+            **Dados das respostas:**
+            {responses_json}
+
+            Por favor, forneça uma análise estruturada com:
+
+            **1. RESUMO GERAL**
+            - Visão geral dos resultados principais
+
+            **2. TENDÊNCIAS IDENTIFICADAS**
+            - Padrões encontrados nas respostas
+            - Comportamentos recorrentes
+
+            **3. PONTOS DE ATENÇÃO**
+            - Problemas ou preocupações identificadas
+            - Áreas que necessitam atenção
+
+            **4. RECOMENDAÇÕES**
+            - Ações sugeridas baseadas nos dados
+            - Próximos passos recomendados
+
+            **5. ANÁLISE DE SENTIMENTO**
+            - Sentimento geral dos respondentes
+            - Nível de satisfação percebido
+
+            Responda em formato HTML limpo e bem estruturado, sem usar aspas ou caracteres de escape.
+            Use tags HTML como <h4>, <p>, <ul>, <li>, <strong> para uma apresentação clara.
+            """
         else:
-            return 'Data Inválida'
-    except:
-        return 'Data Inválida'
+            # Análise individual de uma resposta específica
+            prompt = f"""
+            Analise esta resposta individual de pesquisa e forneça insights detalhados:
 
-def get_sorted_teams():
-    teams = st.session_state.db['teams']
-    return sorted(teams, key=lambda x: (
-        -x['points'],
-        -(x['goalsFor'] - x['goalsAgainst']),
-        -x['goalsFor']
-    ))
+            **Pesquisa:** {survey_data['title']}
+            **Resposta Individual:**
+            {responses_json}
 
-def get_team_position(team_id):
-    sorted_teams = get_sorted_teams()
-    for i, team in enumerate(sorted_teams):
-        if team['id'] == team_id:
-            return i + 1
-    return 0
+            Por favor, forneça uma análise individual estruturada com:
 
-def get_upcoming_matches():
-    matches = st.session_state.db['matches']
-    return [m for m in matches if not m.get('played', False) and not m.get('cancelled', False)]
+            **1. PERFIL DO RESPONDENTE**
+            - Características identificadas nas respostas
 
-def get_completed_matches():
-    matches = st.session_state.db['matches']
-    return [m for m in matches if m.get('played', False)]
+            **2. ANÁLISE DETALHADA**
+            - Avaliação de cada resposta fornecida
+            - Coerência e qualidade das respostas
 
-def get_scorers():
-    if not st.session_state.db['goals']:
-        return []
-        
-    player_goals = {}
-    
-    for goal in st.session_state.db['goals']:
-        player = get_player_by_id(goal['playerId'])
-        if not player:
-            continue
-            
-        if player['id'] not in player_goals:
-            team = get_team_by_id(player['teamId'])
-            player_goals[player['id']] = {
-                'id': player['id'],
-                'name': player['name'],
-                'teamId': player['teamId'],
-                'team': team['name'] if team else 'Desconhecido',
-                'goals': {
-                    'normal': 0,
-                    'penalty': 0,
-                    'own': 0,
-                    'total': 0
-                }
-            }
-            
-        if goal['type'] == 'normal':
-            player_goals[player['id']]['goals']['normal'] += 1
-            player_goals[player['id']]['goals']['total'] += 1
-        elif goal['type'] == 'penalty':
-            player_goals[player['id']]['goals']['penalty'] += 1
-            player_goals[player['id']]['goals']['total'] += 1
-        elif goal['type'] == 'own':
-            player_goals[player['id']]['goals']['own'] += 1
-            # Own goals don't count for total
-    
-    # Convert to list and sort
-    scorers_list = list(player_goals.values())
-    scorers_list.sort(key=lambda x: (
-        -x['goals']['total'],
-        -x['goals']['normal'],
-        -x['goals']['penalty']
-    ))
-    
-    return scorers_list
+            **3. INSIGHTS ESPECÍFICOS**
+            - Pontos únicos desta resposta
+            - Diferenciadores em relação ao padrão geral
 
-def get_active_bets():
-    return [b for b in st.session_state.db['bets'] if b.get('status') == 'active']
+            **4. RECOMENDAÇÕES PERSONALIZADAS**
+            - Ações específicas baseadas nesta resposta
+            - Áreas de foco para este respondente
 
-def get_completed_bets():
-    return [b for b in st.session_state.db['bets'] 
-            if b.get('status') == 'completed' or b.get('status') == 'cancelled']
+            Responda em formato HTML limpo e bem estruturado, sem usar aspas ou caracteres de escape.
+            Use tags HTML como <h4>, <p>, <ul>, <li>, <strong> para uma apresentação clara.
+            """
 
-def login(username, password):
-    users = st.session_state.db['users']
-    for user in users:
-        if user['username'] == username and user['password'] == password:
-            st.session_state.logged_in = True
-            st.session_state.current_user = user
-            st.session_state.user_type = user['type']
-            
-            if user['type'] == 'team':
-                st.session_state.user_team = get_team_by_id(user['teamId'])
-            
-            return True
-    return False
+        data = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7
+        }
 
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=data
+        )
+
+        if response.status_code == 200:
+            return response.json()['choices'][0]['message']['content']
+        else:
+            return f"<p>Erro na análise: {response.status_code}</p>"
+
+    except Exception as e:
+        return f"<p>Erro ao conectar com OpenAI: {str(e)}</p>"
+
+
+# Rotas da aplicação
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        name = request.form['name']
+        email = request.form['email']
+        password = request.form['password']
+
+        # Verifica se email já existe
+        if Company.query.filter_by(email=email).first():
+            flash('Email já cadastrado!', 'error')
+            return render_template('register.html')
+
+        # Cria nova empresa
+        company = Company(
+            name=name,
+            email=email,
+            password_hash=generate_password_hash(password)
+        )
+        db.session.add(company)
+        db.session.commit()
+
+        flash('Cadastro realizado com sucesso!', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+
+        company = Company.query.filter_by(email=email).first()
+
+        if company and check_password_hash(company.password_hash, password):
+            session['company_id'] = company.id
+            session['company_name'] = company.name
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Email ou senha inválidos!', 'error')
+
+    return render_template('login.html')
+
+
+@app.route('/logout')
 def logout():
-    st.session_state.logged_in = False
-    st.session_state.current_user = None
-    st.session_state.user_type = None
-    st.session_state.user_team = None
+    session.clear()
+    return redirect(url_for('index'))
 
-# Updated UI Components with modern streamlit widgets
-def render_sidebar():
-    with st.sidebar:
-        # Logo
-        st.markdown("""
-        <div class="logo-container">
-            <h2 class="logo-title">MATHEUZINHO</h2>
-            <h3 class="logo-subtitle">LEAGUE</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Navigation menu
-        if st.session_state.logged_in:
-            # User info
-            st.markdown(f"**Olá, {st.session_state.current_user['name']}!**")
-            st.markdown(f"Tipo: {st.session_state.user_type.capitalize()}")
-            
-            # Sidebar menu - different options based on user type
-            if st.session_state.user_type == 'admin':
-                selected = option_menu(
-                    "Menu Principal", 
-                    ["Início", "Classificação", "Artilharia", "Jogos", "Dashboard", "Times", "Configurações", "Sair"],
-                    icons=['house', 'trophy', 'star', 'calendar2', 'speedometer2', 'people', 'gear', 'box-arrow-right'],
-                    menu_icon="cast", default_index=0
-                )
-            elif st.session_state.user_type == 'team':
-                selected = option_menu(
-                    "Menu Principal", 
-                    ["Início", "Classificação", "Artilharia", "Jogos", "Meu Time", "Jogadores", "Estatísticas", "Sair"],
-                    icons=['house', 'trophy', 'star', 'calendar2', 'shield', 'person-badge', 'graph-up', 'box-arrow-right'],
-                    menu_icon="cast", default_index=0
-                )
-            else:  # fan
-                selected = option_menu(
-                    "Menu Principal", 
-                    ["Início", "Classificação", "Artilharia", "Jogos", "Sair"],
-                    icons=['house', 'trophy', 'star', 'calendar2', 'box-arrow-right'],
-                    menu_icon="cast", default_index=0
-                )
-            
-            # Handle menu selection
-            if selected == "Sair":
-                logout()
-                st.rerun()
-            else:
-                page_mapping = {
-                    "Início": "home",
-                    "Classificação": "classification",
-                    "Artilharia": "topScorers",
-                    "Jogos": "matches",
-                    "Dashboard": "dashboard",
-                    "Times": "teams",
-                    "Configurações": "settings",
-                    "Meu Time": "my_team",
-                    "Jogadores": "players",
-                    "Estatísticas": "stats"
-                }
-                st.session_state.page = page_mapping.get(selected, "home")
+
+@app.route('/dashboard')
+def dashboard():
+    if 'company_id' not in session:
+        return redirect(url_for('login'))
+
+    company_id = session['company_id']
+    surveys = Survey.query.filter_by(company_id=company_id).all()
+
+    # Estatísticas gerais
+    total_surveys = len(surveys)
+    total_responses = sum([len(survey.responses) for survey in surveys])
+
+    return render_template('dashboard.html',
+                           surveys=surveys,
+                           total_surveys=total_surveys,
+                           total_responses=total_responses)
+
+
+@app.route('/survey/new', methods=['GET', 'POST'])
+def new_survey():
+    if 'company_id' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form['description']
+
+        survey = Survey(
+            title=title,
+            description=description,
+            company_id=session['company_id']
+        )
+        db.session.add(survey)
+        db.session.commit()
+
+        flash('Pesquisa criada com sucesso!', 'success')
+        return redirect(url_for('edit_survey', survey_id=survey.id))
+
+    return render_template('new_survey.html')
+
+
+@app.route('/survey/<int:survey_id>/edit')
+def edit_survey(survey_id):
+    if 'company_id' not in session:
+        return redirect(url_for('login'))
+
+    survey = Survey.query.filter_by(id=survey_id, company_id=session['company_id']).first_or_404()
+    questions = Question.query.filter_by(survey_id=survey_id).order_by(Question.order).all()
+
+    return render_template('edit_survey.html', survey=survey, questions=questions)
+
+
+@app.route('/survey/<int:survey_id>/add_question', methods=['POST'])
+def add_question(survey_id):
+    if 'company_id' not in session:
+        return redirect(url_for('login'))
+
+    survey = Survey.query.filter_by(id=survey_id, company_id=session['company_id']).first_or_404()
+
+    text = request.form['text']
+    question_type = request.form['question_type']
+    importance = int(request.form['importance'])
+    options = request.form.get('options', '')
+
+    # Conta questões existentes para ordem
+    question_count = Question.query.filter_by(survey_id=survey_id).count()
+
+    question = Question(
+        survey_id=survey_id,
+        text=text,
+        question_type=question_type,
+        options=options,
+        importance=importance,
+        order=question_count + 1
+    )
+    db.session.add(question)
+    db.session.commit()
+
+    return redirect(url_for('edit_survey', survey_id=survey_id))
+
+
+@app.route('/survey/<public_id>')
+def public_survey(public_id):
+    survey = Survey.query.filter_by(public_id=public_id, is_active=True).first_or_404()
+    questions = Question.query.filter_by(survey_id=survey.id).order_by(Question.order).all()
+
+    return render_template('public_survey.html', survey=survey, questions=questions)
+
+
+@app.route('/survey/<public_id>/submit', methods=['POST'])
+def submit_survey(public_id):
+    survey = Survey.query.filter_by(public_id=public_id, is_active=True).first_or_404()
+
+    # Coleta respostas
+    responses_data = {}
+    for key, value in request.form.items():
+        if key.startswith('question_'):
+            question_id = key.replace('question_', '')
+            responses_data[question_id] = value
+
+    # Salva resposta
+    response = Response(
+        survey_id=survey.id,
+        responses_data=json.dumps(responses_data)
+    )
+    db.session.add(response)
+    db.session.commit()
+
+    # Gera análise individual da resposta
+    generate_individual_analysis(response.id)
+
+    # Trigger análise geral (async would be better in production)
+    update_general_analysis(survey.id)
+
+    return render_template('survey_submitted.html', survey=survey)
+
+
+@app.route('/survey/<int:survey_id>/analytics')
+def survey_analytics(survey_id):
+    if 'company_id' not in session:
+        return redirect(url_for('login'))
+
+    survey = Survey.query.filter_by(id=survey_id, company_id=session['company_id']).first_or_404()
+    responses = Response.query.filter_by(survey_id=survey_id).all()
+    questions = Question.query.filter_by(survey_id=survey_id).all()
+
+    # Busca análise geral mais recente
+    general_analysis = AIAnalysis.query.filter_by(
+        survey_id=survey_id,
+        analysis_type='general'
+    ).order_by(AIAnalysis.updated_at.desc()).first()
+
+    return render_template('analytics.html',
+                           survey=survey,
+                           responses=responses,
+                           questions=questions,
+                           ai_analysis=general_analysis)
+
+
+@app.route('/api/survey/<int:survey_id>/data')
+def api_survey_data(survey_id):
+    if 'company_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    survey = Survey.query.filter_by(id=survey_id, company_id=session['company_id']).first_or_404()
+    responses = Response.query.filter_by(survey_id=survey_id).all()
+    questions = Question.query.filter_by(survey_id=survey_id).all()
+
+    # Processa dados para gráficos
+    chart_data = {
+        'total_responses': len(responses),
+        'responses_over_time': [],
+        'question_analytics': {}
+    }
+
+    # Dados por data
+    date_counts = {}
+    for response in responses:
+        date_key = response.created_at.strftime('%Y-%m-%d')
+        date_counts[date_key] = date_counts.get(date_key, 0) + 1
+
+    chart_data['responses_over_time'] = [
+        {'date': date, 'count': count}
+        for date, count in sorted(date_counts.items())
+    ]
+
+    return jsonify(chart_data)
+
+
+# Nova rota para análise individual de resposta
+@app.route('/api/response/<int:response_id>/analysis')
+def api_individual_analysis(response_id):
+    if 'company_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    response = Response.query.get_or_404(response_id)
+    survey = Survey.query.get(response.survey_id)
+
+    # Verifica se a empresa tem acesso a esta pesquisa
+    if survey.company_id != session['company_id']:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    # Busca análise individual existente
+    individual_analysis = AIAnalysis.query.filter_by(
+        response_id=response_id,
+        analysis_type='individual'
+    ).first()
+
+    if not individual_analysis:
+        # Gera análise se não existir
+        generate_individual_analysis(response_id)
+        individual_analysis = AIAnalysis.query.filter_by(
+            response_id=response_id,
+            analysis_type='individual'
+        ).first()
+
+    return jsonify({
+        'analysis': individual_analysis.analysis_data if individual_analysis else 'Análise não disponível',
+        'response_data': json.loads(response.responses_data),
+        'created_at': response.created_at.strftime('%d/%m/%Y %H:%M')
+    })
+
+
+# Nova rota para forçar atualização da análise geral
+@app.route('/api/survey/<int:survey_id>/refresh-analysis', methods=['POST'])
+def refresh_general_analysis(survey_id):
+    if 'company_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    survey = Survey.query.filter_by(id=survey_id, company_id=session['company_id']).first_or_404()
+
+    # Força atualização da análise geral
+    update_general_analysis(survey_id)
+
+    return jsonify({'status': 'success', 'message': 'Análise atualizada com sucesso!'})
+
+
+def generate_individual_analysis(response_id):
+    """Gera análise individual para uma resposta específica"""
+    try:
+        print(f"Iniciando análise individual para response_id: {response_id}")
+
+        response = Response.query.get(response_id)
+        if not response:
+            print("Response não encontrado")
+            return
+
+        survey = Survey.query.get(response.survey_id)
+        questions = Question.query.filter_by(survey_id=survey.id).all()
+
+        print(f"Survey: {survey.title}, Questions: {len(questions)}")
+
+        # Prepara dados para análise individual - CORRIGIDO
+        survey_data = {
+            'title': survey.title,
+            'description': survey.description,
+            'questions': [{'id': q.id, 'text': q.text, 'importance': q.importance} for q in questions]
+        }
+
+        print("Survey_data preparado com sucesso")
+
+        response_data = json.loads(response.responses_data)
+        print(f"Response_data carregado: {response_data}")
+
+        # Mapeia respostas com perguntas
+        mapped_responses = {}
+        for question_key, answer in response_data.items():
+            question_id = question_key.replace('question_', '')
+            question = next((q for q in questions if str(q.id) == question_id), None)
+            if question:
+                mapped_responses[question.text] = answer
+
+        print(f"Mapped responses: {mapped_responses}")
+
+        # Chama OpenAI para análise individual
+        print("Chamando OpenAI para análise...")
+        analysis_result = analyze_with_openai(survey_data, mapped_responses, 'individual')
+        print("Análise OpenAI concluída")
+
+        # Salva análise individual
+        individual_analysis = AIAnalysis(
+            survey_id=survey.id,
+            response_id=response_id,
+            analysis_data=analysis_result,
+            analysis_type='individual'
+        )
+        db.session.add(individual_analysis)
+        db.session.commit()
+        print("Análise individual salva com sucesso")
+
+    except Exception as e:
+        print(f"Erro ao gerar análise individual: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+
+def update_general_analysis(survey_id):
+    """Atualiza análise geral para uma pesquisa"""
+    try:
+        print(f"Iniciando análise geral para survey_id: {survey_id}")
+
+        survey = Survey.query.get(survey_id)
+        if not survey:
+            print("Survey não encontrado")
+            return
+
+        responses = Response.query.filter_by(survey_id=survey_id).all()
+        questions = Question.query.filter_by(survey_id=survey_id).all()
+
+        if not responses:
+            print("Nenhuma resposta encontrada")
+            return
+
+        print(f"Survey: {survey.title}, Responses: {len(responses)}, Questions: {len(questions)}")
+
+        # Prepara dados para análise geral - CORRIGIDO
+        survey_data = {
+            'title': survey.title,
+            'description': survey.description,
+            'questions': [{'text': q.text, 'importance': q.importance} for q in questions]  # Convertido manualmente
+        }
+
+        print("Survey_data preparado com sucesso")
+
+        responses_data = []
+        for response in responses:
+            try:
+                response_dict = json.loads(response.responses_data)
+                # Mapeia respostas com perguntas
+                mapped_response = {}
+                for question_key, answer in response_dict.items():
+                    question_id = question_key.replace('question_', '')
+                    question = next((q for q in questions if str(q.id) == question_id), None)
+                    if question:
+                        mapped_response[question.text] = answer
+
+                responses_data.append({
+                    'id': response.id,
+                    'date': response.created_at.isoformat(),
+                    'answers': mapped_response
+                })
+            except Exception as e:
+                print(f"Erro ao processar resposta {response.id}: {str(e)}")
+                continue
+
+        print(f"Responses_data preparado: {len(responses_data)} respostas processadas")
+
+        # Chama OpenAI para análise geral
+        print("Chamando OpenAI para análise geral...")
+        analysis_result = analyze_with_openai(survey_data, responses_data, 'general')
+        print("Análise OpenAI concluída")
+
+        # Salva ou atualiza análise geral
+        existing_analysis = AIAnalysis.query.filter_by(
+            survey_id=survey_id,
+            analysis_type='general'
+        ).first()
+
+        if existing_analysis:
+            existing_analysis.analysis_data = analysis_result
+            existing_analysis.updated_at = datetime.utcnow()
+            print("Análise geral atualizada")
         else:
-            # Login/Register options
-            selected = option_menu(
-                "Menu Principal", 
-                ["Início", "Classificação", "Artilharia", "Jogos", "Login", "Cadastro"],
-                icons=['house', 'trophy', 'star', 'calendar2', 'box-arrow-in-right', 'person-plus'],
-                menu_icon="cast", default_index=0
+            new_analysis = AIAnalysis(
+                survey_id=survey_id,
+                analysis_data=analysis_result,
+                analysis_type='general'
             )
-            
-            # Handle selection
-            page_mapping = {
-                "Início": "home",
-                "Classificação": "classification",
-                "Artilharia": "topScorers",
-                "Jogos": "matches",
-                "Login": "login",
-                "Cadastro": "register_choice"
-            }
-            st.session_state.page = page_mapping.get(selected, "home")
+            db.session.add(new_analysis)
+            print("Nova análise geral criada")
 
-# Add new enhanced rendering functions for each page
-def render_home():
-    # Create a more visually appealing home page
-    st.title("Copa Sub-13 de Futsal")
-    
-    # Hero section with columns
-    col1, col2 = st.columns([3, 2])
-    
-    with col1:
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #1a2a3a 0%, #2c3e50 100%); padding: 2rem; border-radius: 10px; color: white;">
-            <h2 style="color: white;">Condomínio Terrara</h2>
-            <p style="font-size: 1.2rem;">A melhor competição de futsal para jovens talentos!</p>
-            <p>Uma oportunidade única para jovens atletas mostrarem seu potencial e desenvolverem suas habilidades em um ambiente competitivo e saudável.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        db.session.commit()
+        print("Análise geral salva com sucesso")
 
-def render_classification():
-    st.title("Classificação")
-    
-    sorted_teams = get_sorted_teams()
-    
-    if sorted_teams:
-        data = []
-        for i, team in enumerate(sorted_teams):
-            data.append({
-                "Pos": i+1,
-                "Time": team['name'],
-                "P": team['points'],
-                "J": team['games'],
-                "V": team['wins'],
-                "E": team['draws'],
-                "D": team['losses'],
-                "GP": team['goalsFor'],
-                "GC": team['goalsAgainst'],
-                "SG": team['goalsFor'] - team['goalsAgainst']
-            })
-        
-        df = pd.DataFrame(data)
-        st.table(df)
-    else:
-        st.write("Nenhum time cadastrado ainda.")
+    except Exception as e:
+        print(f"Erro ao atualizar análise geral: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
-def render_top_scorers():
-    st.title("Artilharia")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["Gols Totais", "Gols Normais", "Gols de Pênalti", "Gols Contra"])
-    
-    scorers = get_scorers()
-    
-    with tab1:
-        if scorers:
-            data = []
-            for i, player in enumerate(scorers):
-                data.append({
-                    "Pos": i+1,
-                    "Jogador": player['name'],
-                    "Time": player['team'],
-                    "Gols": player['goals']['total'],
-                    "Normais": player['goals']['normal'],
-                    "Pênaltis": player['goals']['penalty'],
-                    "Contra": player['goals']['own']
-                })
-            
-            df = pd.DataFrame(data)
-            st.table(df)
-        else:
-            st.write("Nenhum gol registrado ainda.")
-    
-    with tab2:
-        if scorers:
-            normal_scorers = sorted([p for p in scorers if p['goals']['normal'] > 0], 
-                               key=lambda x: -x['goals']['normal'])
-            
-            data = []
-            for i, player in enumerate(normal_scorers):
-                data.append({
-                    "Pos": i+1,
-                    "Jogador": player['name'],
-                    "Time": player['team'],
-                    "Gols Normais": player['goals']['normal']
-                })
-            
-            if data:
-                df = pd.DataFrame(data)
-                st.table(df)
-            else:
-                st.write("Nenhum gol normal registrado ainda.")
-        else:
-            st.write("Nenhum gol registrado ainda.")
-    
-    with tab3:
-        if scorers:
-            penalty_scorers = sorted([p for p in scorers if p['goals']['penalty'] > 0], 
-                                key=lambda x: -x['goals']['penalty'])
-            
-            data = []
-            for i, player in enumerate(penalty_scorers):
-                data.append({
-                    "Pos": i+1,
-                    "Jogador": player['name'],
-                    "Time": player['team'],
-                    "Gols de Pênalti": player['goals']['penalty']
-                })
-            
-            if data:
-                df = pd.DataFrame(data)
-                st.table(df)
-            else:
-                st.write("Nenhum gol de pênalti registrado ainda.")
-        else:
-            st.write("Nenhum gol registrado ainda.")
-    
-    with tab4:
-        if scorers:
-            own_scorers = sorted([p for p in scorers if p['goals']['own'] > 0], 
-                           key=lambda x: -x['goals']['own'])
-            
-            data = []
-            for i, player in enumerate(own_scorers):
-                data.append({
-                    "Pos": i+1,
-                    "Jogador": player['name'],
-                    "Time": player['team'],
-                    "Gols Contra": player['goals']['own']
-                })
-            
-            if data:
-                df = pd.DataFrame(data)
-                st.table(df)
-            else:
-                st.write("Nenhum gol contra registrado ainda.")
-        else:
-            st.write("Nenhum gol registrado ainda.")
 
-def render_matches():
-    st.title("Jogos")
-    
-    tab1, tab2 = st.tabs(["Próximos Jogos", "Resultados"])
-    
-    with tab1:
-        upcoming = get_upcoming_matches()
-        if upcoming:
-            for match in upcoming:
-                with st.expander(f"{match['teamA']} vs {match['teamB']} - {match['date']}"):
-                    st.write(f"Data: {match['date']}")
-        else:
-            st.write("Não há jogos agendados no momento.")
-    
-    with tab2:
-        completed = get_completed_matches()
-        if completed:
-            for match in completed:
-                with st.expander(f"{match['teamA']} {match['scoreA']} x {match['scoreB']} {match['teamB']} - {match['date']}"):
-                    st.write(f"Data: {match['date']}")
-                    
-                    # Show match goals
-                    match_goals = [g for g in st.session_state.db['goals'] if g['matchId'] == match['id']]
-                    if match_goals:
-                        st.subheader("Gols:")
-                        for goal in match_goals:
-                            player = get_player_by_id(goal['playerId'])
-                            team = get_team_by_id(goal['teamId'])
-                            
-                            if goal['type'] == 'own':
-                                for_team = get_team_by_id(goal['forTeamId'])
-                                st.write(f"{player['name']} ({team['name']}) - Gol contra para {for_team['name']}")
-                            else:
-                                st.write(f"{player['name']} ({team['name']}) - Gol {'de pênalti' if goal['type'] == 'penalty' else 'normal'}")
-        else:
-            st.write("Nenhum jogo realizado ainda.")
+# Inicialização
+app.jinja_env.auto_reload = False
+app.config['TEMPLATES_AUTO_RELOAD'] = False
 
-def render_login():
-    st.title("Login")
-    
-    username = st.text_input("Usuário")
-    password = st.text_input("Senha", type="password")
-    
-    if st.button("Entrar"):
-        if login(username, password):
-            st.session_state.page = 'dashboard'
-            st.rerun()
-        else:
-            st.error("Usuário ou senha incorretos.")
-    
-    st.write("Ainda não tem conta?")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("Cadastrar seu time"):
-            st.session_state.page = 'register_team'
-            st.rerun()
-    
-    with col2:
-        if st.button("Seja um torcedor"):
-            st.session_state.page = 'register_fan'
-            st.rerun()
-
-def render_register_choice():
-    st.title("Cadastro")
-    
-    tab1, tab2 = st.tabs(["Cadastrar Time", "Cadastro de Torcedor"])
-    
-    with tab1:
-        # Team registration form
-        with st.form("team_registration_form"):
-            team_name = st.text_input("Nome do Time")
-            rep_name = st.text_input("Nome do Representante")
-            rep_phone = st.text_input("Telefone do Representante")
-            username = st.text_input("Nome de Usuário")
-            password = st.text_input("Senha", type="password")
-            
-            st.subheader("Jogadores do Time (Mínimo 5, Máximo 15)")
-            
-            # Dynamic player inputs
-            player_count = st.slider("Número de Jogadores", min_value=5, max_value=15, value=5)
-            
-            players = []
-            for i in range(player_count):
-                col1, col2 = st.columns(2)
-                with col1:
-                    player_name = st.text_input(f"Nome do Jogador {i+1}", key=f"player_name_{i}")
-                with col2:
-                    player_birth = st.date_input(f"Data de Nascimento {i+1}", 
-                                          value=datetime.date.today() - datetime.timedelta(days=365*10),
-                                          key=f"player_birth_{i}")
-                
-                players.append({"name": player_name, "birthDate": player_birth})
-                
-            submitted = st.form_submit_button("Cadastrar Time")
-            
-            if submitted:
-                # Check if username already exists
-                if any(u['username'] == username for u in st.session_state.db['users']):
-                    st.error("Este nome de usuário já está em uso.")
-                elif not team_name or not rep_name or not rep_phone or not username or not password:
-                    st.error("Todos os campos são obrigatórios.")
-                elif not all(p["name"] for p in players):
-                    st.error("Todos os jogadores precisam ter um nome.")
-                else:
-                    team_id = f"team_{len(st.session_state.db['teams']) + 1}"
-                    
-                    # Create team
-                    new_team = {
-                        'id': team_id,
-                        'name': team_name,
-                        'representative': {
-                            'name': rep_name,
-                            'phone': rep_phone
-                        },
-                        'points': 0,
-                        'games': 0,
-                        'wins': 0,
-                        'draws': 0,
-                        'losses': 0,
-                        'goalsFor': 0,
-                        'goalsAgainst': 0
-                    }
-                    
-                    st.session_state.db['teams'].append(new_team)
-                    
-                    # Create players
-                    for i, player in enumerate(players):
-                        if player["name"]:
-                            player_id = f"player_{team_id}_{i+1}"
-                            
-                            new_player = {
-                                'id': player_id,
-                                'name': player["name"],
-                                'teamId': team_id,
-                                'birthDate': player["birthDate"].strftime('%Y-%m-%d')
-                            }
-                            
-                            st.session_state.db['players'].append(new_player)
-                    
-                    # Create user account
-                    new_user = {
-                        'id': team_id,
-                        'username': username,
-                        'password': password,
-                        'type': 'team',
-                        'teamId': team_id,
-                        'name': team_name
-                    }
-                    
-                    st.session_state.db['users'].append(new_user)
-                    
-                    # Save database
-                    save_database()
-                    
-                    # Auto login
-                    st.session_state.logged_in = True
-                    st.session_state.current_user = new_user
-                    st.session_state.user_type = 'team'
-                    st.session_state.user_team = new_team
-                    st.session_state.page = 'dashboard'
-                    
-                    st.success("Time cadastrado com sucesso!")
-                    st.rerun()
-    
-    with tab2:
-        # Fan registration form
-        with st.form("fan_registration_form"):
-            name = st.text_input("Nome Completo")
-            username = st.text_input("Nome de Usuário", key="fan_username")
-            password = st.text_input("Senha", type="password", key="fan_password")
-            
-            teams = st.session_state.db['teams']
-            team_options = [team['name'] for team in teams]
-            team_ids = [team['id'] for team in teams]
-            
-            if team_options:
-                selected_team_idx = st.selectbox("Time Favorito", 
-                                         options=range(len(team_options)),
-                                         format_func=lambda x: team_options[x] if x < len(team_options) else "Selecione um time")
-            else:
-                st.warning("Não há times cadastrados. O time favorito será definido posteriormente.")
-                selected_team_idx = -1
-            
-            submitted = st.form_submit_button("Cadastrar como Torcedor")
-            
-            if submitted:
-                # Check if username already exists
-                if any(u['username'] == username for u in st.session_state.db['users']):
-                    st.error("Este nome de usuário já está em uso.")
-                elif not name or not username or not password:
-                    st.error("Nome, usuário e senha são obrigatórios.")
-                else:
-                    fan_id = f"fan_{len([u for u in st.session_state.db['users'] if u['type'] == 'fan']) + 1}"
-                    
-                    # Create fan account
-                    new_fan = {
-                        'id': fan_id,
-                        'username': username,
-                        'password': password,
-                        'type': 'fan',
-                        'name': name,
-                        'favoriteTeamId': team_ids[selected_team_idx] if selected_team_idx >= 0 and selected_team_idx < len(team_ids) else None,
-                        'points': 1000  # Start with 1000 Terrara Coins
-                    }
-                    
-                    st.session_state.db['users'].append(new_fan)
-                    
-                    # Save database
-                    save_database()
-                    
-                    # Auto login
-                    st.session_state.logged_in = True
-                    st.session_state.current_user = new_fan
-                    st.session_state.user_type = 'fan'
-                    st.session_state.page = 'dashboard'
-                    
-                    st.success("Cadastro realizado com sucesso! Você recebeu 1000 Terrara Coins para começar suas apostas.")
-                    st.rerun()
-
-def render_register_team():
-    st.title("Cadastrar Time")
-    
-    with st.form("team_registration_form"):
-        team_name = st.text_input("Nome do Time")
-        rep_name = st.text_input("Nome do Representante")
-        rep_phone = st.text_input("Telefone do Representante")
-        username = st.text_input("Nome de Usuário")
-        password = st.text_input("Senha", type="password")
-        
-        st.subheader("Jogadores do Time (Mínimo 5, Máximo 15)")
-        
-        # Dynamic player inputs
-        player_count = st.slider("Número de Jogadores", min_value=5, max_value=15, value=5)
-        
-        players = []
-        for i in range(player_count):
-            col1, col2 = st.columns(2)
-            with col1:
-                player_name = st.text_input(f"Nome do Jogador {i+1}", key=f"player_name_{i}")
-            with col2:
-                player_birth = st.date_input(f"Data de Nascimento {i+1}", 
-                                      value=datetime.date.today() - datetime.timedelta(days=365*10),
-                                      key=f"player_birth_{i}")
-            
-            players.append({"name": player_name, "birthDate": player_birth})
-            
-        submitted = st.form_submit_button("Cadastrar Time")
-        
-        if submitted:
-            # Check if username already exists
-            if any(u['username'] == username for u in st.session_state.db['users']):
-                st.error("Este nome de usuário já está em uso.")
-            elif not team_name or not rep_name or not rep_phone or not username or not password:
-                st.error("Todos os campos são obrigatórios.")
-            elif not all(p["name"] for p in players):
-                st.error("Todos os jogadores precisam ter um nome.")
-            else:
-                team_id = f"team_{len(st.session_state.db['teams']) + 1}"
-                
-                # Create team
-                new_team = {
-                    'id': team_id,
-                    'name': team_name,
-                    'representative': {
-                        'name': rep_name,
-                        'phone': rep_phone
-                    },
-                    'points': 0,
-                    'games': 0,
-                    'wins': 0,
-                    'draws': 0,
-                    'losses': 0,
-                    'goalsFor': 0,
-                    'goalsAgainst': 0
-                }
-                
-                st.session_state.db['teams'].append(new_team)
-                
-                # Create players
-                for i, player in enumerate(players):
-                    if player["name"]:
-                        player_id = f"player_{team_id}_{i+1}"
-                        
-                        new_player = {
-                            'id': player_id,
-                            'name': player["name"],
-                            'teamId': team_id,
-                            'birthDate': player["birthDate"].strftime('%Y-%m-%d')
-                        }
-                        
-                        st.session_state.db['players'].append(new_player)
-                
-                # Create user account
-                new_user = {
-                    'id': team_id,
-                    'username': username,
-                    'password': password,
-                    'type': 'team',
-                    'teamId': team_id,
-                    'name': team_name
-                }
-                
-                st.session_state.db['users'].append(new_user)
-                
-                # Save database
-                save_database()
-                
-                # Auto login
-                st.session_state.logged_in = True
-                st.session_state.current_user = new_user
-                st.session_state.user_type = 'team'
-                st.session_state.user_team = new_team
-                st.session_state.page = 'dashboard'
-                
-                st.success("Time cadastrado com sucesso!")
-                st.rerun()
-
-def render_register_fan():
-    st.title("Cadastro de Torcedor")
-    
-    with st.form("fan_registration_form"):
-        name = st.text_input("Nome Completo")
-        username = st.text_input("Nome de Usuário")
-        password = st.text_input("Senha", type="password")
-        
-        teams = st.session_state.db['teams']
-        team_options = [team['name'] for team in teams]
-        team_ids = [team['id'] for team in teams]
-        
-        if team_options:
-            selected_team_idx = st.selectbox("Time Favorito", 
-                                     options=range(len(team_options)),
-                                     format_func=lambda x: team_options[x] if x < len(team_options) else "Selecione um time")
-        else:
-            st.warning("Não há times cadastrados. O time favorito será definido posteriormente.")
-            selected_team_idx = -1
-        
-        submitted = st.form_submit_button("Cadastrar como Torcedor")
-        
-        if submitted:
-            # Check if username already exists
-            if any(u['username'] == username for u in st.session_state.db['users']):
-                st.error("Este nome de usuário já está em uso.")
-            elif not name or not username or not password:
-                st.error("Nome, usuário e senha são obrigatórios.")
-            else:
-                fan_id = f"fan_{len([u for u in st.session_state.db['users'] if u['type'] == 'fan']) + 1}"
-                
-                # Create fan account
-                new_fan = {
-                    'id': fan_id,
-                    'username': username,
-                    'password': password,
-                    'type': 'fan',
-                    'name': name,
-                    'favoriteTeamId': team_ids[selected_team_idx] if selected_team_idx >= 0 and selected_team_idx < len(team_ids) else None,
-                    'points': 1000  # Start with 1000 Terrara Coins
-                }
-                
-                st.session_state.db['users'].append(new_fan)
-                
-                # Save database
-                save_database()
-                
-                # Auto login
-                st.session_state.logged_in = True
-                st.session_state.current_user = new_fan
-                st.session_state.user_type = 'fan'
-                st.session_state.page = 'dashboard'
-                
-                st.success("Cadastro realizado com sucesso! Você recebeu 1000 Terrara Coins para começar suas apostas.")
-                st.rerun()
-
-def render_dashboard():
-    st.title("Painel de Controle")
-    
-    if not st.session_state.logged_in:
-        st.error("Você precisa estar logado para acessar esta página.")
-        return
-    
-    tabs = []
-    
-    # All user types have overview
-    tabs.append("Visão Geral")
-    
-    # Team specific tabs
-    if st.session_state.user_type == 'team':
-        tabs.extend(["Meu Time", "Jogadores"])
-    
-    # Admin specific tabs
-    if st.session_state.user_type == 'admin':
-        tabs.extend(["Times", "Resultados"])
-    
-    selected_tab = st.tabs(tabs)
-    
-    # Overview Tab
-    with selected_tab[0]:
-        st.header(f"Bem-vindo ao seu Painel, {st.session_state.current_user['name']}")
-        
-        if st.session_state.user_type == 'team':
-            team = st.session_state.user_team
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Jogadores Registrados", 
-                          f"{len(get_team_players(team['id']))} / 15")
-            
-            with col2:
-                next_match = next((m for m in get_upcoming_matches() 
-                                if m['teamAId'] == team['id'] or m['teamBId'] == team['id']), None)
-                if next_match:
-                    st.metric("Próximo Jogo", 
-                              f"{next_match['teamA']} vs {next_match['teamB']}",
-                              next_match['date'])
-                else:
-                    st.metric("Próximo Jogo", "Nenhum jogo agendado")
-            
-            with col3:
-                st.metric("Posição na Tabela", f"{get_team_position(team['id'])}º")
-        
-        elif st.session_state.user_type == 'admin':
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total de Times", len(st.session_state.db['teams']))
-            
-            with col2:
-                st.metric("Total de Jogadores", len(st.session_state.db['players']))
-            
-            with col3:
-                st.metric("Jogos Realizados", len(get_completed_matches()))
-            
-            with col4:
-                st.metric("Apostas Ativas", len(get_active_bets()))
-        
-        elif st.session_state.user_type == 'fan':
-            user = st.session_state.current_user
-            user_bets = [ub for ub in st.session_state.db['userBets'] if ub['userId'] == user['id']]
-            won_bets = [ub for ub in user_bets if 
-                       get_bet_by_id(ub['betId']) and get_bet_by_id(ub['betId']).get('result')]
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Pontos Disponíveis", user['points'])
-            
-            with col2:
-                st.metric("Apostas Realizadas", len(user_bets))
-            
-            with col3:
-                st.metric("Apostas Ganhas", len(won_bets))
-    
-    # Team Management Tab
-    if st.session_state.user_type == 'team' and len(tabs) > 1:
-        with selected_tab[1]:
-            st.header("Gerenciar Time")
-            
-            team = st.session_state.user_team
-            
-            team_name = st.text_input("Nome do Time", value=team['name'])
-            rep_name = st.text_input("Nome do Representante", value=team['representative']['name'])
-            rep_phone = st.text_input("Telefone do Representante", value=team['representative']['phone'])
-            
-            if st.button("Atualizar Informações"):
-                team['name'] = team_name
-                team['representative']['name'] = rep_name
-                team['representative']['phone'] = rep_phone
-                
-                # Update user name if it's tied to the team
-                if st.session_state.current_user and st.session_state.current_user['teamId'] == team['id']:
-                    st.session_state.current_user['name'] = team_name
-                
-                # Save database
-                save_database()
-                
-                st.success("Informações atualizadas com sucesso!")
-    
-    # Players Management Tab
-    if st.session_state.user_type == 'team' and len(tabs) > 2:
-        with selected_tab[2]:
-            st.header("Gerenciar Jogadores")
-            
-            team = st.session_state.user_team
-            team_players = get_team_players(team['id'])
-            
-            st.subheader(f"Jogadores Registrados ({len(team_players)}/15)")
-            
-            if team_players:
-                player_data = []
-                for player in team_players:
-                    player_data.append({
-                        "ID": player['id'],
-                        "Nome": player['name'],
-                        "Data Nascimento": player['birthDate'],
-                        "Gols": get_player_goals(player['id'])
-                    })
-                
-                df = pd.DataFrame(player_data)
-                player_table = st.dataframe(df)
-                
-                # Edit and Remove functionality
-                selected_player_id = st.selectbox("Selecione um jogador para editar ou remover", 
-                                       options=[p['id'] for p in team_players],
-                                       format_func=lambda x: next((p['name'] for p in team_players if p['id'] == x), ""))
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if selected_player_id:
-                        selected_player = next((p for p in team_players if p['id'] == selected_player_id), None)
-                        
-                        if selected_player:
-                            edit_name = st.text_input("Nome do Jogador", value=selected_player['name'])
-                            edit_birth = st.date_input("Data de Nascimento", 
-                                                 value=datetime.datetime.strptime(selected_player['birthDate'], '%Y-%m-%d').date() 
-                                                 if selected_player['birthDate'] else datetime.date.today())
-                            
-                            if st.button("Salvar Alterações"):
-                                # Find player index in database
-                                player_index = next((i for i, p in enumerate(st.session_state.db['players']) 
-                                              if p['id'] == selected_player_id), None)
-                                
-                                if player_index is not None:
-                                    st.session_state.db['players'][player_index]['name'] = edit_name
-                                    st.session_state.db['players'][player_index]['birthDate'] = edit_birth.strftime('%Y-%m-%d')
-                                    
-                                    # Save database
-                                    save_database()
-                                    
-                                    st.success("Jogador atualizado com sucesso!")
-                                    st.rerun()
-                
-                with col2:
-                    if selected_player_id and st.button("Remover Jogador", type="primary"):
-                        # Confirm removal
-                        if st.checkbox("Confirma a remoção deste jogador?"):
-                            # Find player index in database
-                            st.session_state.db['players'] = [p for p in st.session_state.db['players'] if p['id'] != selected_player_id]
-                            
-                            # Save database
-                            save_database()
-                            
-                            st.success("Jogador removido com sucesso!")
-                            st.rerun()
-            
-            # Add player form
-            if len(team_players) < 15:
-                st.subheader("Adicionar Jogador")
-                
-                new_player_name = st.text_input("Nome Completo", key="new_player_name")
-                new_player_birth = st.date_input("Data de Nascimento", 
-                                           value=datetime.date.today())
-                
-                if st.button("Adicionar Jogador"):
-                    # Validate birth date for sub-13 category
-                    today = datetime.date.today()
-                    age = today.year - new_player_birth.year - ((today.month, today.day) < (new_player_birth.month, new_player_birth.day))
-                    
-                    if age >= 13:
-                        st.error("O jogador deve ter menos de 13 anos para esta categoria.")
-                    elif not new_player_name:
-                        st.error("O nome do jogador é obrigatório.")
-                    else:
-                        player_id = f"player_{team['id']}_{str(uuid.uuid4())[:8]}"
-                        
-                        new_player = {
-                            'id': player_id,
-                            'name': new_player_name,
-                            'teamId': team['id'],
-                            'birthDate': new_player_birth.strftime('%Y-%m-%d')
-                        }
-                        
-                        st.session_state.db['players'].append(new_player)
-                        
-                        # Save database
-                        save_database()
-                        
-                        st.success("Jogador adicionado com sucesso!")
-                        st.rerun()
-            else:
-                st.warning("Seu time já possui o máximo de 15 jogadores.")
-    
-    # Teams Management Tab (Admin)
-    if st.session_state.user_type == 'admin' and "Times" in tabs:
-        with selected_tab[tabs.index("Times")]:
-            st.header("Gerenciar Times")
-            
-            teams = st.session_state.db['teams']
-            
-            if teams:
-                team_data = []
-                for team in teams:
-                    team_data.append({
-                        "ID": team['id'],
-                        "Time": team['name'],
-                        "Representante": team['representative']['name'],
-                        "Contato": team['representative']['phone'],
-                        "Jogadores": len(get_team_players(team['id'])),
-                        "Pontos": team['points']
-                    })
-                
-                df = pd.DataFrame(team_data)
-                team_table = st.dataframe(df)
-                
-                # Team Actions
-                selected_team_id = st.selectbox("Selecione um time", 
-                                      options=[t['id'] for t in teams],
-                                      format_func=lambda x: next((t['name'] for t in teams if t['id'] == x), ""))
-                
-                if selected_team_id:
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        if st.button("Editar Time"):
-                            selected_team = next((t for t in teams if t['id'] == selected_team_id), None)
-                            
-                            if selected_team:
-                                edit_team_name = st.text_input("Nome do Time", value=selected_team['name'])
-                                edit_rep_name = st.text_input("Nome do Representante", value=selected_team['representative']['name'])
-                                edit_rep_phone = st.text_input("Telefone", value=selected_team['representative']['phone'])
-                                
-                                if st.button("Atualizar Alterações do Time"):
-                                    # Find team index in database
-                                    team_index = next((i for i, t in enumerate(st.session_state.db['teams']) 
-                                               if t['id'] == selected_team_id), None)
-                                    
-                                    if team_index is not None:
-                                        st.session_state.db['teams'][team_index]['name'] = edit_team_name
-                                        st.session_state.db['teams'][team_index]['representative']['name'] = edit_rep_name
-                                        st.session_state.db['teams'][team_index]['representative']['phone'] = edit_rep_phone
-                                        
-                                        # Update user name if it's tied to the team
-                                        team_user = next((u for u in st.session_state.db['users'] if u.get('teamId') == selected_team_id), None)
-                                        if team_user:
-                                            team_user['name'] = edit_team_name
-                                        
-                                        # Update match names
-                                        for match in st.session_state.db['matches']:
-                                            if match['teamAId'] == selected_team_id:
-                                                match['teamA'] = edit_team_name
-                                            elif match['teamBId'] == selected_team_id:
-                                                match['teamB'] = edit_team_name
-                                        
-                                        # Save database
-                                        save_database()
-                                        
-                                        st.success("Time atualizado com sucesso!")
-                                        st.rerun()
-                    
-                    with col2:
-                        if st.button("Ver Jogadores"):
-                            selected_team = next((t for t in teams if t['id'] == selected_team_id), None)
-                            team_players = get_team_players(selected_team_id)
-                            
-                            if selected_team and team_players:
-                                st.subheader(f"Jogadores do {selected_team['name']}")
-                                
-                                player_data = []
-                                for player in team_players:
-                                    player_data.append({
-                                        "Nome": player['name'],
-                                        "Data Nascimento": player['birthDate'],
-                                        "Gols": get_player_goals(player['id'])
-                                    })
-                                
-                                df = pd.DataFrame(player_data)
-                                st.dataframe(df)
-                            elif selected_team:
-                                st.info(f"O time {selected_team['name']} ainda não tem jogadores registrados.")
-                    
-                    with col3:
-                        if st.button("Remover Time", type="primary"):
-                            # Confirm removal
-                            if st.checkbox("Confirma a remoção deste time? Esta ação não pode ser desfeita."):
-                                # Find team index in database
-                                team_index = next((i for i, t in enumerate(st.session_state.db['teams']) 
-                                           if t['id'] == selected_team_id), None)
-                                
-                                if team_index is not None:
-                                    # Remove team
-                                    st.session_state.db['teams'].pop(team_index)
-                                    
-                                    # Remove team user account
-                                    st.session_state.db['users'] = [u for u in st.session_state.db['users'] 
-                                                              if not u.get('teamId') == selected_team_id]
-                                    
-                                    # Remove team players
-                                    st.session_state.db['players'] = [p for p in st.session_state.db['players'] 
-                                                               if p['teamId'] != selected_team_id]
-                                    
-                                    # Cancel future matches for this team
-                                    for match in st.session_state.db['matches']:
-                                        if (match['teamAId'] == selected_team_id or match['teamBId'] == selected_team_id) and not match.get('played', False):
-                                            match['cancelled'] = True
-                                    
-                                    # Save database
-                                    save_database()
-                                    
-                                    st.success("Time removido com sucesso!")
-                                    st.rerun()
-                
-                # Add new team
-                st.subheader("Adicionar Novo Time")
-                
-                new_team_name = st.text_input("Nome do Time", key="new_team_name")
-                new_rep_name = st.text_input("Nome do Representante", key="new_rep_name")
-                new_rep_phone = st.text_input("Telefone", key="new_rep_phone")
-                new_username = st.text_input("Nome de Usuário", key="new_username")
-                new_password = st.text_input("Senha", type="password", key="new_password")
-                
-                if st.button("Adicionar Time"):
-                    # Check if username already exists
-                    if any(u['username'] == new_username for u in st.session_state.db['users']):
-                        st.error("Este nome de usuário já está em uso.")
-                    elif not new_team_name or not new_rep_name or not new_rep_phone or not new_username or not new_password:
-                        st.error("Todos os campos são obrigatórios.")
-                    else:
-                        team_id = f"team_{len(st.session_state.db['teams']) + 1}"
-                        
-                        # Create team
-                        new_team = {
-                            'id': team_id,
-                            'name': new_team_name,
-                            'representative': {
-                                'name': new_rep_name,
-                                'phone': new_rep_phone
-                            },
-                            'points': 0,
-                            'games': 0,
-                            'wins': 0,
-                            'draws': 0,
-                            'losses': 0,
-                            'goalsFor': 0,
-                            'goalsAgainst': 0
-                        }
-                        
-                        st.session_state.db['teams'].append(new_team)
-                        
-                        # Create user account
-                        new_user = {
-                            'id': team_id,
-                            'username': new_username,
-                            'password': new_password,
-                            'type': 'team',
-                            'teamId': team_id,
-                            'name': new_team_name
-                        }
-                        
-                        st.session_state.db['users'].append(new_user)
-                        
-                        # Save database
-                        save_database()
-                        
-                        st.success("Time adicionado com sucesso!")
-                        st.rerun()
-            else:
-                st.info("Nenhum time cadastrado ainda.")
-                
-                # Add new team form here
-    
-    # Results Management Tab (Admin)
-    if st.session_state.user_type == 'admin' and "Resultados" in tabs:
-        with selected_tab[tabs.index("Resultados")]:
-            st.header("Gerenciar Resultados")
-            
-            subtab1, subtab2, subtab3 = st.tabs(["Próximos Jogos", "Jogos Completos", "Agendar Jogo"])
-            
-            with subtab1:
-                upcoming = get_upcoming_matches()
-                
-                if upcoming:
-                    for match in upcoming:
-                        with st.expander(f"{match['teamA']} vs {match['teamB']} - {match['date']}"):
-                            st.write(f"Data: {match['date']}")
-                            
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                if st.button("Adicionar Resultado", key=f"add_result_{match['id']}"):
-                                    st.session_state.selected_match = match
-                                    
-                                    score_a = st.number_input(f"Gols {match['teamA']}", min_value=0, value=0, key=f"score_a_{match['id']}")
-                                    score_b = st.number_input(f"Gols {match['teamB']}", min_value=0, value=0, key=f"score_b_{match['id']}")
-                                    
-                                    # Goals for team A
-                                    st.subheader(f"Gols de {match['teamA']}")
-                                    team_a_players = get_team_players(match['teamAId'])
-                                    
-                                    goals_a = []
-                                    for i in range(score_a):
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            player_a = st.selectbox(f"Jogador {i+1}", 
-                                                           options=[p['id'] for p in team_a_players],
-                                                           format_func=lambda x: next((p['name'] for p in team_a_players if p['id'] == x), ""),
-                                                           key=f"player_a_{match['id']}_{i}")
-                                        with col2:
-                                            goal_type_a = st.selectbox(f"Tipo de Gol {i+1}", 
-                                                              options=["normal", "penalty"],
-                                                              format_func=lambda x: "Gol normal" if x == "normal" else "Pênalti",
-                                                              key=f"goal_type_a_{match['id']}_{i}")
-                                        
-                                        goals_a.append({"playerId": player_a, "type": goal_type_a})
-                                    
-                                    # Goals for team B
-                                    st.subheader(f"Gols de {match['teamB']}")
-                                    team_b_players = get_team_players(match['teamBId'])
-                                    
-                                    goals_b = []
-                                    for i in range(score_b):
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            player_b = st.selectbox(f"Jogador {i+1}", 
-                                                           options=[p['id'] for p in team_b_players],
-                                                           format_func=lambda x: next((p['name'] for p in team_b_players if p['id'] == x), ""),
-                                                           key=f"player_b_{match['id']}_{i}")
-                                        with col2:
-                                            goal_type_b = st.selectbox(f"Tipo de Gol {i+1}", 
-                                                              options=["normal", "penalty"],
-                                                              format_func=lambda x: "Gol normal" if x == "normal" else "Pênalti",
-                                                              key=f"goal_type_b_{match['id']}_{i}")
-                                        
-                                        goals_b.append({"playerId": player_b, "type": goal_type_b})
-                                    
-                                    # Own goals
-                                    st.subheader("Gols Contra")
-                                    add_own_goal = st.checkbox("Adicionar gol contra", key=f"add_own_goal_{match['id']}")
-                                    
-                                    own_goals = []
-                                    if add_own_goal:
-                                        all_players = team_a_players + team_b_players
-                                        
-                                        own_goal_count = st.number_input("Número de gols contra", min_value=1, value=1, key=f"own_goal_count_{match['id']}")
-                                        
-                                        for i in range(own_goal_count):
-                                            col1, col2 = st.columns(2)
-                                            with col1:
-                                                player_own = st.selectbox(f"Jogador (gol contra) {i+1}", 
-                                                               options=[p['id'] for p in all_players],
-                                                               format_func=lambda x: next((p['name'] for p in all_players if p['id'] == x), ""),
-                                                               key=f"player_own_{match['id']}_{i}")
-                                            with col2:
-                                                for_team = st.selectbox(f"Gol para {i+1}", 
-                                                             options=[match['teamAId'], match['teamBId']],
-                                                             format_func=lambda x: match['teamA'] if x == match['teamAId'] else match['teamB'],
-                                                             key=f"for_team_{match['id']}_{i}")
-                                            
-                                            own_goals.append({"playerId": player_own, "forTeam": for_team})
-                                    
-                                    if st.button("Salvar Resultado", key=f"save_result_{match['id']}"):
-                                        # Find match in database
-                                        match_index = next((i for i, m in enumerate(st.session_state.db['matches']) 
-                                                    if m['id'] == match['id']), None)
-                                        
-                                        if match_index is not None:
-                                            # Update match data
-                                            st.session_state.db['matches'][match_index]['scoreA'] = score_a
-                                            st.session_state.db['matches'][match_index]['scoreB'] = score_b
-                                            st.session_state.db['matches'][match_index]['played'] = True
-                                            
-                                            # Update team stats
-                                            team_a = next((t for t in st.session_state.db['teams'] if t['id'] == match['teamAId']), None)
-                                            team_b = next((t for t in st.session_state.db['teams'] if t['id'] == match['teamBId']), None)
-                                            
-                                            if team_a and team_b:
-                                                team_a['games'] += 1
-                                                team_b['games'] += 1
-                                                
-                                                team_a['goalsFor'] += score_a
-                                                team_a['goalsAgainst'] += score_b
-                                                
-                                                team_b['goalsFor'] += score_b
-                                                team_b['goalsAgainst'] += score_a
-                                                
-                                                if score_a > score_b:
-                                                    team_a['wins'] += 1
-                                                    team_b['losses'] += 1
-                                                    team_a['points'] += 3
-                                                elif score_a < score_b:
-                                                    team_b['wins'] += 1
-                                                    team_a['losses'] += 1
-                                                    team_b['points'] += 3
-                                                else:
-                                                    team_a['draws'] += 1
-                                                    team_b['draws'] += 1
-                                                    team_a['points'] += 1
-                                                    team_b['points'] += 1
-                                            
-                                            # Add goals
-                                            # Remove existing goals for this match first
-                                            st.session_state.db['goals'] = [g for g in st.session_state.db['goals'] if g['matchId'] != match['id']]
-                                            
-                                            # Add team A goals
-                                            for i, goal in enumerate(goals_a):
-                                                if goal['playerId']:
-                                                    st.session_state.db['goals'].append({
-                                                        'id': f"goal_{match['id']}_A_{i}",
-                                                        'matchId': match['id'],
-                                                        'playerId': goal['playerId'],
-                                                        'teamId': match['teamAId'],
-                                                        'type': goal['type']
-                                                    })
-                                            
-                                            # Add team B goals
-                                            for i, goal in enumerate(goals_b):
-                                                if goal['playerId']:
-                                                    st.session_state.db['goals'].append({
-                                                        'id': f"goal_{match['id']}_B_{i}",
-                                                        'matchId': match['id'],
-                                                        'playerId': goal['playerId'],
-                                                        'teamId': match['teamBId'],
-                                                        'type': goal['type']
-                                                    })
-                                            
-                                            # Add own goals
-                                            for i, goal in enumerate(own_goals):
-                                                if goal['playerId']:
-                                                    player = get_player_by_id(goal['playerId'])
-                                                    if player:
-                                                        st.session_state.db['goals'].append({
-                                                            'id': f"owngoal_{match['id']}_{i}",
-                                                            'matchId': match['id'],
-                                                            'playerId': goal['playerId'],
-                                                            'teamId': player['teamId'],
-                                                            'type': 'own',
-                                                            'forTeamId': goal['forTeam']
-                                                        })
-                                            
-                                            # Save database
-                                            save_database()
-                                            
-                                            st.success("Resultado registrado com sucesso!")
-                                            st.rerun()
-                            
-                            with col2:
-                                if st.button("Cancelar Jogo", key=f"cancel_{match['id']}"):
-                                    if st.checkbox(f"Confirma o cancelamento do jogo {match['teamA']} vs {match['teamB']}?"):
-                                        # Find match index in database
-                                        st.session_state.db['matches'] = [m for m in st.session_state.db['matches'] if m['id'] != match['id']]
-                                        
-                                        # Save database
-                                        save_database()
-                                        
-                                        st.success("Jogo cancelado com sucesso!")
-                                        st.rerun()
-                else:
-                    st.info("Não há jogos agendados no momento.")
-            
-            with subtab2:
-                completed = get_completed_matches()
-                
-                if completed:
-                    for match in completed:
-                        with st.expander(f"{match['teamA']} {match['scoreA']} x {match['scoreB']} {match['teamB']} - {match['date']}"):
-                            st.write(f"Data: {match['date']}")
-                            
-                            # Show match goals
-                            match_goals = [g for g in st.session_state.db['goals'] if g['matchId'] == match['id']]
-                            if match_goals:
-                                st.subheader("Gols:")
-                                for goal in match_goals:
-                                    player = get_player_by_id(goal['playerId'])
-                                    team = get_team_by_id(goal['teamId'])
-                                    
-                                    if goal['type'] == 'own':
-                                        for_team = get_team_by_id(goal['forTeamId'])
-                                        st.write(f"{player['name']} ({team['name']}) - Gol contra para {for_team['name']}")
-                                    else:
-                                        st.write(f"{player['name']} ({team['name']}) - Gol {'de pênalti' if goal['type'] == 'penalty' else 'normal'}")
-                else:
-                    st.info("Nenhum jogo realizado ainda.")
-            
-            with subtab3:
-                st.subheader("Agendar Novo Jogo")
-                
-                teams = st.session_state.db['teams']
-                
-                team_a_idx = st.selectbox("Time A", 
-                           options=range(len(teams)),
-                           format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
-                
-                team_b_idx = st.selectbox("Time B", 
-                           options=range(len(teams)),
-                           format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
-                
-                match_date = st.date_input("Data do Jogo", 
-                            value=datetime.date.today())
-                
-                match_time = st.time_input("Horário", 
-                            value=datetime.time(15, 0))
-                
-                if st.button("Agendar Jogo"):
-                    if team_a_idx == team_b_idx:
-                        st.error("Os times devem ser diferentes.")
-                    elif team_a_idx >= len(teams) or team_b_idx >= len(teams):
-                        st.error("Selecione times válidos.")
-                    else:
-                        team_a = teams[team_a_idx]
-                        team_b = teams[team_b_idx]
-                        
-                        match_datetime = datetime.datetime.combine(match_date, match_time)
-                        formatted_date = match_datetime.strftime('%d/%m/%Y %H:%M')
-                        
-                        new_match = {
-                            'id': f"match_{len(st.session_state.db['matches']) + 1}",
-                            'teamAId': team_a['id'],
-                            'teamBId': team_b['id'],
-                            'teamA': team_a['name'],
-                            'teamB': team_b['name'],
-                            'date': formatted_date,
-                            'played': False
-                        }
-                        
-                        st.session_state.db['matches'].append(new_match)
-                        
-                        # Save database
-                        save_database()
-                        
-                        st.success("Jogo agendado com sucesso!")
-                        st.rerun()
-
-def render_settings():
-    st.title("Configurações")
-    
-    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
-        st.error("Acesso restrito ao administrador.")
-        return
-    
-    st.subheader("Configurações do Sistema")
-    
-    # Backup and restore
-    if st.button("Fazer Backup do Banco de Dados"):
-        with open('database_backup.json', 'w') as f:
-            json.dump(st.session_state.db, f)
-        st.success("Backup realizado com sucesso!")
-    
-    # Reset database
-    if st.button("Limpar todos os dados", type="primary"):
-        if st.checkbox("Confirma que deseja limpar todos os dados? Esta ação não pode ser desfeita."):
-            st.session_state.db = {
-                'users': [
-                    {
-                        'id': 'admin',
-                        'username': 'admin',
-                        'password': '2312',
-                        'type': 'admin',
-                        'name': 'Administrador'
-                    }
-                ],
-                'teams': [],
-                'players': [],
-                'matches': [],
-                'bets': [],
-                'userBets': [],
-                'goals': []
-            }
-            save_database()
-            st.success("Banco de dados limpo com sucesso!")
-            st.rerun()
-
-def render_teams():
-    st.title("Gerenciar Times")
-    
-    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
-        st.error("Acesso restrito ao administrador.")
-        return
-    
-    teams = st.session_state.db['teams']
-    
-    if teams:
-        team_data = []
-        for team in teams:
-            team_data.append({
-                "ID": team['id'],
-                "Time": team['name'],
-                "Representante": team['representative']['name'],
-                "Contato": team['representative']['phone'],
-                "Jogadores": len(get_team_players(team['id'])),
-                "Pontos": team['points']
-            })
-        
-        df = pd.DataFrame(team_data)
-        team_table = st.dataframe(df, use_container_width=True)
-        
-        # Team Actions
-        selected_team_id = st.selectbox("Selecione um time para gerenciar", 
-                                      options=[t['id'] for t in teams],
-                                      format_func=lambda x: next((t['name'] for t in teams if t['id'] == x), ""))
-        
-        if selected_team_id:
-            tab1, tab2, tab3 = st.tabs(["Informações do Time", "Jogadores", "Ações"])
-            
-            with tab1:
-                selected_team = next((t for t in teams if t['id'] == selected_team_id), None)
-                
-                if selected_team:
-                    with st.form("edit_team_form"):
-                        edit_team_name = st.text_input("Nome do Time", value=selected_team['name'])
-                        edit_rep_name = st.text_input("Nome do Representante", value=selected_team['representative']['name'])
-                        edit_rep_phone = st.text_input("Telefone", value=selected_team['representative']['phone'])
-                        
-                        if st.form_submit_button("Atualizar Time"):
-                            # Find team index in database
-                            team_index = next((i for i, t in enumerate(st.session_state.db['teams']) 
-                                       if t['id'] == selected_team_id), None)
-                            
-                            if team_index is not None:
-                                st.session_state.db['teams'][team_index]['name'] = edit_team_name
-                                st.session_state.db['teams'][team_index]['representative']['name'] = edit_rep_name
-                                st.session_state.db['teams'][team_index]['representative']['phone'] = edit_rep_phone
-                                
-                                # Update user name if it's tied to the team
-                                team_user = next((u for u in st.session_state.db['users'] if u.get('teamId') == selected_team_id), None)
-                                if team_user:
-                                    team_user_index = next((i for i, u in enumerate(st.session_state.db['users']) 
-                                                   if u['id'] == team_user['id']), None)
-                                    if team_user_index is not None:
-                                        st.session_state.db['users'][team_user_index]['name'] = edit_team_name
-                                
-                                # Update match names
-                                for i, match in enumerate(st.session_state.db['matches']):
-                                    if match['teamAId'] == selected_team_id:
-                                        st.session_state.db['matches'][i]['teamA'] = edit_team_name
-                                    elif match['teamBId'] == selected_team_id:
-                                        st.session_state.db['matches'][i]['teamB'] = edit_team_name
-                                
-                                # Save database
-                                save_database()
-                                
-                                st.success("Time atualizado com sucesso!")
-                                st.rerun()
-            
-            with tab2:
-                team_players = get_team_players(selected_team_id)
-                
-                if team_players:
-                    st.subheader(f"Jogadores do Time ({len(team_players)}/15)")
-                    
-                    player_df = pd.DataFrame([
-                        {"ID": p['id'], "Nome": p['name'], "Data Nascimento": p['birthDate'], "Gols": get_player_goals(p['id'])}
-                        for p in team_players
-                    ])
-                    
-                    st.dataframe(player_df, use_container_width=True)
-                    
-                    # Player management
-                    player_id = st.selectbox("Selecione um jogador para editar", 
-                                   options=[p['id'] for p in team_players],
-                                   format_func=lambda x: next((p['name'] for p in team_players if p['id'] == x), ""))
-                    
-                    if player_id:
-                        player = next((p for p in team_players if p['id'] == player_id), None)
-                        
-                        if player:
-                            with st.form("edit_player_form"):
-                                edit_player_name = st.text_input("Nome do Jogador", value=player['name'])
-                                edit_player_birth = st.date_input("Data de Nascimento", 
-                                             value=datetime.datetime.strptime(player['birthDate'], '%Y-%m-%d').date() 
-                                                  if player['birthDate'] else datetime.date.today())
-                                
-                                if st.form_submit_button("Atualizar Jogador"):
-                                    # Find player index in database
-                                    player_index = next((i for i, p in enumerate(st.session_state.db['players']) 
-                                              if p['id'] == player_id), None)
-                                    
-                                    if player_index is not None:
-                                        st.session_state.db['players'][player_index]['name'] = edit_player_name
-                                        st.session_state.db['players'][player_index]['birthDate'] = edit_player_birth.strftime('%Y-%m-%d')
-                                        
-                                        # Save database
-                                        save_database()
-                                        
-                                        st.success("Jogador atualizado com sucesso!")
-                                        st.rerun()
-                    
-                    # Add player section
-                    if len(team_players) < 15:
-                        st.subheader("Adicionar Novo Jogador")
-                        
-                        with st.form("add_player_form"):
-                            new_player_name = st.text_input("Nome do Jogador")
-                            new_player_birth = st.date_input("Data de Nascimento", 
-                                           value=datetime.date.today() - datetime.timedelta(days=365*10))
-                            
-                            if st.form_submit_button("Adicionar Jogador"):
-                                if not new_player_name:
-                                    st.error("O nome do jogador é obrigatório.")
-                                else:
-                                    player_id = f"player_{selected_team_id}_{str(uuid.uuid4())[:8]}"
-                                    
-                                    new_player = {
-                                        'id': player_id,
-                                        'name': new_player_name,
-                                        'teamId': selected_team_id,
-                                        'birthDate': new_player_birth.strftime('%Y-%m-%d')
-                                    }
-                                    
-                                    st.session_state.db['players'].append(new_player)
-                                    save_database()
-                                    
-                                    st.success("Jogador adicionado com sucesso!")
-                                    st.rerun()
-                else:
-                    st.info("Este time não tem jogadores registrados.")
-                    
-                    st.subheader("Adicionar Jogadores")
-                    with st.form("add_initial_players"):
-                        st.write("Adicione pelo menos 5 jogadores para o time:")
-                        
-                        players = []
-                        for i in range(5):  # Minimum 5 players
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                player_name = st.text_input(f"Nome do Jogador {i+1}", key=f"new_player_{i}")
-                            with col2:
-                                player_birth = st.date_input(f"Data de Nascimento {i+1}", 
-                                          value=datetime.date.today() - datetime.timedelta(days=365*10),
-                                          key=f"new_birth_{i}")
-                            
-                            players.append({"name": player_name, "birth": player_birth})
-                        
-                        if st.form_submit_button("Adicionar Jogadores"):
-                            if not all(p["name"] for p in players):
-                                st.error("Todos os jogadores precisam ter um nome.")
-                            else:
-                                for i, player in enumerate(players):
-                                    player_id = f"player_{selected_team_id}_{str(uuid.uuid4())[:8]}"
-                                    
-                                    new_player = {
-                                        'id': player_id,
-                                        'name': player["name"],
-                                        'teamId': selected_team_id,
-                                        'birthDate': player["birth"].strftime('%Y-%m-%d')
-                                    }
-                                    
-                                    st.session_state.db['players'].append(new_player)
-                                
-                                save_database()
-                                st.success("Jogadores adicionados com sucesso!")
-                                st.rerun()
-            
-            with tab3:
-                st.subheader("Ações do Time")
-                
-                if st.button("Excluir Time", type="primary"):
-                    if st.checkbox("Confirma a exclusão do time? Esta ação não pode ser desfeita e removerá todos os jogadores."):
-                        # Remove team
-                        st.session_state.db['teams'] = [t for t in st.session_state.db['teams'] if t['id'] != selected_team_id]
-                        
-                        # Remove team user
-                        st.session_state.db['users'] = [u for u in st.session_state.db['users'] 
-                                                 if not u.get('teamId') == selected_team_id]
-                        
-                        # Remove players
-                        st.session_state.db['players'] = [p for p in st.session_state.db['players'] 
-                                                  if p['teamId'] != selected_team_id]
-                        
-                        # Cancel future matches
-                        for i, match in enumerate(st.session_state.db['matches']):
-                            if (match['teamAId'] == selected_team_id or match['teamBId'] == selected_team_id) and not match.get('played', False):
-                                st.session_state.db['matches'][i]['cancelled'] = True
-                        
-                        save_database()
-                        st.success("Time removido com sucesso!")
-                        st.rerun()
-        
-        # Add team button
-        if st.button("Adicionar Novo Time"):
-            st.session_state.page = 'register_team'
-            st.rerun()
-    else:
-        st.info("Não há times cadastrados.")
-        
-        if st.button("Adicionar Novo Time"):
-            st.session_state.page = 'register_team'
-            st.rerun()
-
-def render_results():
-    st.title("Gerenciar Resultados")
-    
-    if not st.session_state.logged_in or st.session_state.user_type != 'admin':
-        st.error("Acesso restrito ao administrador.")
-        return
-        
-    subtab1, subtab2, subtab3 = st.tabs(["Próximos Jogos", "Jogos Completos", "Agendar Jogo"])
-    
-    with subtab1:
-        upcoming = get_upcoming_matches()
-        
-        if upcoming:
-            for match in upcoming:
-                with st.expander(f"{match['teamA']} vs {match['teamB']} - {match['date']}"):
-                    st.write(f"Data: {match['date']}")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if st.button("Adicionar Resultado", key=f"add_result_{match['id']}"):
-                            st.session_state.selected_match = match
-                            
-                            score_a = st.number_input(f"Gols {match['teamA']}", min_value=0, value=0, key=f"score_a_{match['id']}")
-                            score_b = st.number_input(f"Gols {match['teamB']}", min_value=0, value=0, key=f"score_b_{match['id']}")
-                            
-                            # Goals for team A
-                            st.subheader(f"Gols de {match['teamA']}")
-                            team_a_players = get_team_players(match['teamAId'])
-                            
-                            goals_a = []
-                            for i in range(score_a):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    player_a = st.selectbox(f"Jogador {i+1}", 
-                                                           options=[p['id'] for p in team_a_players],
-                                                           format_func=lambda x: next((p['name'] for p in team_a_players if p['id'] == x), ""),
-                                                           key=f"player_a_{match['id']}_{i}")
-                                with col2:
-                                    goal_type_a = st.selectbox(f"Tipo de Gol {i+1}", 
-                                                              options=["normal", "penalty"],
-                                                              format_func=lambda x: "Gol normal" if x == "normal" else "Pênalti",
-                                                              key=f"goal_type_a_{match['id']}_{i}")
-                                
-                                goals_a.append({"playerId": player_a, "type": goal_type_a})
-                            
-                            # Goals for team B
-                            st.subheader(f"Gols de {match['teamB']}")
-                            team_b_players = get_team_players(match['teamBId'])
-                            
-                            goals_b = []
-                            for i in range(score_b):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    player_b = st.selectbox(f"Jogador {i+1}", 
-                                                           options=[p['id'] for p in team_b_players],
-                                                           format_func=lambda x: next((p['name'] for p in team_b_players if p['id'] == x), ""),
-                                                           key=f"player_b_{match['id']}_{i}")
-                                with col2:
-                                    goal_type_b = st.selectbox(f"Tipo de Gol {i+1}", 
-                                                              options=["normal", "penalty"],
-                                                              format_func=lambda x: "Gol normal" if x == "normal" else "Pênalti",
-                                                              key=f"goal_type_b_{match['id']}_{i}")
-                                
-                                goals_b.append({"playerId": player_b, "type": goal_type_b})
-                            
-                            # Own goals
-                            st.subheader("Gols Contra")
-                            add_own_goal = st.checkbox("Adicionar gol contra", key=f"add_own_goal_{match['id']}")
-                            
-                            own_goals = []
-                            if add_own_goal:
-                                all_players = team_a_players + team_b_players
-                                
-                                own_goal_count = st.number_input("Número de gols contra", min_value=1, value=1, key=f"own_goal_count_{match['id']}")
-                                
-                                for i in range(own_goal_count):
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        player_own = st.selectbox(f"Jogador (gol contra) {i+1}", 
-                                                               options=[p['id'] for p in all_players],
-                                                               format_func=lambda x: next((p['name'] for p in all_players if p['id'] == x), ""),
-                                                               key=f"player_own_{match['id']}_{i}")
-                                    with col2:
-                                        for_team = st.selectbox(f"Gol para {i+1}", 
-                                                             options=[match['teamAId'], match['teamBId']],
-                                                             format_func=lambda x: match['teamA'] if x == match['teamAId'] else match['teamB'],
-                                                             key=f"for_team_{match['id']}_{i}")
-                                    
-                                    own_goals.append({"playerId": player_own, "forTeam": for_team})
-                            
-                            if st.button("Salvar Resultado", key=f"save_result_{match['id']}"):
-                                # Find match in database
-                                match_index = next((i for i, m in enumerate(st.session_state.db['matches']) 
-                                            if m['id'] == match['id']), None)
-                                
-                                if match_index is not None:
-                                    # Update match data
-                                    st.session_state.db['matches'][match_index]['scoreA'] = score_a
-                                    st.session_state.db['matches'][match_index]['scoreB'] = score_b
-                                    st.session_state.db['matches'][match_index]['played'] = True
-                                    
-                                    # Update team stats
-                                    team_a = next((t for t in st.session_state.db['teams'] if t['id'] == match['teamAId']), None)
-                                    team_b = next((t for t in st.session_state.db['teams'] if t['id'] == match['teamBId']), None)
-                                    
-                                    if team_a and team_b:
-                                        team_a['games'] += 1
-                                        team_b['games'] += 1
-                                        
-                                        team_a['goalsFor'] += score_a
-                                        team_a['goalsAgainst'] += score_b
-                                        
-                                        team_b['goalsFor'] += score_b
-                                        team_b['goalsAgainst'] += score_a
-                                        
-                                        if score_a > score_b:
-                                            team_a['wins'] += 1
-                                            team_b['losses'] += 1
-                                            team_a['points'] += 3
-                                        elif score_a < score_b:
-                                            team_b['wins'] += 1
-                                            team_a['losses'] += 1
-                                            team_b['points'] += 3
-                                        else:
-                                            team_a['draws'] += 1
-                                            team_b['draws'] += 1
-                                            team_a['points'] += 1
-                                            team_b['points'] += 1
-                                    
-                                    # Add goals
-                                    # Remove existing goals for this match first
-                                    st.session_state.db['goals'] = [g for g in st.session_state.db['goals'] if g['matchId'] != match['id']]
-                                    
-                                    # Add team A goals
-                                    for i, goal in enumerate(goals_a):
-                                        if goal['playerId']:
-                                            st.session_state.db['goals'].append({
-                                                'id': f"goal_{match['id']}_A_{i}",
-                                                'matchId': match['id'],
-                                                'playerId': goal['playerId'],
-                                                'teamId': match['teamAId'],
-                                                'type': goal['type']
-                                            })
-                                    
-                                    # Add team B goals
-                                    for i, goal in enumerate(goals_b):
-                                        if goal['playerId']:
-                                            st.session_state.db['goals'].append({
-                                                'id': f"goal_{match['id']}_B_{i}",
-                                                'matchId': match['id'],
-                                                'playerId': goal['playerId'],
-                                                'teamId': match['teamBId'],
-                                                'type': goal['type']
-                                            })
-                                    
-                                    # Add own goals
-                                    for i, goal in enumerate(own_goals):
-                                        if goal['playerId']:
-                                            player = get_player_by_id(goal['playerId'])
-                                            if player:
-                                                st.session_state.db['goals'].append({
-                                                    'id': f"owngoal_{match['id']}_{i}",
-                                                    'matchId': match['id'],
-                                                    'playerId': goal['playerId'],
-                                                    'teamId': player['teamId'],
-                                                    'type': 'own',
-                                                    'forTeamId': goal['forTeam']
-                                                })
-                                    
-                                    # Save database
-                                    save_database()
-                                    
-                                    st.success("Resultado registrado com sucesso!")
-                                    st.rerun()
-                    
-                    with col2:
-                        if st.button("Cancelar Jogo", key=f"cancel_{match['id']}"):
-                            if st.checkbox(f"Confirma o cancelamento do jogo {match['teamA']} vs {match['teamB']}?"):
-                                # Find match index in database
-                                st.session_state.db['matches'] = [m for m in st.session_state.db['matches'] if m['id'] != match['id']]
-                                
-                                # Save database
-                                save_database()
-                                
-                                st.success("Jogo cancelado com sucesso!")
-                                st.rerun()
-            else:
-                st.info("Não há jogos agendados no momento.")
-        
-    with subtab2:
-        completed = get_completed_matches()
-        
-        if completed:
-            for match in completed:
-                with st.expander(f"{match['teamA']} {match['scoreA']} x {match['scoreB']} {match['teamB']} - {match['date']}"):
-                    st.write(f"Data: {match['date']}")
-                    
-                    # Show match goals
-                    match_goals = [g for g in st.session_state.db['goals'] if g['matchId'] == match['id']]
-                    if match_goals:
-                        st.subheader("Gols:")
-                        for goal in match_goals:
-                            player = get_player_by_id(goal['playerId'])
-                            team = get_team_by_id(goal['teamId'])
-                            
-                            if goal['type'] == 'own':
-                                for_team = get_team_by_id(goal['forTeamId'])
-                                st.write(f"{player['name']} ({team['name']}) - Gol contra para {for_team['name']}")
-                            else:
-                                st.write(f"{player['name']} ({team['name']}) - Gol {'de pênalti' if goal['type'] == 'penalty' else 'normal'}")
-        else:
-            st.info("Nenhum jogo realizado ainda.")
-        
-    with subtab3:
-        st.subheader("Agendar Novo Jogo")
-        
-        teams = st.session_state.db['teams']
-        
-        team_a_idx = st.selectbox("Time A", 
-                           options=range(len(teams)),
-                           format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
-        
-        team_b_idx = st.selectbox("Time B", 
-                           options=range(len(teams)),
-                           format_func=lambda x: teams[x]['name'] if x < len(teams) else "Selecione um time")
-        
-        match_date = st.date_input("Data do Jogo", 
-                            value=datetime.date.today())
-        
-        match_time = st.time_input("Horário", 
-                            value=datetime.time(15, 0))
-        
-        if st.button("Agendar Jogo"):
-            if team_a_idx == team_b_idx:
-                st.error("Os times devem ser diferentes.")
-            elif team_a_idx >= len(teams) or team_b_idx >= len(teams):
-                st.error("Selecione times válidos.")
-            else:
-                team_a = teams[team_a_idx]
-                team_b = teams[team_b_idx]
-                
-                match_datetime = datetime.datetime.combine(match_date, match_time)
-                formatted_date = match_datetime.strftime('%d/%m/%Y %H:%M')
-                
-                new_match = {
-                    'id': f"match_{len(st.session_state.db['matches']) + 1}",
-                    'teamAId': team_a['id'],
-                    'teamBId': team_b['id'],
-                    'teamA': team_a['name'],
-                    'teamB': team_b['name'],
-                    'date': formatted_date,
-                    'played': False
-                }
-                
-                st.session_state.db['matches'].append(new_match)
-                
-                # Save database
-                save_database()
-                
-                st.success("Jogo agendado com sucesso!")
-                st.rerun()
-
-def main():
-    # Render sidebar for navigation
-    render_sidebar()
-    
-    # Main content area based on current page
-    if st.session_state.page == 'home':
-        render_home()
-    elif st.session_state.page == 'classification':
-        render_classification()
-    elif st.session_state.page == 'topScorers':
-        render_top_scorers()
-    elif st.session_state.page == 'matches':
-        render_matches()
-    elif st.session_state.page == 'login':
-        render_login()
-    elif st.session_state.page == 'dashboard':
-        render_dashboard()
-    elif st.session_state.page == 'teams':
-        render_teams()
-    elif st.session_state.page == 'settings':
-        render_settings()
-    elif st.session_state.page == 'my_team':
-        render_my_team()
-    elif st.session_state.page == 'players':
-        render_dashboard()  # Players tab is inside dashboard
-    elif st.session_state.page == 'stats':
-        render_dashboard()  # Stats tab is inside dashboard
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()  # Cria as tabelas antes de rodar o servidor
+    app.run(debug=True, host='0.0.0.0', port=5000)
