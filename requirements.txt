@@ -10,5 +10,4 @@ requests
 streamlit_option_menu
 Flask
 Flask-SQLAlchemy
-Werkzeug
-
+Werkzgunicorn
