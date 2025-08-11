@@ -216,7 +216,7 @@ if 'logged_in' not in st.session_state:
 
 def login_page():
     """Página de login e registro."""
-    st.title("Bem-vindo ao GuimaBet!")
+    st.title("Bem-vindo ao PrimaBet!")
     
     tab1, tab2 = st.tabs(["Entrar", "Registrar"])
     
