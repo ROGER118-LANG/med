@@ -65,10 +65,7 @@ def add_match(team1_id, team2_id, date, time):
     finally:
         conn.close()
 
-# --- NOVAS FUNÇÕES PARA APOSTAS PERSONALIZADAS ---
-
 def add_custom_bet(match_id, description, odds):
-    """Adiciona uma nova aposta personalizada criada pelo admin."""
     conn = db_connect()
     try:
         conn.execute("INSERT INTO custom_bets (match_id, description, odds, status) VALUES (?, ?, ?, 'pending')",
@@ -82,42 +79,29 @@ def add_custom_bet(match_id, description, odds):
         conn.close()
 
 def get_active_custom_bets():
-    """Busca todas as apostas personalizadas com status 'pending'."""
     conn = db_connect()
     bets = [dict(row) for row in conn.execute("SELECT * FROM custom_bets WHERE status = 'pending' ORDER BY id DESC").fetchall()]
     conn.close()
     return bets
 
 def resolve_custom_bet(bet_id, result):
-    """Resolve uma aposta personalizada e atualiza as apostas dos usuários."""
     conn = db_connect()
     c = conn.cursor()
     try:
-        # Pega a odd da aposta personalizada
         bet_info = c.execute("SELECT odds FROM custom_bets WHERE id = ?", (bet_id,)).fetchone()
         if not bet_info:
             st.error("Aposta personalizada não encontrada.")
             return False
-        
         odds = bet_info['odds']
-
-        # Atualiza o status da aposta personalizada
         c.execute("UPDATE custom_bets SET status = ? WHERE id = ?", (result, bet_id))
-
-        # Se o resultado for 'ganha', paga os usuários
         if result == 'won':
-            # Encontra todas as apostas de usuários para esta aposta personalizada
             user_bets = c.execute("SELECT id, user_id, amount FROM bets WHERE custom_bet_id = ? AND status = 'pending'", (bet_id,)).fetchall()
             for user_bet in user_bets:
                 winnings = user_bet['amount'] * odds
-                # Devolve o valor apostado + o lucro
                 c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings, user_bet['user_id']))
                 c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (user_bet['id'],))
-        
-        # Se for 'lost', apenas atualiza o status das apostas dos usuários
         elif result == 'lost':
             c.execute("UPDATE bets SET status = 'lost' WHERE custom_bet_id = ? AND status = 'pending'", (bet_id,))
-
         conn.commit()
         return True
     except Exception as e:
@@ -127,8 +111,63 @@ def resolve_custom_bet(bet_id, result):
     finally:
         conn.close()
 
+# --- NOVAS FUNÇÕES PARA GERENCIAR TIMES ---
 
-# --- Páginas do Painel de Administrador (com manage_custom_bets_page implementada) ---
+def add_team(name):
+    """Adiciona um novo time ao banco de dados."""
+    if not name:
+        return False, "O nome do time não pode ser vazio."
+    conn = db_connect()
+    try:
+        conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+        conn.commit()
+        return True, f"Time '{name}' adicionado com sucesso."
+    except sqlite3.IntegrityError:
+        return False, f"O time '{name}' já existe."
+    except Exception as e:
+        return False, f"Erro ao adicionar time: {e}"
+    finally:
+        conn.close()
+
+def update_team_name(team_id, new_name):
+    """Atualiza o nome de um time existente."""
+    if not new_name:
+        return False, "O novo nome não pode ser vazio."
+    conn = db_connect()
+    try:
+        conn.execute("UPDATE teams SET name = ? WHERE id = ?", (new_name, team_id))
+        conn.commit()
+        return True, "Nome do time atualizado com sucesso."
+    except sqlite3.IntegrityError:
+        return False, f"O nome '{new_name}' já pertence a outro time."
+    except Exception as e:
+        return False, f"Erro ao atualizar o nome: {e}"
+    finally:
+        conn.close()
+
+def delete_team(team_id):
+    """Deleta um time do banco de dados."""
+    conn = db_connect()
+    try:
+        # VERIFICAÇÃO: Não deletar time se ele estiver em uma partida futura.
+        in_match = conn.execute("SELECT COUNT(*) FROM matches WHERE (team1_id = ? OR team2_id = ?) AND status = 'upcoming'", (team_id, team_id)).fetchone()[0]
+        if in_match > 0:
+            return False, "Não é possível deletar o time, pois ele está escalado em uma partida futura."
+        
+        # Deletar jogadores associados (opcional, mas recomendado)
+        conn.execute("DELETE FROM players WHERE team_id = ?", (team_id,))
+        # Deletar o time
+        conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+        conn.commit()
+        return True, "Time e jogadores associados foram deletados com sucesso."
+    except Exception as e:
+        conn.rollback()
+        return False, f"Erro ao deletar o time: {e}"
+    finally:
+        conn.close()
+
+
+# --- Páginas do Painel de Administrador (com manage_teams_players_page implementada) ---
 
 def dashboard_page():
     st.header("📊 Dashboard do Administrador")
@@ -179,11 +218,8 @@ def manage_odds_page():
     st.header("🎯 Gerenciar Odds")
     st.info("A funcionalidade de gerenciamento de odds será implementada aqui.")
 
-# --- PÁGINA DE APOSTAS PERSONALIZADAS IMPLEMENTADA ---
 def manage_custom_bets_page():
     st.header("🎲 Gerenciar Apostas Personalizadas")
-
-    # 1. Formulário para criar uma nova aposta personalizada
     st.subheader("Criar Nova Aposta Personalizada")
     upcoming_matches = get_upcoming_matches()
     if not upcoming_matches:
@@ -194,7 +230,6 @@ def manage_custom_bets_page():
             selected_match_str = st.selectbox("Selecione a Partida", options=list(match_dict.keys()))
             description = st.text_input("Descrição da Aposta", placeholder="Ex: Algum jogador vai marcar um gol de bicicleta?")
             odds = st.number_input("Odds", min_value=1.01, value=2.0, step=0.1)
-            
             submitted = st.form_submit_button("Criar Aposta")
             if submitted:
                 if not description:
@@ -204,10 +239,7 @@ def manage_custom_bets_page():
                     if add_custom_bet(match_id, description, odds):
                         st.success("Aposta personalizada criada com sucesso!")
                         st.rerun()
-
     st.divider()
-
-    # 2. Listar e resolver apostas personalizadas ativas
     st.subheader("Apostas Personalizadas Ativas")
     active_bets = get_active_custom_bets()
     if not active_bets:
@@ -216,20 +248,16 @@ def manage_custom_bets_page():
         for bet in active_bets:
             with st.container(border=True):
                 st.write(f"**ID da Aposta:** {bet['id']} | **Partida ID:** {bet['match_id']}")
-                st.write(f"**Descrição:** {bet['description']}")
-                st.write(f"**Odds:** {bet['odds']}")
-                
+                st.write(f"**Descrição:** {bet['description']} | **Odds:** {bet['odds']}")
                 col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✔️ Marcar como GANHA", key=f"win_{bet['id']}", use_container_width=True):
-                        if resolve_custom_bet(bet['id'], 'won'):
-                            st.success(f"Aposta {bet['id']} resolvida como 'Ganha'. Pagamentos processados.")
-                            st.rerun()
-                with col2:
-                    if st.button("❌ Marcar como PERDIDA", key=f"lose_{bet['id']}", use_container_width=True):
-                        if resolve_custom_bet(bet['id'], 'lost'):
-                            st.warning(f"Aposta {bet['id']} resolvida como 'Perdida'.")
-                            st.rerun()
+                if col1.button("✔️ Marcar como GANHA", key=f"win_{bet['id']}", use_container_width=True):
+                    if resolve_custom_bet(bet['id'], 'won'):
+                        st.success(f"Aposta {bet['id']} resolvida como 'Ganha'.")
+                        st.rerun()
+                if col2.button("❌ Marcar como PERDIDA", key=f"lose_{bet['id']}", use_container_width=True):
+                    if resolve_custom_bet(bet['id'], 'lost'):
+                        st.warning(f"Aposta {bet['id']} resolvida como 'Perdida'.")
+                        st.rerun()
 
 def manage_proposals_page():
     st.header("💡 Propostas de Usuários")
@@ -259,9 +287,78 @@ def manage_users_page():
     else:
         st.info("Nenhum usuário encontrado.")
 
+# --- PÁGINA DE TIMES E JOGADORES IMPLEMENTADA ---
 def manage_teams_players_page():
-    st.header("🏆 Times e Jogadores")
-    st.info("A funcionalidade de gerenciamento de times e jogadores será implementada aqui.")
+    st.header("🏆 Gerenciar Times")
+
+    # 1. Formulário para adicionar um novo time
+    st.subheader("Adicionar Novo Time")
+    with st.form("add_team_form", clear_on_submit=True):
+        new_team_name = st.text_input("Nome do Novo Time")
+        submitted = st.form_submit_button("Adicionar Time")
+        if submitted:
+            success, message = add_team(new_team_name)
+            if success:
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
+    
+    st.divider()
+
+    # 2. Listar, editar e deletar times existentes
+    st.subheader("Times Existentes")
+    teams = get_all_teams()
+    if not teams:
+        st.info("Nenhum time cadastrado ainda.")
+    else:
+        for team in teams:
+            team_id = team['id']
+            team_name = team['name']
+            
+            with st.container(border=True):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    # Formulário de edição para cada time
+                    with st.form(f"edit_team_{team_id}"):
+                        new_name = st.text_input("Editar nome", value=team_name, label_visibility="collapsed", key=f"name_{team_id}")
+                        if st.form_submit_button("Salvar"):
+                            if new_name != team_name:
+                                success, message = update_team_name(team_id, new_name)
+                                if success:
+                                    st.success(message)
+                                    st.rerun()
+                                else:
+                                    st.error(message)
+                            else:
+                                st.info("Nenhum nome novo foi inserido.")
+                
+                with col2:
+                    # Botão de exclusão
+                    if st.button("🗑️ Deletar", key=f"delete_{team_id}", use_container_width=True):
+                        # Usar estado da sessão para gerenciar a confirmação
+                        st.session_state[f'confirm_delete_{team_id}'] = True
+
+                # Lógica de confirmação de exclusão
+                if st.session_state.get(f'confirm_delete_{team_id}'):
+                    st.warning(f"**Atenção:** Tem certeza que deseja deletar o time '{team_name}'? Todos os jogadores associados também serão removidos. Esta ação não pode ser desfeita.")
+                    c1, c2, c3 = st.columns([1, 1, 2])
+                    if c1.button("Sim, deletar", key=f"confirm_yes_{team_id}", type="primary"):
+                        success, message = delete_team(team_id)
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
+                        del st.session_state[f'confirm_delete_{team_id}']
+                        st.rerun()
+                    if c2.button("Não, cancelar", key=f"confirm_no_{team_id}"):
+                        del st.session_state[f'confirm_delete_{team_id}']
+                        st.rerun()
+
+    st.divider()
+    st.header("Jogadores")
+    st.info("A funcionalidade de gerenciamento de jogadores será implementada aqui em breve.")
+
 
 def main_admin_panel_content():
     st.title("Painel de Administração")
@@ -284,4 +381,3 @@ def main_admin_panel_content():
     page_function = page_map.get(selected_page)
     if page_function:
         page_function()
-
