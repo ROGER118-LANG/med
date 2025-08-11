@@ -108,7 +108,7 @@ def user_dashboard():
     elif selected_page == "💡 Propor Aposta":
         propose_bet_page()
     elif selected_page == "⚙️ Painel Admin" and st.session_state.is_admin:
-        admin_panel_enhanced.main_admin_panel()
+        admin_panel_enhanced.main_admin_panel_content()
 
 def betting_page():
     st.header("🎯 Fazer Apostas")
@@ -392,16 +392,15 @@ def history_page():
 def propose_bet_page():
     st.header("💡 Propor Aposta Personalizada")
     
-    st.info("Aqui você pode sugerir apostas personalizadas que serão analisadas pelos administradores.")
+    st.info("Aqui você pode sugerir apostas personalizadas para a administração revisar.")
     
     matches = get_upcoming_matches()
     
     if not matches:
-        st.warning("Nenhuma partida disponível para propostas.")
+        st.warning("Nenhuma partida disponível para propor apostas no momento.")
         return
     
-    with st.form("propose_bet"):
-        # Match selection
+    with st.form("propose_bet_form"):
         match_options = {}
         for match in matches:
             team1 = get_team_name(match['team1_id'])
@@ -412,79 +411,28 @@ def propose_bet_page():
         selected_match_key = st.selectbox("Selecione a partida:", list(match_options.keys()))
         selected_match_id = match_options[selected_match_key]
         
-        # Bet details
-        description = st.text_area(
-            "Descrição da aposta:", 
-            placeholder="Ex: Jogador X marca 2 gols ou mais",
-            help="Descreva claramente o que você quer apostar"
-        )
+        description = st.text_area("Descreva sua aposta (ex: 'Jogador X marcará mais de 2 gols'):")
+        proposed_odds = st.number_input("Odds propostas (ex: 2.50):", min_value=1.01, value=2.0, step=0.01)
         
-        proposed_odds = st.number_input(
-            "Odds sugeridas:", 
-            min_value=1.01, 
-            value=2.0, 
-            step=0.01,
-            help="Qual odds você acha justa para esta aposta?"
-        )
+        submit_proposal = st.form_submit_button("Propor Aposta")
         
-        st.write("**Exemplo de ganho:**")
-        example_bet = 100
-        example_win = example_bet * proposed_odds
-        st.write(f"Apostando {example_bet} pontos, você ganharia {example_win:.2f} pontos se acertar.")
-        
-        if st.form_submit_button("💡 Enviar Proposta"):
+        if submit_proposal:
             if description:
-                success, message = propose_custom_bet(
-                    st.session_state.username,
-                    selected_match_id,
-                    description,
+                success, message = add_custom_bet_proposal(
+                    st.session_state.username, 
+                    selected_match_id, 
+                    description, 
                     proposed_odds
                 )
-                
                 if success:
                     st.success(message)
-                    st.balloons()
+                    st.rerun()
                 else:
                     st.error(message)
             else:
-                st.error("Descrição é obrigatória")
-    
-    # Show user's previous proposals
-    st.subheader("📋 Suas Propostas")
-    
-    proposals = get_custom_bet_proposals()
-    user_proposals = [p for p in proposals if p['username'] == st.session_state.username]
-    
-    if user_proposals:
-        for proposal in user_proposals:
-            team1 = get_team_name(proposal['team1_id'])
-            team2 = get_team_name(proposal['team2_id'])
-            
-            status_icon = {
-                'pending': '🟡',
-                'approved': '🟢',
-                'rejected': '🔴'
-            }.get(proposal['status'], '⚪')
-            
-            with st.expander(f"{status_icon} {proposal['description'][:50]}... ({proposal['status']})"):
-                st.write(f"**Partida:** {team1} vs {team2}")
-                st.write(f"**Descrição:** {proposal['description']}")
-                st.write(f"**Odds Propostas:** {proposal['proposed_odds']}")
-                st.write(f"**Status:** {proposal['status']}")
-                st.write(f"**Enviado em:** {proposal['created_at']}")
-                
-                if proposal['admin_response']:
-                    st.write(f"**Resposta do Admin:** {proposal['admin_response']}")
-                
-                if proposal['reviewed_at']:
-                    st.write(f"**Revisado em:** {proposal['reviewed_at']}")
-    else:
-        st.info("Você ainda não fez nenhuma proposta.")
+                st.error("A descrição da aposta é obrigatória.")
 
 def main():
-    # Initialize database
-    init_db()
-    
     if not st.session_state.logged_in:
         login_page()
     else:
@@ -492,4 +440,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
