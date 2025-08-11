@@ -311,7 +311,8 @@ def login_page():
         with st.form("register_form", clear_on_submit=True):
             new_username = st.text_input("Novo Usuário", key="register_username")
             new_password = st.text_input("Nova Senha", type="password", key="register_password")
-            register_submit = st.form_submit_button("Registrar", key="register_submit")
+            register_submit = st.form_submit_button("Registrar")
+
             
             if register_submit:
                 if register_user(new_username, new_password):
