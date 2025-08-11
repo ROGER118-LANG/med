@@ -5,21 +5,6 @@ import requests
 import json
 from guimabet_melhorado import *
 
-# Configure page
-st.set_page_config(
-    page_title="GuimaBet - Painel Admin",
-    page_icon="⚽",
-    layout="wide"
-)
-
-# Initialize session state
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'username' not in st.session_state:
-    st.session_state.username = ""
-if 'is_admin' not in st.session_state:
-    st.session_state.is_admin = False
-
 def admin_login_page():
     st.title("🔐 Login Administrativo")
     
@@ -314,8 +299,18 @@ def manage_custom_bets_page():
             if custom_bets:
                 for bet in custom_bets:
                     with st.expander(f"🎯 {bet['description']} (Odds: {bet['odds']})"):
-                        team1 = get_team_name(bet.get('team1_id', 0))
-                        team2 = get_team_name(bet.get('team2_id', 0))
+                        # Get match info for this bet
+                        conn = sqlite3.connect('guimabet.db')
+                        c = conn.cursor()
+                        c.execute("SELECT team1_id, team2_id FROM matches WHERE id = ?", (bet['match_id'],))
+                        match_info = c.fetchone()
+                        conn.close()
+                        
+                        if match_info:
+                            team1 = get_team_name(match_info[0])
+                            team2 = get_team_name(match_info[1])
+                        else:
+                            team1 = team2 = "Desconhecido"
                         
                         col1, col2 = st.columns(2)
                         
@@ -733,15 +728,33 @@ def reports_page():
     
     conn.close()
 
-# Main app logic
-def main():
-    init_db()  # Initialize database
+# Main function for standalone execution
+def run_admin_panel():
+    """Função principal para executar o painel admin como aplicação standalone"""
+    # Configure page
+    st.set_page_config(
+        page_title="GuimaBet - Painel Admin",
+        page_icon="⚽",
+        layout="wide"
+    )
+    
+    # Initialize session state
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = ""
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
+    
+    # Initialize database
+    init_db()
     
     if not st.session_state.logged_in:
         admin_login_page()
     else:
         main_admin_panel()
 
+# For standalone execution
 if __name__ == "__main__":
-    main()
+    run_admin_panel()
 
