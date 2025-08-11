@@ -9,6 +9,15 @@ import admin_panel_enhanced
 # Funções de banco de dados (assumindo que estão em guimabet_melhorado.py ou similar)
 # Para este exemplo, vamos mockar algumas funções ou importá-las se existirem
 # from guimabet_melhorado import *
+def create_admin_if_not_exists(c):
+    """Cria o usuário admin padrão se ele não existir."""
+    c.execute("SELECT * FROM users WHERE username = 'admin'")
+    if not c.fetchone():
+        # Senha "123" criptografada com SHA-256
+        hashed_password = hashlib.sha256("123".encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+                  ("admin", hashed_password, 1000, 1))
+        print("Usuário 'admin' criado com sucesso.")
 
 # Mock de funções de banco de dados para que o Streamlit possa rodar
 def init_db():
