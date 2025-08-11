@@ -96,7 +96,7 @@ def dashboard_page():
     
     with col2:
         matches = get_upcoming_matches() + get_match_history()
-        st.metric("Total de Partidas", len(matches), key="dashboard_total_matches")
+        st.metric("Total de Partidas", len(matches)")
     
     with col3:
         # Count active bets
@@ -105,7 +105,7 @@ def dashboard_page():
         c.execute("SELECT COUNT(*) FROM bets WHERE status = \'pending\'")
         active_bets = c.fetchone()[0]
         conn.close()
-        st.metric("Apostas Ativas", active_bets, key="dashboard_active_bets")
+        st.metric("Apostas Ativas", active_bets,)
     
     with col4:
         # Count custom bet proposals
