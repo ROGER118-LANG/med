@@ -4,65 +4,59 @@ import pandas as pd
 import datetime
 import hashlib
 
-# --- Funções de Banco de Dados (versões específicas para o painel admin) ---
-# É uma boa prática ter as funções que o painel usa aqui ou importá-las de um arquivo comum.
+# --- Funções de Banco de Dados (Adicionadas e Atualizadas) ---
 
-def get_all_users():
+def db_connect():
+    """Cria e retorna uma conexão com o banco de dados."""
     conn = sqlite3.connect('guimabet.db')
     conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT username, points, is_admin FROM users ORDER BY points DESC")
-    users = [dict(row) for row in c.fetchall()]
+    return conn
+
+def get_all_users():
+    conn = db_connect()
+    users = [dict(row) for row in conn.execute("SELECT username, points, is_admin FROM users ORDER BY points DESC").fetchall()]
     conn.close()
     return users
 
 def get_upcoming_matches():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM matches WHERE status = 'upcoming' ORDER BY date, time")
-    matches = [dict(row) for row in c.fetchall()]
+    conn = db_connect()
+    matches = [dict(row) for row in conn.execute("SELECT * FROM matches WHERE status = 'upcoming' ORDER BY date, time").fetchall()]
     conn.close()
     return matches
 
 def get_match_history():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM matches WHERE status = 'completed' ORDER BY date DESC, time DESC")
-    matches = [dict(row) for row in c.fetchall()]
+    conn = db_connect()
+    matches = [dict(row) for row in conn.execute("SELECT * FROM matches WHERE status = 'completed' ORDER BY date DESC, time DESC").fetchall()]
     conn.close()
     return matches
 
 def get_all_teams():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT id, name FROM teams ORDER BY name")
-    teams = [dict(row) for row in c.fetchall()]
+    conn = db_connect()
+    teams = [dict(row) for row in conn.execute("SELECT id, name FROM teams ORDER BY name").fetchall()]
     conn.close()
     return teams
 
+def get_team_name(team_id):
+    conn = db_connect()
+    name = conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)).fetchone()
+    conn.close()
+    return name['name'] if name else "Desconhecido"
+
 def get_custom_bet_proposals(status='pending'):
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("""
+    conn = db_connect()
+    proposals = [dict(row) for row in conn.execute("""
         SELECT p.id, p.user_id, p.match_id, p.description, p.proposed_odds, u.username
-        FROM custom_bet_proposals p
-        JOIN users u ON p.user_id = u.username
+        FROM custom_bet_proposals p JOIN users u ON p.user_id = u.username
         WHERE p.status = ?
-    """, (status,))
-    proposals = [dict(row) for row in c.fetchall()]
+    """, (status,)).fetchall()]
     conn.close()
     return proposals
 
 def add_match(team1_id, team2_id, date, time):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
+    conn = db_connect()
     try:
-        c.execute("INSERT INTO matches (team1_id, team2_id, date, time, status) VALUES (?, ?, ?, ?, 'upcoming')",
-                  (team1_id, team2_id, date, time))
+        conn.execute("INSERT INTO matches (team1_id, team2_id, date, time, status) VALUES (?, ?, ?, ?, 'upcoming')",
+                     (team1_id, team2_id, date, time))
         conn.commit()
         return True
     except Exception as e:
@@ -71,159 +65,206 @@ def add_match(team1_id, team2_id, date, time):
     finally:
         conn.close()
 
-# --- Páginas do Painel de Administrador ---
+# --- NOVAS FUNÇÕES PARA APOSTAS PERSONALIZADAS ---
+
+def add_custom_bet(match_id, description, odds):
+    """Adiciona uma nova aposta personalizada criada pelo admin."""
+    conn = db_connect()
+    try:
+        conn.execute("INSERT INTO custom_bets (match_id, description, odds, status) VALUES (?, ?, ?, 'pending')",
+                     (match_id, description, odds))
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao criar aposta personalizada: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_active_custom_bets():
+    """Busca todas as apostas personalizadas com status 'pending'."""
+    conn = db_connect()
+    bets = [dict(row) for row in conn.execute("SELECT * FROM custom_bets WHERE status = 'pending' ORDER BY id DESC").fetchall()]
+    conn.close()
+    return bets
+
+def resolve_custom_bet(bet_id, result):
+    """Resolve uma aposta personalizada e atualiza as apostas dos usuários."""
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        # Pega a odd da aposta personalizada
+        bet_info = c.execute("SELECT odds FROM custom_bets WHERE id = ?", (bet_id,)).fetchone()
+        if not bet_info:
+            st.error("Aposta personalizada não encontrada.")
+            return False
+        
+        odds = bet_info['odds']
+
+        # Atualiza o status da aposta personalizada
+        c.execute("UPDATE custom_bets SET status = ? WHERE id = ?", (result, bet_id))
+
+        # Se o resultado for 'ganha', paga os usuários
+        if result == 'won':
+            # Encontra todas as apostas de usuários para esta aposta personalizada
+            user_bets = c.execute("SELECT id, user_id, amount FROM bets WHERE custom_bet_id = ? AND status = 'pending'", (bet_id,)).fetchall()
+            for user_bet in user_bets:
+                winnings = user_bet['amount'] * odds
+                # Devolve o valor apostado + o lucro
+                c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings, user_bet['user_id']))
+                c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (user_bet['id'],))
+        
+        # Se for 'lost', apenas atualiza o status das apostas dos usuários
+        elif result == 'lost':
+            c.execute("UPDATE bets SET status = 'lost' WHERE custom_bet_id = ? AND status = 'pending'", (bet_id,))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Erro ao resolver aposta: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# --- Páginas do Painel de Administrador (com manage_custom_bets_page implementada) ---
 
 def dashboard_page():
-    """Exibe o dashboard principal com métricas."""
     st.header("📊 Dashboard do Administrador")
     st.write("Visão geral do estado atual da plataforma.")
-
     col1, col2, col3 = st.columns(3)
-
     with col1:
-        users = get_all_users()
-        # CORRIGIDO: Removido o argumento 'key'
-        st.metric("Total de Usuários", len(users))
-
+        st.metric("Total de Usuários", len(get_all_users()))
     with col2:
-        matches = get_upcoming_matches() + get_match_history()
-        # CORRIGIDO: Removido o argumento 'key'
-        st.metric("Total de Partidas", len(matches))
-
+        st.metric("Total de Partidas", len(get_upcoming_matches()) + len(get_match_history()))
     with col3:
-        conn = sqlite3.connect("guimabet.db")
-        try:
-            total_bets = conn.execute("SELECT COUNT(*) FROM bets").fetchone()[0]
-            # CORRIGIDO: Removido o argumento 'key'
-            st.metric("Total de Apostas", total_bets)
-        finally:
-            conn.close()
-
+        conn = db_connect()
+        total_bets = conn.execute("SELECT COUNT(*) FROM bets").fetchone()[0]
+        conn.close()
+        st.metric("Total de Apostas", total_bets)
     st.subheader("Atividade Recente")
-    # Placeholder para gráficos ou tabelas de atividade
     st.info("Gráficos e atividades recentes serão exibidos aqui em breve.")
 
-
 def manage_matches_page():
-    """Página para gerenciar partidas."""
     st.header("⚽ Gerenciar Partidas")
-
     st.subheader("Adicionar Nova Partida")
     teams = get_all_teams()
     team_dict = {team['name']: team['id'] for team in teams}
-
     if not teams or len(teams) < 2:
         st.warning("Você precisa de pelo menos dois times cadastrados para criar uma partida.")
         return
-
     with st.form("add_match_form", clear_on_submit=True):
-        team1_name = st.selectbox("Time da Casa", options=list(team_dict.keys()), key="team1_select")
-        team2_name = st.selectbox("Time Visitante", options=list(team_dict.keys()), key="team2_select")
+        team1_name = st.selectbox("Time da Casa", options=list(team_dict.keys()), index=0, key="team1_select")
+        team2_name = st.selectbox("Time Visitante", options=list(team_dict.keys()), index=1, key="team2_select")
         match_date = st.date_input("Data da Partida", min_value=datetime.date.today())
         match_time = st.time_input("Hora da Partida")
-
         submitted = st.form_submit_button("Adicionar Partida")
-
         if submitted:
             if team1_name == team2_name:
                 st.error("Os times da casa e visitante não podem ser os mesmos.")
             else:
-                team1_id = team_dict[team1_name]
-                team2_id = team_dict[team2_name]
-                if add_match(team1_id, team2_id, match_date.strftime("%Y-%m-%d"), match_time.strftime("%H:%M")):
+                if add_match(team_dict[team1_name], team_dict[team2_name], match_date.strftime("%Y-%m-%d"), match_time.strftime("%H:%M")):
                     st.success(f"Partida '{team1_name} vs {team2_name}' adicionada com sucesso!")
-                else:
-                    st.error("Falha ao adicionar a partida.")
-
+                    st.rerun()
     st.divider()
-
     st.subheader("Partidas Futuras")
     upcoming_matches = get_upcoming_matches()
     if upcoming_matches:
-        df_upcoming = pd.DataFrame(upcoming_matches)
-        st.dataframe(df_upcoming, use_container_width=True)
+        st.dataframe(pd.DataFrame(upcoming_matches), use_container_width=True)
     else:
-        # CORRIGIDO: Removido o argumento 'key'
         st.info("Nenhuma partida futura cadastrada.")
 
-
 def manage_odds_page():
-    """Página para gerenciar odds."""
     st.header("🎯 Gerenciar Odds")
     st.info("A funcionalidade de gerenciamento de odds será implementada aqui.")
-    # Placeholder para a lógica de gerenciamento de odds
 
-
+# --- PÁGINA DE APOSTAS PERSONALIZADAS IMPLEMENTADA ---
 def manage_custom_bets_page():
-    """Página para gerenciar apostas personalizadas."""
-    st.header("🎲 Apostas Personalizadas")
-    st.info("A funcionalidade de gerenciamento de apostas personalizadas será implementada aqui.")
-    # Placeholder para a lógica de gerenciamento de apostas personalizadas
+    st.header("🎲 Gerenciar Apostas Personalizadas")
 
+    # 1. Formulário para criar uma nova aposta personalizada
+    st.subheader("Criar Nova Aposta Personalizada")
+    upcoming_matches = get_upcoming_matches()
+    if not upcoming_matches:
+        st.warning("Nenhuma partida futura disponível para criar uma aposta personalizada.")
+    else:
+        match_dict = {f"ID {m['id']}: {get_team_name(m['team1_id'])} vs {get_team_name(m['team2_id'])}": m['id'] for m in upcoming_matches}
+        with st.form("create_custom_bet_form", clear_on_submit=True):
+            selected_match_str = st.selectbox("Selecione a Partida", options=list(match_dict.keys()))
+            description = st.text_input("Descrição da Aposta", placeholder="Ex: Algum jogador vai marcar um gol de bicicleta?")
+            odds = st.number_input("Odds", min_value=1.01, value=2.0, step=0.1)
+            
+            submitted = st.form_submit_button("Criar Aposta")
+            if submitted:
+                if not description:
+                    st.error("A descrição não pode estar vazia.")
+                else:
+                    match_id = match_dict[selected_match_str]
+                    if add_custom_bet(match_id, description, odds):
+                        st.success("Aposta personalizada criada com sucesso!")
+                        st.rerun()
 
-def manage_proposals_page():
-    """Página para gerenciar propostas de apostas dos usuários."""
-    st.header("💡 Propostas de Usuários")
-    proposals = get_custom_bet_proposals("pending")
+    st.divider()
 
-    if not proposals:
-        # CORRIGIDO: Removido o argumento 'key'
-        st.info("Nenhuma proposta pendente no momento.")
-        return
-
-    for idx, proposal in enumerate(proposals):
-        with st.container(border=True):
-            st.write(f"**Proposta de:** {proposal['username']}")
-            st.write(f"**Partida ID:** {proposal['match_id']}")
-            st.write(f"**Descrição:** {proposal['description']}")
-            st.write(f"**Odd Proposta:** {proposal['proposed_odds']}")
-
-            with st.form(f"review_proposal_{idx}"):
-                admin_response = st.text_area("Resposta/Justificativa (opcional)", key=f"response_{idx}")
-                final_odds = st.number_input("Odd Final (se aprovada)", value=proposal['proposed_odds'], min_value=1.01, step=0.1, key=f"odds_{idx}")
-
+    # 2. Listar e resolver apostas personalizadas ativas
+    st.subheader("Apostas Personalizadas Ativas")
+    active_bets = get_active_custom_bets()
+    if not active_bets:
+        st.info("Nenhuma aposta personalizada ativa no momento.")
+    else:
+        for bet in active_bets:
+            with st.container(border=True):
+                st.write(f"**ID da Aposta:** {bet['id']} | **Partida ID:** {bet['match_id']}")
+                st.write(f"**Descrição:** {bet['description']}")
+                st.write(f"**Odds:** {bet['odds']}")
+                
                 col1, col2 = st.columns(2)
                 with col1:
-                    approve_button = st.form_submit_button("Aprovar Proposta", use_container_width=True)
+                    if st.button("✔️ Marcar como GANHA", key=f"win_{bet['id']}", use_container_width=True):
+                        if resolve_custom_bet(bet['id'], 'won'):
+                            st.success(f"Aposta {bet['id']} resolvida como 'Ganha'. Pagamentos processados.")
+                            st.rerun()
                 with col2:
-                    reject_button = st.form_submit_button("Rejeitar Proposta", type="secondary", use_container_width=True)
+                    if st.button("❌ Marcar como PERDIDA", key=f"lose_{bet['id']}", use_container_width=True):
+                        if resolve_custom_bet(bet['id'], 'lost'):
+                            st.warning(f"Aposta {bet['id']} resolvida como 'Perdida'.")
+                            st.rerun()
 
-                if approve_button:
-                    # Lógica para aprovar (placeholder)
-                    st.success(f"Proposta {proposal['id']} aprovada com odds de {final_odds}.")
-                    # Aqui você chamaria a função para atualizar o status no DB
+def manage_proposals_page():
+    st.header("💡 Propostas de Usuários")
+    proposals = get_custom_bet_proposals("pending")
+    if not proposals:
+        st.info("Nenhuma proposta pendente no momento.")
+        return
+    for idx, proposal in enumerate(proposals):
+        with st.container(border=True):
+            st.write(f"**Proposta de:** {proposal['username']} | **Partida ID:** {proposal['match_id']}")
+            st.write(f"**Descrição:** {proposal['description']} | **Odd Proposta:** {proposal['proposed_odds']}")
+            with st.form(f"review_proposal_{idx}"):
+                final_odds = st.number_input("Odd Final", value=proposal['proposed_odds'], min_value=1.01, step=0.1, key=f"odds_{idx}")
+                col1, col2 = st.columns(2)
+                if col1.form_submit_button("Aprovar", use_container_width=True):
+                    st.success(f"Proposta {proposal['id']} aprovada.")
                     st.rerun()
-
-                if reject_button:
-                    # Lógica para rejeitar (placeholder)
+                if col2.form_submit_button("Rejeitar", type="secondary", use_container_width=True):
                     st.warning(f"Proposta {proposal['id']} rejeitada.")
-                    # Aqui você chamaria a função para atualizar o status no DB
                     st.rerun()
-
 
 def manage_users_page():
-    """Página para gerenciar usuários."""
     st.header("👥 Gerenciar Usuários")
     users = get_all_users()
     if users:
-        df_users = pd.DataFrame(users)
-        st.dataframe(df_users, use_container_width=True)
+        st.dataframe(pd.DataFrame(users), use_container_width=True)
     else:
-        # CORRIGIDO: Removido o argumento 'key'
         st.info("Nenhum usuário encontrado.")
 
-
 def manage_teams_players_page():
-    """Página para gerenciar times e jogadores."""
     st.header("🏆 Times e Jogadores")
     st.info("A funcionalidade de gerenciamento de times e jogadores será implementada aqui.")
-    # Placeholder para a lógica de gerenciamento
-
 
 def main_admin_panel_content():
-    """Função principal que renderiza o painel de admin e suas páginas."""
     st.title("Painel de Administração")
-
     with st.sidebar:
         selected_page = st.radio(
             "Navegação do Admin",
@@ -231,20 +272,16 @@ def main_admin_panel_content():
              "💡 Propostas de Usuários", "👥 Gerenciar Usuários", "🏆 Times e Jogadores"],
             key="admin_nav"
         )
-
-    # Roteamento de página
-    if selected_page == "📊 Dashboard":
-        dashboard_page()
-    elif selected_page == "⚽ Gerenciar Partidas":
-        manage_matches_page()
-    elif selected_page == "🎯 Gerenciar Odds":
-        manage_odds_page()
-    elif selected_page == "🎲 Apostas Personalizadas":
-        manage_custom_bets_page()
-    elif selected_page == "💡 Propostas de Usuários":
-        manage_proposals_page()
-    elif selected_page == "👥 Gerenciar Usuários":
-        manage_users_page()
-    elif selected_page == "🏆 Times e Jogadores":
-        manage_teams_players_page()
+    page_map = {
+        "📊 Dashboard": dashboard_page,
+        "⚽ Gerenciar Partidas": manage_matches_page,
+        "🎯 Gerenciar Odds": manage_odds_page,
+        "🎲 Apostas Personalizadas": manage_custom_bets_page,
+        "💡 Propostas de Usuários": manage_proposals_page,
+        "👥 Gerenciar Usuários": manage_users_page,
+        "🏆 Times e Jogadores": manage_teams_players_page,
+    }
+    page_function = page_map.get(selected_page)
+    if page_function:
+        page_function()
 
