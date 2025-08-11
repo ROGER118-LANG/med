@@ -291,7 +291,7 @@ def login_page():
         with st.form("login_form", clear_on_submit=True):
             username = st.text_input("Usuário", key="login_username")
             password = st.text_input("Senha", type="password", key="login_password")
-            submmit =  st.form_submit_button("Entrar", key="login_submit")
+            submit = st.form_submit_button("Entrar", key="login_submit")
             
             if submit:
                 user = login(username, password)
