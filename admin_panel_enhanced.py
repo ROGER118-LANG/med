@@ -91,7 +91,8 @@ def dashboard_page():
     
     with col1:
         users = get_all_users()
-        st.metric("Total de Usuários", len(users), key="dashboard_total_users")
+        st.metric("Total de Usuários", len(users))
+
     
     with col2:
         matches = get_upcoming_matches() + get_match_history()
