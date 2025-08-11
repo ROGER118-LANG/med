@@ -290,9 +290,8 @@ def login_page():
         
         with st.form("login_form", clear_on_submit=True):
             username = st.text_input("Usuário", key="login_username")
-            password = st.text_input("Senha", type="password", key="login_password")
-            # Correção para st.form_submit_button
-submit = st.form_submit_button("Entrar")
+            password = st.text_input("Senha", type="password", key="login_password")  
+            submit = st.form_submit_button("Entrar")
 
             
             if submit:
