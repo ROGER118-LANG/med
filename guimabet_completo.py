@@ -14,6 +14,9 @@ import admin_panel_enhanced
 def init_db():
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
+hashed_password = hashlib.sha256("123".encode()).hexdigest()
+    c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+             ("admin", hashed_password, 1000, 1))    
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -290,9 +293,8 @@ def login_page():
         
         with st.form("login_form", clear_on_submit=True):
             username = st.text_input("Usuário", key="login_username")
-            password = st.text_input("Senha", type="password", key="login_password")  
-            submit = st.form_submit_button("Entrar")
-
+            password = st.text_input("Senha", type="password", key="login_password")
+            submit = st.form_submit_button("Entrar", key="login_submit")
             
             if submit:
                 user = login(username, password)
@@ -311,8 +313,7 @@ def login_page():
         with st.form("register_form", clear_on_submit=True):
             new_username = st.text_input("Novo Usuário", key="register_username")
             new_password = st.text_input("Nova Senha", type="password", key="register_password")
-            register_submit = st.form_submit_button("Registrar")
-
+            register_submit = st.form_submit_button("Registrar", key="register_submit")
             
             if register_submit:
                 if register_user(new_username, new_password):
