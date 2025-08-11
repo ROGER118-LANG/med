@@ -1,13 +1,2 @@
-openpyxl
-tensorflow
-keras
-matplotlib
-seaborn
-plotly
-scipy
-scikit-image
-requests
-streamlit_option_menu
-Flask
-Flask-SQLAlchemy
-Werkzgunicorn
+streamlit==1.38.0
+pandas==2.2.2
