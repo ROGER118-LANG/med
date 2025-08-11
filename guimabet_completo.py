@@ -2,13 +2,11 @@ import streamlit as st
 import pandas as pd
 import datetime
 import sqlite3
+import hashlib
+import admin_panel_enhanced # Certifique-se de que este arquivo está na mesma pasta
 
-# Importar o admin_panel_enhanced como um módulo
-import admin_panel_enhanced
+# --- Funções de Banco de Dados ---
 
-# Funções de banco de dados (assumindo que estão em guimabet_melhorado.py ou similar)
-# Para este exemplo, vamos mockar algumas funções ou importá-las se existirem
-# from guimabet_melhorado import *
 def create_admin_if_not_exists(c):
     """Cria o usuário admin padrão se ele não existir."""
     c.execute("SELECT * FROM users WHERE username = 'admin'")
@@ -19,11 +17,10 @@ def create_admin_if_not_exists(c):
                   ("admin", hashed_password, 1000, 1))
         print("Usuário 'admin' criado com sucesso.")
 
-# Mock de funções de banco de dados para que o Streamlit possa rodar
 def init_db():
+    """Inicializa o banco de dados e cria as tabelas se não existirem."""
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
-  
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -107,7 +104,7 @@ def init_db():
             description TEXT,
             odds REAL,
             player_id INTEGER DEFAULT NULL,
-            status TEXT DEFAULT 'pending' -- pending, approved, rejected, finished
+            status TEXT DEFAULT 'pending'
         )
     ''')
     c.execute('''
@@ -117,18 +114,24 @@ def init_db():
             match_id INTEGER,
             description TEXT,
             proposed_odds REAL,
-            status TEXT DEFAULT 'pending', -- pending, approved, rejected
+            status TEXT DEFAULT 'pending',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Garante que o usuário admin exista
+    create_admin_if_not_exists(c)
+    
     conn.commit()
     conn.close()
 
 def register_user(username, password):
+    """Registra um novo usuário com senha criptografada."""
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)", (username, password, 1000, 0))
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)", (username, hashed_password, 100, 0))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
@@ -137,9 +140,11 @@ def register_user(username, password):
         conn.close()
 
 def login(username, password):
+    """Valida o login do usuário comparando a senha criptografada."""
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
     user = c.fetchone()
     conn.close()
     return user
@@ -148,9 +153,9 @@ def get_user_points(username):
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
     c.execute("SELECT points FROM users WHERE username = ?", (username,))
-    points = c.fetchone()[0]
+    points = c.fetchone()
     conn.close()
-    return points
+    return points[0] if points else 0
 
 def update_user_points(username, points):
     conn = sqlite3.connect('guimabet.db')
@@ -161,21 +166,21 @@ def update_user_points(username, points):
 
 def get_upcoming_matches():
     conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT * FROM matches WHERE status = 'upcoming' ORDER BY date, time")
-    matches = c.fetchall()
+    matches = [dict(row) for row in c.fetchall()]
     conn.close()
-    return [{k: item[i] for i, k in enumerate(['id', 'team1_id', 'team2_id', 'date', 'time', 'status', 'team1_score', 'team2_score'])} for item in matches]
+    return matches
 
 def get_match_by_id(match_id):
     conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT * FROM matches WHERE id = ?", (match_id,))
     match = c.fetchone()
     conn.close()
-    if match:
-        return {k: match[i] for i, k in enumerate(['id', 'team1_id', 'team2_id', 'date', 'time', 'status', 'team1_score', 'team2_score'])}
-    return None
+    return dict(match) if match else None
 
 def get_team_name(team_id):
     conn = sqlite3.connect('guimabet.db')
@@ -185,48 +190,9 @@ def get_team_name(team_id):
     conn.close()
     return name[0] if name else "Desconhecido"
 
-def get_all_teams():
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT id, name FROM teams")
-    teams = c.fetchall()
-    conn.close()
-    return [{'id': t[0], 'name': t[1]} for t in teams]
-
-def get_all_players():
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT id, name, team_id FROM players")
-    players = c.fetchall()
-    conn.close()
-    return [{'id': p[0], 'name': p[1], 'team_id': p[2]} for p in players]
-
-def get_player_name(player_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT name FROM players WHERE id = ?", (player_id,))
-    name = c.fetchone()
-    conn.close()
-    return name[0] if name else "Desconhecido"
-
-def get_match_players(match_id):
-    match = get_match_by_id(match_id)
-    if not match:
-        return []
-    team1_players = get_players_by_team(match['team1_id'])
-    team2_players = get_players_by_team(match['team2_id'])
-    return team1_players + team2_players
-
-def get_players_by_team(team_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT id, name FROM players WHERE team_id = ?", (team_id,))
-    players = c.fetchall()
-    conn.close()
-    return [{'id': p[0], 'name': p[1]} for p in players]
-
 def get_match_odds(match_id):
     conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("""
         SELECT mo.id, mo.odds_value, mo.player_id, ot.name as template_name, ot.description, oc.name as category_name
@@ -235,80 +201,40 @@ def get_match_odds(match_id):
         JOIN odds_categories oc ON ot.category_id = oc.id
         WHERE mo.match_id = ?
     """, (match_id,))
-    odds = c.fetchall()
+    odds = [dict(row) for row in c.fetchall()]
     conn.close()
-    return [{k: item[i] for i, k in enumerate(['id', 'odds_value', 'player_id', 'template_name', 'description', 'category_name'])} for item in odds]
+    return odds
 
-def get_odds_templates(category_id=None):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    if category_id:
-        c.execute("SELECT * FROM odds_templates WHERE category_id = ?", (category_id,))
-    else:
-        c.execute("SELECT * FROM odds_templates")
-    templates = c.fetchall()
-    conn.close()
-    return [{k: item[i] for i, k in enumerate(['id', 'category_id', 'name', 'description', 'bet_type', 'default_odds', 'requires_player'])} for item in templates]
+# --- Interface do Streamlit ---
 
-def get_odds_categories():
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT * FROM odds_categories")
-    categories = c.fetchall()
-    conn.close()
-    return [{k: item[i] for i, k in enumerate(['id', 'name', 'description'])} for item in categories]
-
-def get_custom_bets(match_id=None):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    if match_id:
-        c.execute("SELECT * FROM custom_bets WHERE match_id = ?", (match_id,))
-    else:
-        c.execute("SELECT * FROM custom_bets")
-    custom_bets = c.fetchall()
-    conn.close()
-    return [{k: item[i] for i, k in enumerate(['id', 'match_id', 'description', 'odds', 'player_id', 'status'])} for item in custom_bets]
-
-def get_custom_bet_proposals(status='pending'):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("""
-        SELECT cbp.id, cbp.user_id, u.username, cbp.match_id, cbp.description, cbp.proposed_odds, cbp.status, cbp.created_at
-        FROM custom_bet_proposals cbp
-        JOIN users u ON cbp.user_id = u.username
-        WHERE cbp.status = ?
-    """, (status,))
-    proposals = c.fetchall()
-    conn.close()
-    return [{k: item[i] for i, k in enumerate(['id', 'user_id', 'username', 'match_id', 'description', 'proposed_odds', 'status', 'created_at'])} for item in proposals]
-
-
-# --- Streamlit App --- #
-
+# Inicialização do estado da sessão
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.is_admin = False
+    st.session_state.page = "main"
 
 def login_page():
+    """Página de login e registro."""
     st.title("Bem-vindo ao GuimaBet!")
     
     tab1, tab2 = st.tabs(["Entrar", "Registrar"])
     
     with tab1:
         st.subheader("Entrar na sua conta")
-        
         with st.form("login_form", clear_on_submit=True):
             username = st.text_input("Usuário", key="login_username")
             password = st.text_input("Senha", type="password", key="login_password")
-            submit = st.form_submit_button("Entrar", key="login_submit")
+            # CORRIGIDO: Removido o argumento 'key'
+            submit = st.form_submit_button("Entrar")
             
             if submit:
                 user = login(username, password)
                 if user:
                     st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.session_state.is_admin = bool(user[3])
+                    st.session_state.username = user[0] # username
+                    st.session_state.is_admin = bool(user[3]) # is_admin
+                    st.session_state.page = "main"
                     st.success("Login realizado com sucesso!")
                     st.rerun()
                 else:
@@ -316,86 +242,103 @@ def login_page():
     
     with tab2:
         st.subheader("Criar nova conta")
-        
         with st.form("register_form", clear_on_submit=True):
             new_username = st.text_input("Novo Usuário", key="register_username")
             new_password = st.text_input("Nova Senha", type="password", key="register_password")
-            register_submit = st.form_submit_button("Registrar", key="register_submit")
+            # CORRIGIDO: Removido o argumento 'key'
+            register_submit = st.form_submit_button("Registrar")
             
             if register_submit:
-                if register_user(new_username, new_password):
+                if not new_username or not new_password:
+                    st.warning("Por favor, preencha todos os campos.")
+                elif register_user(new_username, new_password):
                     st.success("Conta criada com sucesso! Faça login para continuar.")
                 else:
                     st.error("Nome de usuário já existe.")
 
 def user_dashboard():
+    """Dashboard principal para usuários logados."""
     st.sidebar.title(f"Olá, {st.session_state.username}!")
+    st.sidebar.write(f"**Pontos:** {get_user_points(st.session_state.username)}")
     
-    if st.sidebar.button("Logout", key="user_logout_button"):
+    if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.session_state.is_admin = False
+        st.session_state.page = "main"
         st.rerun()
 
     if st.session_state.is_admin:
         st.sidebar.subheader("Opções de Administrador")
-        if st.sidebar.button("Painel Admin", key="admin_panel_button"):
+        if st.sidebar.button("Painel Admin"):
             st.session_state.page = "admin_panel"
             st.rerun()
 
-    st.title("Dashboard do Usuário")
-    st.write(f"Seus pontos: {get_user_points(st.session_state.username)}")
+    # Botão para voltar ao dashboard principal
+    if st.session_state.page != "main":
+        if st.sidebar.button("Voltar ao Início"):
+            st.session_state.page = "main"
+            st.rerun()
 
-    # Main content area
+    st.title("GuimaBet Dashboard")
+
+    # Roteamento de página
     if st.session_state.is_admin and st.session_state.get('page') == 'admin_panel':
         admin_panel_enhanced.main_admin_panel_content()
     else:
-        # Conteúdo normal do usuário
-        st.header("Partidas Disponíveis")
-        matches = get_upcoming_matches()
-        if matches:
-            for match in matches:
-                team1 = get_team_name(match['team1_id'])
-                team2 = get_team_name(match['team2_id'])
-                st.subheader(f"{team1} vs {team2} - {match['date']} {match['time']}")
-                
-                odds = get_match_odds(match['id'])
-                if odds:
+        main_user_content()
+
+def main_user_content():
+    """Conteúdo principal do dashboard do usuário."""
+    st.header("Partidas Disponíveis")
+    matches = get_upcoming_matches()
+    if matches:
+        for match in matches:
+            team1 = get_team_name(match['team1_id'])
+            team2 = get_team_name(match['team2_id'])
+            st.subheader(f"{team1} vs {team2}")
+            st.caption(f"Data: {match['date']} - Hora: {match['time']}")
+            
+            odds = get_match_odds(match['id'])
+            if odds:
+                with st.expander("Ver e Apostar nas Odds"):
                     with st.form(f"bet_form_{match['id']}"):
-                        st.write("Odds disponíveis:")
+                        st.write("**Odds disponíveis:**")
+                        
+                        # Usar um dicionário para facilitar a busca da odd selecionada
+                        odds_dict = {o['id']: o for o in odds}
+                        
                         selected_odd_id = st.selectbox(
                             "Selecione sua aposta:",
-                            options=[o['id'] for o in odds],
-                            format_func=lambda x: f"{next(item for item in odds if item['id'] == x)['template_name']} (Odds: {next(item for item in odds if item['id'] == x)['odds_value']})",
+                            options=list(odds_dict.keys()),
+                            format_func=lambda x: f"{odds_dict[x]['template_name']} (Odd: {odds_dict[x]['odds_value']})",
                             key=f"odd_select_{match['id']}"
                         )
                         
-                        amount = st.number_input("Valor da Aposta:", min_value=1, value=10, key=f"bet_amount_{match['id']}")
+                        amount = st.number_input("Valor da Aposta:", min_value=1, value=10, step=1, key=f"bet_amount_{match['id']}")
                         
-                        bet_submit = st.form_submit_button("Fazer Aposta", key=f"place_bet_button_{match['id']}")
+                        # CORRIGIDO: Removido o argumento 'key'
+                        bet_submit = st.form_submit_button("Fazer Aposta")
                         
                         if bet_submit:
-                            selected_odd = next(item for item in odds if item['id'] == selected_odd_id)
                             user_points = get_user_points(st.session_state.username)
-                            
                             if user_points >= amount:
-                                # Placeholder for placing bet logic
-                                # In a real app, this would interact with a betting system
-                                st.success(f"Aposta de {amount} pontos em {selected_odd['template_name']} realizada com sucesso!")
+                                # Lógica para registrar a aposta (placeholder)
+                                st.success(f"Aposta de {amount} pontos realizada com sucesso!")
                                 update_user_points(st.session_state.username, user_points - amount)
                                 st.rerun()
                             else:
-                                st.error("Pontos insuficientes.")
-                else:
-                    st.info("Odds ainda não disponíveis para esta partida.")
-        else:
-            st.info("Nenhuma partida futura disponível no momento.")
+                                st.error("Pontos insuficientes para realizar esta aposta.")
+            else:
+                st.info("Odds ainda não disponíveis para esta partida.")
+    else:
+        st.info("Nenhuma partida futura disponível no momento.")
 
-        st.header("Minhas Apostas")
-        # Placeholder for displaying user's bets
-        st.write("Suas apostas aparecerão aqui.")
+    st.header("Minhas Apostas")
+    st.write("Em breve: Suas apostas ativas e histórico aparecerão aqui.")
 
 def main():
+    """Função principal que executa a aplicação."""
     init_db()
     if not st.session_state.logged_in:
         login_page()
@@ -404,5 +347,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
