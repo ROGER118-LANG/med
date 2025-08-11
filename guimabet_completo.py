@@ -37,9 +37,9 @@ def login_page():
         st.subheader("Entrar na sua conta")
         
         with st.form("login_form"):
-            username = st.text_input("Usuário")
-            password = st.text_input("Senha", type="password")
-            submit = st.form_submit_button("Entrar")
+            username = st.text_input("Usuário", key="login_username")
+            password = st.text_input("Senha", type="password", key="login_password")
+            submit = st.form_submit_button("Entrar", key="login_submit")
             
             if submit:
                 user = login(username, password)
@@ -56,10 +56,10 @@ def login_page():
         st.subheader("Criar nova conta")
         
         with st.form("register_form"):
-            new_username = st.text_input("Novo usuário")
-            new_password = st.text_input("Nova senha", type="password")
-            confirm_password = st.text_input("Confirmar senha", type="password")
-            submit_register = st.form_submit_button("Cadastrar")
+            new_username = st.text_input("Novo usuário", key="register_username")
+            new_password = st.text_input("Nova senha", type="password", key="register_password")
+            confirm_password = st.text_input("Confirmar senha", type="password", key="register_confirm_password")
+            submit_register = st.form_submit_button("Cadastrar", key="register_submit")
             
             if submit_register:
                 if new_password != confirm_password:
@@ -90,9 +90,9 @@ def user_dashboard():
     if st.session_state.is_admin:
         menu_options.append("⚙️ Painel Admin")
     
-    selected_page = st.sidebar.selectbox("Navegar:", menu_options)
+    selected_page = st.sidebar.selectbox("Navegar:", menu_options, key="main_navigation")
     
-    if st.sidebar.button("🚪 Logout"):
+    if st.sidebar.button("🚪 Logout", key="main_logout"):
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.session_state.is_admin = False
@@ -119,11 +119,11 @@ def betting_page():
         st.warning("Nenhuma partida disponível para apostas no momento.")
         return
     
-    for match in matches:
+    for match_idx, match in enumerate(matches):
         team1_name = get_team_name(match['team1_id'])
         team2_name = get_team_name(match['team2_id'])
         
-        with st.expander(f"⚽ {team1_name} vs {team2_name} - {match['date']} {match['time']} ({match['status']})"):
+        with st.expander(f"⚽ {team1_name} vs {team2_name} - {match['date']} {match['time']} ({match['status']})", key=f"match_expander_{match['id']}"):
             
             # Get enhanced odds for this match
             match_odds = get_match_odds(match['id'])
@@ -143,7 +143,7 @@ def betting_page():
                             odds_by_category[category] = []
                         odds_by_category[category].append(odd)
                     
-                    for category, odds_list in odds_by_category.items():
+                    for category_idx, (category, odds_list) in enumerate(odds_by_category.items()):
                         st.write(f"**📂 {category}**")
                         
                         cols = st.columns(min(3, len(odds_list)))
@@ -163,13 +163,13 @@ def betting_page():
                                     min_value=1, 
                                     max_value=1000, 
                                     value=10,
-                                    key=f"amount_enhanced_{odd['id']}"
+                                    key=f"amount_enhanced_{match['id']}_{odd['id']}"
                                 )
                                 
                                 potential_win = amount * odd['odds_value']
                                 st.write(f"💰 Ganho potencial: {potential_win:.2f} pontos")
                                 
-                                if st.button(f"🎯 Apostar", key=f"bet_enhanced_{odd['id']}"):
+                                if st.button(f"🎯 Apostar", key=f"bet_enhanced_{match['id']}_{odd['id']}"):
                                     success, message = place_enhanced_bet(
                                         st.session_state.username,
                                         match['id'],
@@ -233,7 +233,7 @@ def betting_page():
                 if custom_bets:
                     st.subheader("🎲 Apostas Especiais")
                     
-                    for custom_bet in custom_bets:
+                    for custom_bet_idx, custom_bet in enumerate(custom_bets):
                         col1, col2 = st.columns([2, 1])
                         
                         with col1:
@@ -249,13 +249,13 @@ def betting_page():
                                 min_value=1, 
                                 max_value=1000, 
                                 value=10, 
-                                key=f"amount_custom_{custom_bet['id']}"
+                                key=f"amount_custom_{match['id']}_{custom_bet['id']}"
                             )
                             
                             potential_win = amount_custom * custom_bet['odds']
                             st.write(f"💰 Ganho: {potential_win:.2f}")
                             
-                            if st.button("🎲 Apostar", key=f"bet_custom_{custom_bet['id']}"):
+                            if st.button("🎲 Apostar", key=f"bet_custom_{match['id']}_{custom_bet['id']}"):
                                 success, message = place_bet(
                                     st.session_state.username, 
                                     match['id'], 
@@ -285,7 +285,7 @@ def my_bets_page():
         return
     
     # Filter options
-    status_filter = st.selectbox("Filtrar por status:", ["Todas", "pending", "won", "lost"])
+    status_filter = st.selectbox("Filtrar por status:", ["Todas", "pending", "won", "lost"], key="my_bets_status_filter")
     
     filtered_bets = bets
     if status_filter != "Todas":
@@ -312,7 +312,7 @@ def my_bets_page():
             st.metric("Taxa de Acerto", f"{win_rate:.1f}%")
     
     # Display bets
-    for bet in filtered_bets:
+    for bet_idx, bet in enumerate(filtered_bets):
         team1_name = get_team_name(bet['team1_id'])
         team2_name = get_team_name(bet['team2_id'])
         
@@ -323,7 +323,7 @@ def my_bets_page():
             'lost': '🔴'
         }.get(bet['status'], '⚪')
         
-        with st.expander(f"{status_color} {team1_name} vs {team2_name} - {bet['bet_type']} ({bet['status']})"):
+        with st.expander(f"{status_color} {team1_name} vs {team2_name} - {bet['bet_type']} ({bet['status']})", key=f"my_bet_expander_{bet_idx}_{bet.get('id', bet_idx)}"):
             col1, col2 = st.columns(2)
             
             with col1:
@@ -362,7 +362,7 @@ def history_page():
         st.info("Nenhuma partida finalizada ainda.")
         return
     
-    for match in history:
+    for history_idx, match in enumerate(history):
         team1_name = get_team_name(match['team1_id'])
         team2_name = get_team_name(match['team2_id'])
         
@@ -374,7 +374,7 @@ def history_page():
         else:
             winner = "🤝 Empate"
         
-        with st.expander(f"⚽ {team1_name} {match['team1_score']} - {match['team2_score']} {team2_name} ({match['date']})"):
+        with st.expander(f"⚽ {team1_name} {match['team1_score']} - {match['team2_score']} {team2_name} ({match['date']})", key=f"history_expander_{history_idx}_{match['id']}"):
             col1, col2 = st.columns(2)
             
             with col1:
@@ -408,13 +408,13 @@ def propose_bet_page():
             match_key = f"{team1} vs {team2} - {match['date']} {match['time']}"
             match_options[match_key] = match['id']
         
-        selected_match_key = st.selectbox("Selecione a partida:", list(match_options.keys()))
+        selected_match_key = st.selectbox("Selecione a partida:", list(match_options.keys()), key="propose_match_select")
         selected_match_id = match_options[selected_match_key]
         
-        description = st.text_area("Descreva sua aposta (ex: 'Jogador X marcará mais de 2 gols'):")
-        proposed_odds = st.number_input("Odds propostas (ex: 2.50):", min_value=1.01, value=2.0, step=0.01)
+        description = st.text_area("Descreva sua aposta (ex: 'Jogador X marcará mais de 2 gols'):", key="propose_description")
+        proposed_odds = st.number_input("Odds propostas (ex: 2.50):", min_value=1.01, value=2.0, step=0.01, key="propose_odds")
         
-        submit_proposal = st.form_submit_button("Propor Aposta")
+        submit_proposal = st.form_submit_button("Propor Aposta", key="propose_submit")
         
         if submit_proposal:
             if description:
@@ -440,5 +440,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
