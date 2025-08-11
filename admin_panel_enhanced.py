@@ -24,7 +24,8 @@ def admin_login_page():
             else:
                 st.error("Credenciais inválidas ou usuário não é administrador")
 
-def main_admin_panel():
+def main_admin_panel_content():
+    """Conteúdo principal do painel administrativo, a ser chamado por uma função wrapper."""
     st.title("⚽ GuimaBet - Painel Administrativo")
     
     # Sidebar navigation
@@ -86,7 +87,7 @@ def dashboard_page():
     
     with col3:
         # Count active bets
-        conn = sqlite3.connect('guimabet.db')
+        conn = sqlite3.connect("guimabet.db")
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM bets WHERE status = 'pending'")
         active_bets = c.fetchone()[0]
@@ -95,7 +96,7 @@ def dashboard_page():
     
     with col4:
         # Count custom bet proposals
-        proposals = get_custom_bet_proposals('pending')
+        proposals = get_custom_bet_proposals("pending")
         st.metric("Propostas Pendentes", len(proposals))
     
     # Recent activity
@@ -105,33 +106,33 @@ def dashboard_page():
     
     with col1:
         st.write("**Últimas Apostas**")
-        conn = sqlite3.connect('guimabet.db')
-        recent_bets = pd.read_sql_query('''
+        conn = sqlite3.connect("guimabet.db")
+        recent_bets = pd.read_sql_query("""
         SELECT b.user_id, b.amount, b.bet_type, b.timestamp, m.team1_id, m.team2_id
         FROM bets b
         JOIN matches m ON b.match_id = m.id
         ORDER BY b.timestamp DESC
         LIMIT 10
-        ''', conn)
+        """, conn)
         conn.close()
         
         if not recent_bets.empty:
             for _, bet in recent_bets.iterrows():
-                team1 = get_team_name(bet['team1_id'])
-                team2 = get_team_name(bet['team2_id'])
-                st.write(f"• {bet['user_id']} apostou {bet['amount']} pts em {team1} vs {team2}")
+                team1 = get_team_name(bet["team1_id"])
+                team2 = get_team_name(bet["team2_id"])
+                st.write(f"• {bet["user_id"]} apostou {bet["amount"]} pts em {team1} vs {team2}")
         else:
             st.write("Nenhuma aposta recente")
     
     with col2:
         st.write("**Propostas Recentes**")
-        recent_proposals = get_custom_bet_proposals('pending')[:5]
+        recent_proposals = get_custom_bet_proposals("pending")[:5]
         
         if recent_proposals:
             for proposal in recent_proposals:
-                team1 = get_team_name(proposal['team1_id'])
-                team2 = get_team_name(proposal['team2_id'])
-                st.write(f"• {proposal['username']}: {proposal['description'][:50]}...")
+                team1 = get_team_name(proposal["team1_id"])
+                team2 = get_team_name(proposal["team2_id"])
+                st.write(f"• {proposal["username"]}: {proposal["description"][:50]}...")
         else:
             st.write("Nenhuma proposta pendente")
 
@@ -146,10 +147,10 @@ def manage_odds_page():
     
     match_options = {}
     for match in matches:
-        team1 = get_team_name(match['team1_id'])
-        team2 = get_team_name(match['team2_id'])
-        match_key = f"{team1} vs {team2} - {match['date']} {match['time']}"
-        match_options[match_key] = match['id']
+        team1 = get_team_name(match["team1_id"])
+        team2 = get_team_name(match["team2_id"])
+        match_key = f"{team1} vs {team2} - {match["date"]} {match["time"]}"
+        match_options[match_key] = match["id"]
     
     selected_match_key = st.selectbox("Selecione uma partida:", list(match_options.keys()))
     selected_match_id = match_options[selected_match_key]
@@ -168,7 +169,7 @@ def manage_odds_page():
     # Group odds by category
     odds_by_category = {}
     for odd in match_odds:
-        category = odd['category_name']
+        category = odd["category_name"]
         if category not in odds_by_category:
             odds_by_category[category] = []
         odds_by_category[category].append(odd)
@@ -181,30 +182,30 @@ def manage_odds_page():
         
         for i, odd in enumerate(odds_list):
             with cols[i % 3]:
-                display_name = odd['template_name']
-                if odd['player_name']:
-                    display_name += f" ({odd['player_name']})"
+                display_name = odd["template_name"]
+                if odd["player_name"]:
+                    display_name += f" ({odd["player_name"]})"
                 
                 st.write(f"**{display_name}**")
-                st.write(f"_{odd['description']}_")
+                st.write(f"_{odd["description"]}_")
                 
                 # Edit odds value
                 new_odds = st.number_input(
-                    f"Odds atual: {odd['odds_value']}", 
+                    f"Odds atual: {odd["odds_value"]}", 
                     min_value=1.01, 
-                    value=float(odd['odds_value']), 
+                    value=float(odd["odds_value"]),
                     step=0.01,
-                    key=f"odds_{odd['id']}"
+                    key=f"odds_{odd["id"]}"
                 )
                 
                 reason = st.text_input(
                     "Motivo da alteração:", 
-                    key=f"reason_{odd['id']}"
+                    key=f"reason_{odd["id"]}"
                 )
                 
-                if st.button(f"💾 Atualizar", key=f"update_{odd['id']}"):
-                    if new_odds != odd['odds_value']:
-                        update_match_odds(odd['id'], new_odds, st.session_state.username, reason)
+                if st.button(f"💾 Atualizar", key=f"update_{odd["id"]}"):
+                    if new_odds != odd["odds_value"]:
+                        update_match_odds(odd["id"], new_odds, st.session_state.username, reason)
                         st.success("Odds atualizada!")
                         st.rerun()
                     else:
@@ -222,16 +223,16 @@ def manage_templates_page():
         categories = get_odds_categories()
         
         for category in categories:
-            st.subheader(f"📂 {category['name']}")
-            st.write(category['description'])
+            st.subheader(f"📂 {category["name"]}")
+            st.write(category["description"])
             
-            templates = get_odds_templates(category['id'])
+            templates = get_odds_templates(category["id"])
             
             if templates:
                 df = pd.DataFrame(templates)
-                df = df[['name', 'description', 'bet_type', 'default_odds', 'requires_player']]
-                df.columns = ['Nome', 'Descrição', 'Tipo', 'Odds Padrão', 'Requer Jogador']
-                df['Requer Jogador'] = df['Requer Jogador'].map({1: 'Sim', 0: 'Não'})
+                df = df[["name", "description", "bet_type", "default_odds", "requires_player"]]
+                df.columns = ["Nome", "Descrição", "Tipo", "Odds Padrão", "Requer Jogador"]
+                df["Requer Jogador"] = df["Requer Jogador"].map({1: "Sim", 0: "Não"})
                 st.dataframe(df, use_container_width=True)
             else:
                 st.write("Nenhum template nesta categoria")
@@ -244,7 +245,7 @@ def manage_templates_page():
         
         with st.form("create_template"):
             categories = get_odds_categories()
-            category_options = {cat['name']: cat['id'] for cat in categories}
+            category_options = {cat["name"]: cat["id"] for cat in categories}
             
             selected_category = st.selectbox("Categoria:", list(category_options.keys()))
             name = st.text_input("Nome do Template:")
@@ -284,10 +285,10 @@ def manage_custom_bets_page():
         if matches:
             match_options = {}
             for match in matches:
-                team1 = get_team_name(match['team1_id'])
-                team2 = get_team_name(match['team2_id'])
-                match_key = f"{team1} vs {team2} - {match['date']} {match['time']}"
-                match_options[match_key] = match['id']
+                team1 = get_team_name(match["team1_id"])
+                team2 = get_team_name(match["team2_id"])
+                match_key = f"{team1} vs {team2} - {match["date"]} {match["time"]}"
+                match_options[match_key] = match["id"]
             
             selected_match_key = st.selectbox("Filtrar por partida:", ["Todas"] + list(match_options.keys()))
             
@@ -298,11 +299,11 @@ def manage_custom_bets_page():
             
             if custom_bets:
                 for bet in custom_bets:
-                    with st.expander(f"🎯 {bet['description']} (Odds: {bet['odds']})"):
+                    with st.expander(f"🎯 {bet["description"]} (Odds: {bet["odds"]})"):
                         # Get match info for this bet
-                        conn = sqlite3.connect('guimabet.db')
+                        conn = sqlite3.connect("guimabet.db")
                         c = conn.cursor()
-                        c.execute("SELECT team1_id, team2_id FROM matches WHERE id = ?", (bet['match_id'],))
+                        c.execute("SELECT team1_id, team2_id FROM matches WHERE id = ?", (bet["match_id"],))
                         match_info = c.fetchone()
                         conn.close()
                         
@@ -316,23 +317,23 @@ def manage_custom_bets_page():
                         
                         with col1:
                             st.write(f"**Partida:** {team1} vs {team2}")
-                            st.write(f"**Odds:** {bet['odds']}")
-                            st.write(f"**Status:** {bet['status']}")
-                            if bet['player_id']:
-                                player_name = get_player_name(bet['player_id'])
+                            st.write(f"**Odds:** {bet["odds"]}")
+                            st.write(f"**Status:** {bet["status"]}")
+                            if bet["player_id"]:
+                                player_name = get_player_name(bet["player_id"])
                                 st.write(f"**Jogador:** {player_name}")
                         
                         with col2:
-                            if bet['status'] == 'pending':
+                            if bet["status"] == "pending":
                                 result = st.selectbox(
                                     "Resultado:", 
                                     ["", "yes", "no"], 
-                                    key=f"result_{bet['id']}"
+                                    key=f"result_{bet["id"]}"
                                 )
                                 
-                                if st.button(f"✅ Finalizar Aposta", key=f"finish_{bet['id']}"):
+                                if st.button(f"✅ Finalizar Aposta", key=f"finish_{bet["id"]}"):
                                     if result:
-                                        update_custom_bet_result(bet['id'], result)
+                                        update_custom_bet_result(bet["id"], result)
                                         st.success("Aposta finalizada!")
                                         st.rerun()
                                     else:
@@ -353,10 +354,10 @@ def manage_custom_bets_page():
         with st.form("create_custom_bet"):
             match_options = {}
             for match in matches:
-                team1 = get_team_name(match['team1_id'])
-                team2 = get_team_name(match['team2_id'])
-                match_key = f"{team1} vs {team2} - {match['date']} {match['time']}"
-                match_options[match_key] = match['id']
+                team1 = get_team_name(match["team1_id"])
+                team2 = get_team_name(match["team2_id"])
+                match_key = f"{team1} vs {team2} - {match["date"]} {match["time"]}"
+                match_options[match_key] = match["id"]
             
             selected_match_key = st.selectbox("Partida:", list(match_options.keys()))
             selected_match_id = match_options[selected_match_key]
@@ -371,7 +372,7 @@ def manage_custom_bets_page():
             if use_player:
                 players = get_match_players(selected_match_id)
                 if players:
-                    player_options = {player['name']: player['id'] for player in players}
+                    player_options = {player["name"]: player["id"] for player in players}
                     selected_player = st.selectbox("Jogador:", list(player_options.keys()))
                     player_id = player_options[selected_player]
                 else:
@@ -391,26 +392,26 @@ def manage_custom_bets_page():
 def manage_proposals_page():
     st.header("💡 Propostas de Usuários")
     
-    proposals = get_custom_bet_proposals('pending')
+    proposals = get_custom_bet_proposals("pending")
     
     if not proposals:
         st.info("Nenhuma proposta pendente")
         return
     
     for proposal in proposals:
-        with st.expander(f"💡 {proposal['description'][:50]}... (por {proposal['username']})"):
-            team1 = get_team_name(proposal['team1_id'])
-            team2 = get_team_name(proposal['team2_id'])
+        with st.expander(f"💡 {proposal["description"][:50]}... (por {proposal["username"]})"):
+            team1 = get_team_name(proposal["team1_id"])
+            team2 = get_team_name(proposal["team2_id"])
             
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write(f"**Usuário:** {proposal['username']}")
+                st.write(f"**Usuário:** {proposal["username"]}")
                 st.write(f"**Partida:** {team1} vs {team2}")
-                st.write(f"**Data:** {proposal['date']} {proposal['time']}")
-                st.write(f"**Descrição:** {proposal['description']}")
-                st.write(f"**Odds Propostas:** {proposal['proposed_odds']}")
-                st.write(f"**Criado em:** {proposal['created_at']}")
+                st.write(f"**Data:** {proposal["date"]} {proposal["time"]}")
+                st.write(f"**Descrição:** {proposal["description"]}")
+                st.write(f"**Odds Propostas:** {proposal["proposed_odds"]}")
+                st.write(f"**Criado em:** {proposal["created_at"]}")
             
             with col2:
                 st.subheader("🔍 Revisar Proposta")
@@ -418,29 +419,29 @@ def manage_proposals_page():
                 action = st.selectbox(
                     "Ação:", 
                     ["", "approve", "reject"], 
-                    key=f"action_{proposal['id']}"
+                    key=f"action_{proposal["id"]}"
                 )
                 
                 response = st.text_area(
                     "Resposta para o usuário:", 
-                    key=f"response_{proposal['id']}"
+                    key=f"response_{proposal["id"]}"
                 )
                 
                 if action == "approve":
                     final_odds = st.number_input(
                         "Odds Final:", 
                         min_value=1.01, 
-                        value=float(proposal['proposed_odds']), 
+                        value=float(proposal["proposed_odds"]),
                         step=0.01,
-                        key=f"final_odds_{proposal['id']}"
+                        key=f"final_odds_{proposal["id"]}"
                     )
                 else:
                     final_odds = None
                 
-                if st.button(f"✅ Processar", key=f"process_{proposal['id']}"):
+                if st.button(f"✅ Processar", key=f"process_{proposal["id"]}"):
                     if action:
                         review_custom_bet_proposal(
-                            proposal['id'], 
+                            proposal["id"], 
                             st.session_state.username, 
                             action, 
                             response, 
@@ -461,35 +462,35 @@ def manage_matches_page():
         
         if matches:
             for match in matches:
-                team1 = get_team_name(match['team1_id'])
-                team2 = get_team_name(match['team2_id'])
+                team1 = get_team_name(match["team1_id"])
+                team2 = get_team_name(match["team2_id"])
                 
-                with st.expander(f"⚽ {team1} vs {team2} - {match['date']} {match['time']}"):
+                with st.expander(f"⚽ {team1} vs {team2} - {match["date"]} {match["time"]}"):
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.write(f"**Status:** {match['status']}")
-                        if match['status'] == 'live':
-                            st.write(f"**Placar:** {match['team1_score'] or 0} - {match['team2_score'] or 0}")
+                        st.write(f"**Status:** {match["status"]}")
+                        if match["status"] == "live":
+                            st.write(f"**Placar:** {match["team1_score"] or 0} - {match["team2_score"] or 0}")
                     
                     with col2:
-                        if match['status'] == 'upcoming':
-                            if st.button(f"🔴 Iniciar Partida", key=f"start_{match['id']}"):
-                                set_match_live(match['id'])
+                        if match["status"] == "upcoming":
+                            if st.button(f"🔴 Iniciar Partida", key=f"start_{match["id"]}"):
+                                set_match_live(match["id"])
                                 st.success("Partida iniciada!")
                                 st.rerun()
                         
-                        elif match['status'] == 'live':
+                        elif match["status"] == "live":
                             st.subheader("📊 Finalizar Partida")
                             
                             col_a, col_b = st.columns(2)
                             with col_a:
-                                team1_score = st.number_input(f"Gols {team1}:", min_value=0, key=f"t1_{match['id']}")
+                                team1_score = st.number_input(f"Gols {team1}:", min_value=0, key=f"t1_{match["id"]}")
                             with col_b:
-                                team2_score = st.number_input(f"Gols {team2}:", min_value=0, key=f"t2_{match['id']}")
+                                team2_score = st.number_input(f"Gols {team2}:", min_value=0, key=f"t2_{match["id"]}")
                             
-                            if st.button(f"✅ Finalizar", key=f"finish_{match['id']}"):
-                                update_match_result(match['id'], team1_score, team2_score)
+                            if st.button(f"✅ Finalizar", key=f"finish_{match["id"]}"):
+                                update_match_result(match["id"], team1_score, team2_score)
                                 st.success("Partida finalizada!")
                                 st.rerun()
         else:
@@ -500,10 +501,10 @@ def manage_matches_page():
         
         if history:
             for match in history[:10]:  # Show last 10 matches
-                team1 = get_team_name(match['team1_id'])
-                team2 = get_team_name(match['team2_id'])
+                team1 = get_team_name(match["team1_id"])
+                team2 = get_team_name(match["team2_id"])
                 
-                st.write(f"⚽ **{team1} {match['team1_score']} - {match['team2_score']} {team2}** ({match['date']})")
+                st.write(f"⚽ **{team1} {match["team1_score"]} - {match["team2_score"]} {team2}** ({match["date"]})")
         else:
             st.info("Nenhuma partida finalizada")
     
@@ -511,7 +512,7 @@ def manage_matches_page():
         st.subheader("➕ Criar Nova Partida")
         
         teams = get_all_teams()
-        team_options = {team['name']: team['id'] for team in teams}
+        team_options = {team["name"]: team["id"] for team in teams}
         
         with st.form("create_match"):
             col1, col2 = st.columns(2)
@@ -555,15 +556,15 @@ def manage_users_page():
     
     if users:
         df = pd.DataFrame(users)
-        df['is_admin'] = df['is_admin'].map({1: 'Sim', 0: 'Não'})
-        df.columns = ['Usuário', 'Pontos', 'Admin']
+        df["is_admin"] = df["is_admin"].map({1: "Sim", 0: "Não"})
+        df.columns = ["Usuário", "Pontos", "Admin"]
         
         st.dataframe(df, use_container_width=True)
         
         # User management
         st.subheader("✏️ Editar Usuário")
         
-        user_options = {user['username']: user for user in users}
+        user_options = {user["username"]: user for user in users}
         selected_user = st.selectbox("Selecionar usuário:", list(user_options.keys()))
         
         if selected_user:
@@ -572,10 +573,10 @@ def manage_users_page():
             col1, col2 = st.columns(2)
             
             with col1:
-                new_points = st.number_input("Pontos:", value=user_data['points'], min_value=0)
+                new_points = st.number_input("Pontos:", value=user_data["points"], min_value=0)
             
             with col2:
-                new_admin = st.checkbox("É Admin", value=bool(user_data['is_admin']))
+                new_admin = st.checkbox("É Admin", value=bool(user_data["is_admin"]))
             
             if st.button("💾 Atualizar Usuário"):
                 success, message = update_user(
@@ -605,7 +606,7 @@ def manage_teams_players_page():
         with col1:
             st.subheader("📋 Times Existentes")
             for team in teams:
-                st.write(f"• {team['name']}")
+                st.write(f"• {team["name"]}")
         
         with col2:
             st.subheader("➕ Adicionar Time")
@@ -635,8 +636,8 @@ def manage_teams_players_page():
             
             if players:
                 for player in players:
-                    team_name = get_team_name(player['team_id'])
-                    st.write(f"• {player['name']} ({team_name})")
+                    team_name = get_team_name(player["team_id"])
+                    st.write(f"• {player["name"]} ({team_name})")
             else:
                 st.write("Nenhum jogador cadastrado")
         
@@ -647,7 +648,7 @@ def manage_teams_players_page():
                 with st.form("add_player"):
                     player_name = st.text_input("Nome do Jogador:")
                     
-                    team_options = {team['name']: team['id'] for team in teams}
+                    team_options = {team["name"]: team["id"] for team in teams}
                     selected_team = st.selectbox("Time:", list(team_options.keys()))
                     
                     if st.form_submit_button("👤 Adicionar"):
@@ -667,7 +668,7 @@ def reports_page():
     st.header("📈 Relatórios")
     
     # Betting statistics
-    conn = sqlite3.connect('guimabet.db')
+    conn = sqlite3.connect("guimabet.db")
     
     col1, col2 = st.columns(2)
     
@@ -675,24 +676,24 @@ def reports_page():
         st.subheader("📊 Estatísticas de Apostas")
         
         # Total bets by status
-        bet_stats = pd.read_sql_query('''
+        bet_stats = pd.read_sql_query("""
         SELECT status, COUNT(*) as count, SUM(amount) as total_amount
         FROM bets
         GROUP BY status
-        ''', conn)
+        """, conn)
         
         if not bet_stats.empty:
             st.dataframe(bet_stats)
         
         # Top bettors
         st.subheader("🏆 Maiores Apostadores")
-        top_bettors = pd.read_sql_query('''
+        top_bettors = pd.read_sql_query("""
         SELECT user_id, COUNT(*) as total_bets, SUM(amount) as total_amount
         FROM bets
         GROUP BY user_id
         ORDER BY total_amount DESC
         LIMIT 10
-        ''', conn)
+        """, conn)
         
         if not top_bettors.empty:
             st.dataframe(top_bettors)
@@ -701,19 +702,19 @@ def reports_page():
         st.subheader("💰 Análise Financeira")
         
         # Daily betting volume
-        daily_volume = pd.read_sql_query('''
+        daily_volume = pd.read_sql_query("""
         SELECT DATE(timestamp) as date, COUNT(*) as bets, SUM(amount) as volume
         FROM bets
         WHERE timestamp >= date('now', '-30 days')
         GROUP BY DATE(timestamp)
         ORDER BY date DESC
-        ''', conn)
+        """, conn)
         
         if not daily_volume.empty:
             st.line_chart(daily_volume.set_index('date')['volume'])
         
         # Win/Loss ratio
-        win_loss = pd.read_sql_query('''
+        win_loss = pd.read_sql_query("""
         SELECT 
             SUM(CASE WHEN status = 'won' THEN amount ELSE 0 END) as total_winnings,
             SUM(CASE WHEN status = 'lost' THEN amount ELSE 0 END) as total_losses,
@@ -721,40 +722,11 @@ def reports_page():
             COUNT(CASE WHEN status = 'lost' THEN 1 END) as losses
         FROM bets
         WHERE status IN ('won', 'lost')
-        ''', conn)
+        """, conn)
         
-        if not win_loss.empty and win_loss.iloc[0]['wins'] > 0:
-            st.metric("Taxa de Vitória", f"{win_loss.iloc[0]['wins'] / (win_loss.iloc[0]['wins'] + win_loss.iloc[0]['losses']) * 100:.1f}%")
+        if not win_loss.empty and win_loss.iloc[0]["wins"] > 0:
+            st.metric("Taxa de Vitória", f"{win_loss.iloc[0]["wins"] / (win_loss.iloc[0]["wins"] + win_loss.iloc[0]["losses"]) * 100:.1f}%")
     
     conn.close()
 
-# Main function for standalone execution
-def run_admin_panel():
-    """Função principal para executar o painel admin como aplicação standalone"""
-    # Configure page
-    st.set_page_config(
-        page_title="GuimaBet - Painel Admin",
-        page_icon="⚽",
-        layout="wide"
-    )
-    
-    # Initialize session state
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    if 'username' not in st.session_state:
-        st.session_state.username = ""
-    if 'is_admin' not in st.session_state:
-        st.session_state.is_admin = False
-    
-    # Initialize database
-    init_db()
-    
-    if not st.session_state.logged_in:
-        admin_login_page()
-    else:
-        main_admin_panel()
-
-# For standalone execution
-if __name__ == "__main__":
-    run_admin_panel()
 
