@@ -1,11 +1,8 @@
-import streamlit as st
 import sqlite3
 import pandas as pd
 import datetime
 import hashlib
-import os
 import random
-import json
 
 # Initialize the database if it doesn't exist
 def init_db():
@@ -257,7 +254,225 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Enhanced odds management functions
+# Authentication functions
+def login(username, password):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
+    user = c.fetchone()
+    conn.close()
+    return user
+
+def register(username, password):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    try:
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
+                 (username, hashed_password, 100, 0))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        conn.close()
+        return False
+
+# User management functions
+def get_all_users():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT username, points, is_admin FROM users ORDER BY points DESC")
+    users = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return users
+
+def update_user(username, new_username=None, new_points=None, is_admin=None):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    if new_username and new_username != username:
+        c.execute("SELECT * FROM users WHERE username = ?", (new_username,))
+        if c.fetchone():
+            conn.close()
+            return False, "Nome de usuário já existe."
+        
+        c.execute("UPDATE users SET username = ? WHERE username = ?", (new_username, username))
+        c.execute("UPDATE bets SET user_id = ? WHERE user_id = ?", (new_username, username))
+        username = new_username
+    
+    if new_points is not None:
+        c.execute("UPDATE users SET points = ? WHERE username = ?", (new_points, username))
+    
+    if is_admin is not None:
+        c.execute("UPDATE users SET is_admin = ? WHERE username = ?", (1 if is_admin else 0, username))
+    
+    conn.commit()
+    conn.close()
+    return True, "Usuário atualizado com sucesso!"
+
+# Team and player functions
+def get_team_name(team_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT name FROM teams WHERE id = ?", (team_id,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else "Unknown Team"
+
+def get_player_name(player_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT name FROM players WHERE id = ?", (player_id,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else "Unknown Player"
+
+def get_all_teams():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM teams ORDER BY name")
+    teams = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return teams
+
+def get_all_players():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM players ORDER BY name")
+    players = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return players
+
+def get_match_players(match_id):
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+    SELECT p.* FROM players p
+    JOIN matches m ON (p.team_id = m.team1_id OR p.team_id = m.team2_id)
+    WHERE m.id = ?
+    ORDER BY p.name
+    ''', (match_id,))
+    players = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return players
+
+def add_team(name):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        conn.close()
+        return False
+
+def add_player(name, team_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO players (name, team_id) VALUES (?, ?)", (name, team_id))
+        conn.commit()
+        conn.close()
+        return True
+    except:
+        conn.close()
+        return False
+
+# Match functions
+def get_upcoming_matches():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+    SELECT m.id, m.team1_id, m.team2_id, m.date, m.time, m.status, m.team1_score, m.team2_score,
+           o.team1_win, o.draw, o.team2_win
+    FROM matches m
+    LEFT JOIN odds o ON m.id = o.match_id
+    WHERE m.status = 'upcoming' OR m.status = 'live'
+    ORDER BY m.date, m.time
+    ''')
+    matches = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return matches
+
+def get_match_history():
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('''
+    SELECT m.id, m.team1_id, m.team2_id, m.date, m.time, m.status, m.team1_score, m.team2_score,
+           o.team1_win, o.draw, o.team2_win
+    FROM matches m
+    LEFT JOIN odds o ON m.id = o.match_id
+    WHERE m.status = 'completed'
+    ORDER BY m.date DESC, m.time DESC
+    ''')
+    matches = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return matches
+
+def add_match(team1_id, team2_id, date, time):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute('''
+    INSERT INTO matches (team1_id, team2_id, date, time, status)
+    VALUES (?, ?, ?, ?, ?)
+    ''', (team1_id, team2_id, date, time, 'upcoming'))
+    
+    match_id = c.lastrowid
+    
+    # Create legacy odds for backward compatibility
+    team1_win = round(random.uniform(1.5, 3.0), 2)
+    draw = round(random.uniform(2.0, 4.0), 2)
+    team2_win = round(random.uniform(1.8, 3.5), 2)
+    
+    c.execute('''
+    INSERT INTO odds (match_id, team1_win, draw, team2_win)
+    VALUES (?, ?, ?, ?)
+    ''', (match_id, team1_win, draw, team2_win))
+    
+    conn.commit()
+    conn.close()
+    
+    # Create enhanced odds
+    create_match_odds(match_id)
+    
+    return True
+
+def set_match_live(match_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("UPDATE matches SET status = 'live' WHERE id = ?", (match_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def update_match_result(match_id, team1_score, team2_score):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    # Update match status and scores
+    c.execute('''
+    UPDATE matches 
+    SET status = 'completed', team1_score = ?, team2_score = ?
+    WHERE id = ?
+    ''', (team1_score, team2_score, match_id))
+    
+    # Process all bets for this match
+    process_match_bets(match_id, team1_score, team2_score)
+    
+    conn.commit()
+    conn.close()
+    return True
+
+# Odds management functions
 def get_odds_categories():
     conn = sqlite3.connect('guimabet.db')
     conn.row_factory = sqlite3.Row
@@ -392,26 +607,81 @@ def add_custom_odds_template(category_id, name, description, bet_type, default_o
         conn.close()
         return False, f"Erro ao criar template: {str(e)}"
 
-def propose_custom_bet(user_id, match_id, description, proposed_odds):
-    """User proposes a custom bet"""
+# Custom bets functions
+def get_custom_bets(match_id=None):
+    conn = sqlite3.connect('guimabet.db')
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    
+    if match_id:
+        c.execute('''
+        SELECT * FROM custom_bets WHERE match_id = ? AND status = 'pending'
+        ''', (match_id,))
+    else:
+        c.execute('SELECT * FROM custom_bets WHERE status = "pending"')
+    
+    custom_bets = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return custom_bets
+
+def add_custom_bet(match_id, description, odds, player_id=None):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    try:
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute('''
+        INSERT INTO custom_bets (match_id, description, odds, player_id, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ''', (match_id, description, odds, player_id, 'pending', current_time))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(e)
+        conn.close()
+        return False
+
+def update_custom_bet_result(custom_bet_id, result):
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
     
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Update custom bet status and result
+    c.execute('''
+    UPDATE custom_bets 
+    SET status = 'completed', result = ?
+    WHERE id = ?
+    ''', (result, custom_bet_id))
     
-    try:
-        c.execute('''
-        INSERT INTO custom_bet_proposals (user_id, match_id, description, proposed_odds, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, match_id, description, proposed_odds, current_time))
-        
-        conn.commit()
-        conn.close()
-        return True, "Proposta de aposta enviada para análise!"
-    except Exception as e:
-        conn.close()
-        return False, f"Erro ao enviar proposta: {str(e)}"
+    # Get all bets for this custom bet
+    c.execute('''
+    SELECT id, user_id, amount FROM bets 
+    WHERE custom_bet_id = ? AND status = 'pending'
+    ''', (custom_bet_id,))
+    bets = c.fetchall()
+    
+    # Get custom bet odds
+    c.execute('''
+    SELECT odds FROM custom_bets
+    WHERE id = ?
+    ''', (custom_bet_id,))
+    odds = c.fetchone()[0]
+    
+    # Process bets
+    for bet_id, user_id, amount in bets:
+        if result == 'yes':
+            # Winning bet
+            winnings = int(amount * odds)
+            c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings, user_id))
+            c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
+        else:
+            # Losing bet
+            c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
+    
+    conn.commit()
+    conn.close()
+    return True
 
+# Custom bet proposals functions
 def get_custom_bet_proposals(status=None):
     """Get custom bet proposals for admin review"""
     conn = sqlite3.connect('guimabet.db')
@@ -439,6 +709,26 @@ def get_custom_bet_proposals(status=None):
     proposals = [dict(row) for row in c.fetchall()]
     conn.close()
     return proposals
+
+def add_custom_bet_proposal(user_id, match_id, description, proposed_odds):
+    """User proposes a custom bet"""
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        c.execute('''
+        INSERT INTO custom_bet_proposals (user_id, match_id, description, proposed_odds, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, match_id, description, proposed_odds, current_time))
+        
+        conn.commit()
+        conn.close()
+        return True, "Proposta de aposta enviada para análise!"
+    except Exception as e:
+        conn.close()
+        return False, f"Erro ao enviar proposta: {str(e)}"
 
 def review_custom_bet_proposal(proposal_id, admin_user, action, response="", final_odds=None):
     """Admin reviews and approves/rejects custom bet proposal"""
@@ -478,7 +768,7 @@ def review_custom_bet_proposal(proposal_id, admin_user, action, response="", fin
     conn.close()
     return True
 
-# Enhanced betting functions
+# Betting functions
 def place_enhanced_bet(username, match_id, bet_type, amount, match_odds_id=None, custom_bet_id=None, player_id=None):
     """Enhanced betting function with better odds tracking"""
     conn = sqlite3.connect('guimabet.db')
@@ -527,94 +817,6 @@ def place_enhanced_bet(username, match_id, bet_type, amount, match_odds_id=None,
     conn.close()
     return True, "Aposta realizada com sucesso!"
 
-# Keep all existing functions from original code
-def get_team_name(team_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT name FROM teams WHERE id = ?", (team_id,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else "Unknown Team"
-
-def get_player_name(player_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("SELECT name FROM players WHERE id = ?", (player_id,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else "Unknown Player"
-
-def login(username, password):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password))
-    user = c.fetchone()
-    conn.close()
-    return user
-
-def register(username, password):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    try:
-        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
-                 (username, hashed_password, 100, 0))
-        conn.commit()
-        conn.close()
-        return True
-    except:
-        conn.close()
-        return False
-
-def get_upcoming_matches():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute('''
-    SELECT m.id, m.team1_id, m.team2_id, m.date, m.time, m.status, m.team1_score, m.team2_score,
-           o.team1_win, o.draw, o.team2_win
-    FROM matches m
-    LEFT JOIN odds o ON m.id = o.match_id
-    WHERE m.status = 'upcoming' OR m.status = 'live'
-    ORDER BY m.date, m.time
-    ''')
-    matches = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return matches
-
-def get_match_history():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute('''
-    SELECT m.id, m.team1_id, m.team2_id, m.date, m.time, m.status, m.team1_score, m.team2_score,
-           o.team1_win, o.draw, o.team2_win
-    FROM matches m
-    LEFT JOIN odds o ON m.id = o.match_id
-    WHERE m.status = 'completed'
-    ORDER BY m.date DESC, m.time DESC
-    ''')
-    matches = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return matches
-
-def get_custom_bets(match_id=None):
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    
-    if match_id:
-        c.execute('''
-        SELECT * FROM custom_bets WHERE match_id = ? AND status = 'pending'
-        ''', (match_id,))
-    else:
-        c.execute('SELECT * FROM custom_bets WHERE status = "pending"')
-    
-    custom_bets = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return custom_bets
-
 def get_user_bets(username):
     conn = sqlite3.connect('guimabet.db')
     conn.row_factory = sqlite3.Row
@@ -632,58 +834,13 @@ def get_user_bets(username):
     conn.close()
     return bets
 
+# Legacy function for backward compatibility
 def place_bet(username, match_id, bet_type, amount, custom_bet_id=None, player_id=None):
     """Legacy function for backward compatibility"""
     return place_enhanced_bet(username, match_id, bet_type, amount, 
                             custom_bet_id=custom_bet_id, player_id=player_id)
 
-# Admin functions (enhanced)
-def add_match(team1_id, team2_id, date, time):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute('''
-    INSERT INTO matches (team1_id, team2_id, date, time, status)
-    VALUES (?, ?, ?, ?, ?)
-    ''', (team1_id, team2_id, date, time, 'upcoming'))
-    
-    match_id = c.lastrowid
-    
-    # Create legacy odds for backward compatibility
-    team1_win = round(random.uniform(1.5, 3.0), 2)
-    draw = round(random.uniform(2.0, 4.0), 2)
-    team2_win = round(random.uniform(1.8, 3.5), 2)
-    
-    c.execute('''
-    INSERT INTO odds (match_id, team1_win, draw, team2_win)
-    VALUES (?, ?, ?, ?)
-    ''', (match_id, team1_win, draw, team2_win))
-    
-    conn.commit()
-    conn.close()
-    
-    # Create enhanced odds
-    create_match_odds(match_id)
-    
-    return True
-
-def update_match_result(match_id, team1_score, team2_score):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    
-    # Update match status and scores
-    c.execute('''
-    UPDATE matches 
-    SET status = 'completed', team1_score = ?, team2_score = ?
-    WHERE id = ?
-    ''', (team1_score, team2_score, match_id))
-    
-    # Process all bets for this match (both legacy and enhanced)
-    process_match_bets(match_id, team1_score, team2_score)
-    
-    conn.commit()
-    conn.close()
-    return True
-
+# Bet processing function
 def process_match_bets(match_id, team1_score, team2_score):
     """Process all bets when match is completed"""
     conn = sqlite3.connect('guimabet.db')
@@ -771,197 +928,3 @@ def process_match_bets(match_id, team1_score, team2_score):
                 c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
     
     conn.commit()
-
-def set_match_live(match_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("UPDATE matches SET status = 'live' WHERE id = ?", (match_id,))
-    conn.commit()
-    conn.close()
-    return True
-
-def add_team(name):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    try:
-        c.execute("INSERT INTO teams (name) VALUES (?)", (name,))
-        conn.commit()
-        conn.close()
-        return True
-    except:
-        conn.close()
-        return False
-
-def add_player(name, team_id):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    try:
-        c.execute("INSERT INTO players (name, team_id) VALUES (?, ?)", (name, team_id))
-        conn.commit()
-        conn.close()
-        return True
-    except:
-        conn.close()
-        return False
-
-def add_custom_bet(match_id, description, odds, player_id=None):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    try:
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        c.execute('''
-        INSERT INTO custom_bets (match_id, description, odds, player_id, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ''', (match_id, description, odds, player_id, 'pending', current_time))
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print(e)
-        conn.close()
-        return False
-
-def update_custom_bet_result(custom_bet_id, result):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    
-    # Update custom bet status and result
-    c.execute('''
-    UPDATE custom_bets 
-    SET status = 'completed', result = ?
-    WHERE id = ?
-    ''', (result, custom_bet_id))
-    
-    # Get all bets for this custom bet
-    c.execute('''
-    SELECT id, user_id, amount FROM bets 
-    WHERE custom_bet_id = ? AND status = 'pending'
-    ''', (custom_bet_id,))
-    bets = c.fetchall()
-    
-    # Get custom bet odds
-    c.execute('''
-    SELECT odds FROM custom_bets
-    WHERE id = ?
-    ''', (custom_bet_id,))
-    odds = c.fetchone()[0]
-    
-    # Process bets
-    for bet_id, user_id, amount in bets:
-        if result == 'yes':
-            # Winning bet
-            winnings = int(amount * odds)
-            c.execute("UPDATE users SET points = points + ? WHERE username = ?", (winnings, user_id))
-            c.execute("UPDATE bets SET status = 'won' WHERE id = ?", (bet_id,))
-        else:
-            # Losing bet
-            c.execute("UPDATE bets SET status = 'lost' WHERE id = ?", (bet_id,))
-    
-    conn.commit()
-    conn.close()
-    return True
-
-def get_all_teams():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM teams ORDER BY name")
-    teams = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return teams
-
-def get_all_players():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM players ORDER BY name")
-    players = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return players
-
-def get_team_players(team_id):
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM players WHERE team_id = ? ORDER BY name", (team_id,))
-    players = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return players
-
-def get_match_players(match_id):
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute('''
-    SELECT p.* FROM players p
-    JOIN matches m ON (p.team_id = m.team1_id OR p.team_id = m.team2_id)
-    WHERE m.id = ?
-    ORDER BY p.name
-    ''', (match_id,))
-    players = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return players
-
-def get_all_users():
-    conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT username, points, is_admin FROM users ORDER BY points DESC")
-    users = [dict(row) for row in c.fetchall()]
-    conn.close()
-    return users
-
-def update_user_points(username, points):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    c.execute("UPDATE users SET points = ? WHERE username = ?", (points, username))
-    conn.commit()
-    conn.close()
-    return True
-
-def update_user(username, new_username=None, new_points=None, is_admin=None):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    
-    if new_username and new_username != username:
-        # Check if new username already exists
-        c.execute("SELECT * FROM users WHERE username = ?", (new_username,))
-        if c.fetchone():
-            conn.close()
-            return False, "Nome de usuário já existe."
-        
-        # Update username in users table
-        c.execute("UPDATE users SET username = ? WHERE username = ?", (new_username, username))
-        
-        # Update username in bets table
-        c.execute("UPDATE bets SET user_id = ? WHERE user_id = ?", (new_username, username))
-        
-        username = new_username
-    
-    if new_points is not None:
-        c.execute("UPDATE users SET points = ? WHERE username = ?", (new_points, username))
-    
-    if is_admin is not None:
-        c.execute("UPDATE users SET is_admin = ? WHERE username = ?", (1 if is_admin else 0, username))
-    
-    conn.commit()
-    conn.close()
-    return True, "Usuário atualizado com sucesso!"
-
-def delete_user(username):
-    conn = sqlite3.connect('guimabet.db')
-    c = conn.cursor()
-    
-    # Delete user's bets first
-    c.execute("DELETE FROM bets WHERE user_id = ?", (username,))
-    
-    # Delete user
-    c.execute("DELETE FROM users WHERE username = ?", (username,))
-    
-    conn.commit()
-    conn.close()
-    return True
-
-# Initialize database
-init_db()
-
