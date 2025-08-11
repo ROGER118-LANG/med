@@ -23,9 +23,7 @@ def create_admin_if_not_exists(c):
 def init_db():
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
-hashed_password = hashlib.sha256("123".encode()).hexdigest()
-    c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)",
-             ("admin", hashed_password, 1000, 1))    
+  
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
