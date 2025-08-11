@@ -10,6 +10,9 @@ import json
 # Import all functions from the enhanced module
 from guimabet_melhorado import *
 
+# Import the refactored admin panel module
+import admin_panel_enhanced
+
 # Configure page
 st.set_page_config(
     page_title="GuimaBet - Sistema de Apostas",
@@ -105,7 +108,7 @@ def user_dashboard():
     elif selected_page == "💡 Propor Aposta":
         propose_bet_page()
     elif selected_page == "⚙️ Painel Admin" and st.session_state.is_admin:
-        admin_panel()
+        admin_panel_enhanced.main_admin_panel()
 
 def betting_page():
     st.header("🎯 Fazer Apostas")
@@ -477,35 +480,6 @@ def propose_bet_page():
                     st.write(f"**Revisado em:** {proposal['reviewed_at']}")
     else:
         st.info("Você ainda não fez nenhuma proposta.")
-
-def admin_panel():
-    st.header("⚙️ Painel Administrativo")
-    
-    # Import admin panel from separate module
-    try:
-        exec(open('admin_panel_enhanced.py').read())
-        main_admin_panel()
-    except FileNotFoundError:
-        st.error("Arquivo do painel administrativo não encontrado.")
-        
-        # Fallback basic admin panel
-        st.subheader("Painel Básico")
-        
-        tab1, tab2 = st.tabs(["Partidas", "Usuários"])
-        
-        with tab1:
-            st.write("**Partidas Ativas:**")
-            matches = get_upcoming_matches()
-            for match in matches:
-                team1 = get_team_name(match['team1_id'])
-                team2 = get_team_name(match['team2_id'])
-                st.write(f"• {team1} vs {team2} - {match['status']}")
-        
-        with tab2:
-            st.write("**Usuários:**")
-            users = get_all_users()
-            df = pd.DataFrame(users)
-            st.dataframe(df)
 
 def main():
     # Initialize database
