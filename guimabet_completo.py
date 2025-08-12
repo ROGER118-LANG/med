@@ -6,7 +6,7 @@ import hashlib
 
 def init_db():
     """Inicializa o banco de dados com todas as tabelas necessárias"""
-    conn = sqlite3.connect('guimabet.db')
+    conn = sqlite3.connect('primabet.db')
     c = conn.cursor()
     print("Conectado ao banco de dados. Criando/Verificando tabelas...")
 
@@ -118,9 +118,10 @@ def init_db():
         description TEXT NOT NULL,
         odds REAL NOT NULL,
         player_id INTEGER,
-        status TEXT DEFAULT 'pending',
+        status TEXT DEFAULT 'active',
         created_by TEXT,
         created_at TEXT,
+        result TEXT DEFAULT 'pending',
         FOREIGN KEY (match_id) REFERENCES matches (id),
         FOREIGN KEY (player_id) REFERENCES players (id)
     )
@@ -155,6 +156,8 @@ def init_db():
         timestamp TEXT,
         match_odds_id INTEGER,
         custom_bet_id INTEGER,
+        bet_type TEXT DEFAULT 'regular',
+        bet_description TEXT,
         FOREIGN KEY (user_id) REFERENCES users (username),
         FOREIGN KEY (match_id) REFERENCES matches (id),
         FOREIGN KEY (match_odds_id) REFERENCES match_odds (id),
@@ -162,18 +165,6 @@ def init_db():
     )
     ''')
 
-    # Dados iniciais para teste
-    c.execute("INSERT OR IGNORE INTO teams (name) VALUES ('Flamengo')")
-    c.execute("INSERT OR IGNORE INTO teams (name) VALUES ('Palmeiras')")
-    c.execute("INSERT OR IGNORE INTO teams (name) VALUES ('Corinthians')")
-    c.execute("INSERT OR IGNORE INTO teams (name) VALUES ('São Paulo')")
-    
-    # Jogadores de exemplo
-    c.execute("INSERT OR IGNORE INTO players (name, team_id) VALUES ('Gabriel Barbosa', 1)")
-    c.execute("INSERT OR IGNORE INTO players (name, team_id) VALUES ('Pedro', 1)")
-    c.execute("INSERT OR IGNORE INTO players (name, team_id) VALUES ('Rony', 2)")
-    c.execute("INSERT OR IGNORE INTO players (name, team_id) VALUES ('Dudu', 2)")
-    
     # Categorias de odds
     c.execute("INSERT OR IGNORE INTO odds_categories (name, description) VALUES ('Resultado', 'Vitória, Empate ou Derrota')")
     c.execute("INSERT OR IGNORE INTO odds_categories (name, description) VALUES ('Gols', 'Apostas relacionadas a gols')")
@@ -186,10 +177,6 @@ def init_db():
     c.execute("INSERT OR IGNORE INTO odds_templates (category_id, name, description, bet_type, default_odds, requires_player) VALUES (2, 'Mais de 2.5 Gols', 'Partida com mais de 2.5 gols', 'over_2_5', 1.8, 0)")
     c.execute("INSERT OR IGNORE INTO odds_templates (category_id, name, description, bet_type, default_odds, requires_player) VALUES (3, 'Jogador marca gol', 'Jogador específico marca gol', 'player_goal', 3.5, 1)")
     
-    # Partida de exemplo
-    tomorrow = (datetime.datetime.now() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    c.execute("INSERT OR IGNORE INTO matches (team1_id, team2_id, date, time, status) VALUES (1, 2, ?, '20:00', 'upcoming')", (tomorrow,))
-    
     # Admin user
     admin_password = hashlib.sha256("admin123".encode()).hexdigest()
     c.execute("INSERT OR IGNORE INTO users (username, password, points, is_admin) VALUES ('admin', ?, 10000, 1)", (admin_password,))
@@ -199,7 +186,7 @@ def init_db():
 
 def db_connect():
     """Conecta ao banco de dados"""
-    conn = sqlite3.connect('guimabet.db')
+    conn = sqlite3.connect('primabet.db')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -310,7 +297,34 @@ def get_match_odds(match_id):
     conn.close()
     return odds
 
-def place_bet(username, match_id, match_odds_id, amount):
+def get_custom_bets(match_id):
+    """Obtém apostas personalizadas de uma partida"""
+    conn = db_connect()
+    custom_bets = [dict(row) for row in conn.execute("""
+        SELECT cb.id, cb.description, cb.odds, cb.player_id, cb.status
+        FROM custom_bets cb
+        WHERE cb.match_id = ? AND cb.status = 'active'
+    """, (match_id,)).fetchall()]
+    conn.close()
+    return custom_bets
+
+def add_custom_bet(match_id, description, odds, player_id=None, created_by='admin'):
+    """Adiciona uma aposta personalizada"""
+    conn = db_connect()
+    try:
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            INSERT INTO custom_bets (match_id, description, odds, player_id, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (match_id, description, odds, player_id, created_by, now))
+        conn.commit()
+        return True, "Aposta personalizada criada com sucesso!"
+    except Exception as e:
+        return False, f"Erro ao criar aposta personalizada: {e}"
+    finally:
+        conn.close()
+
+def place_bet(username, match_id, match_odds_id=None, custom_bet_id=None, amount=None):
     """Realiza uma aposta"""
     if amount is None or amount <= 0: 
         return False, "O valor da aposta deve ser maior que zero."
@@ -325,15 +339,32 @@ def place_bet(username, match_id, match_odds_id, amount):
         if user_points < amount: 
             return False, "Pontos insuficientes."
         
-        odd_info = conn.execute("SELECT odds_value FROM match_odds WHERE id = ?", (match_odds_id,)).fetchone()
-        if not odd_info: 
-            return False, "Odd não encontrada."
+        if match_odds_id:
+            # Aposta regular
+            odd_info = conn.execute("SELECT odds_value FROM match_odds WHERE id = ?", (match_odds_id,)).fetchone()
+            if not odd_info: 
+                return False, "Odd não encontrada."
+            odds_value = odd_info['odds_value']
+            bet_type = 'regular'
+            bet_description = None
+        elif custom_bet_id:
+            # Aposta personalizada
+            custom_bet_info = conn.execute("SELECT odds, description FROM custom_bets WHERE id = ? AND status = 'active'", (custom_bet_id,)).fetchone()
+            if not custom_bet_info:
+                return False, "Aposta personalizada não encontrada ou inativa."
+            odds_value = custom_bet_info['odds']
+            bet_type = 'custom'
+            bet_description = custom_bet_info['description']
+        else:
+            return False, "Tipo de aposta inválido."
         
         conn.execute("UPDATE users SET points = points - ? WHERE username = ?", (amount, username))
         conn.execute("""
-            INSERT INTO bets (user_id, match_id, amount, odds, match_odds_id, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (username, match_id, amount, odd_info['odds_value'], match_odds_id, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            INSERT INTO bets (user_id, match_id, amount, odds, match_odds_id, custom_bet_id, 
+                             bet_type, bet_description, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (username, match_id, amount, odds_value, match_odds_id, custom_bet_id, 
+              bet_type, bet_description, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
         return True, "Aposta realizada com sucesso!"
     except Exception as e:
@@ -347,7 +378,7 @@ def get_user_bets(username):
     conn = db_connect()
     bets = [dict(row) for row in conn.execute("""
         SELECT 
-            b.amount, b.odds, b.status, b.timestamp,
+            b.amount, b.odds, b.status, b.timestamp, b.bet_type, b.bet_description,
             t1.name as team1_name, t2.name as team2_name,
             ot.name as bet_name
         FROM bets b
@@ -435,7 +466,7 @@ def admin_panel():
     """Painel administrativo"""
     st.title("🔧 Painel Administrativo")
     
-    admin_tabs = st.tabs(["Times", "Jogadores", "Partidas", "Odds", "Usuários"])
+    admin_tabs = st.tabs(["Times", "Jogadores", "Partidas", "Odds", "Apostas Personalizadas", "Usuários"])
     
     with admin_tabs[0]:  # Times
         st.header("Gerenciar Times")
@@ -448,6 +479,7 @@ def admin_panel():
                     success, message = add_team(team_name)
                     if success:
                         st.success(message)
+                        st.rerun()
                     else:
                         st.error(message)
                 else:
@@ -479,6 +511,7 @@ def admin_panel():
                         success, message = add_player(player_name, team_id)
                         if success:
                             st.success(message)
+                            st.rerun()
                         else:
                             st.error(message)
                     else:
@@ -519,6 +552,7 @@ def admin_panel():
                         success, message = add_match(team1_id, team2_id, date_str, time_str)
                         if success:
                             st.success(message)
+                            st.rerun()
                         else:
                             st.error(message)
                     else:
@@ -578,6 +612,7 @@ def admin_panel():
                     success, message = add_match_odds(match_id, template_id, odds_value, player_id)
                     if success:
                         st.success(message)
+                        st.rerun()
                     else:
                         st.error(message)
         else:
@@ -585,8 +620,89 @@ def admin_panel():
                 st.warning("Cadastre partidas antes de adicionar odds")
             if not templates:
                 st.warning("Nenhum template de odds disponível")
+
+    with admin_tabs[4]:  # Apostas Personalizadas
+        st.header("Gerenciar Apostas Personalizadas")
+        st.markdown("*Crie apostas únicas como 'Defende gol de pênalti', 'Recebe cartão amarelo', etc.*")
+        
+        matches = get_upcoming_matches_with_names()
+        
+        if matches:
+            with st.form("add_custom_bet_form"):
+                # Selecionar partida
+                match_options = {f"{m['team1_name']} vs {m['team2_name']} - {m['date']}": m['id'] for m in matches}
+                selected_match = st.selectbox("Partida", options=list(match_options.keys()))
+                
+                # Descrição da aposta personalizada
+                bet_description = st.text_input(
+                    "Descrição da Aposta", 
+                    placeholder="Ex: Jogador defende gol de pênalti, Recebe cartão vermelho, etc."
+                )
+                
+                # Valor das odds
+                odds_value = st.number_input("Valor das Odds", min_value=1.01, value=3.0, step=0.1)
+                
+                # Opção de jogador específico
+                match_id = match_options[list(match_options.keys())[0]] if match_options else None
+                player_id = None
+                
+                if match_id:
+                    match_info = get_match_by_id(match_id)
+                    team1_players = get_players_by_team(match_info['team1_id'])
+                    team2_players = get_players_by_team(match_info['team2_id'])
+                    all_players = team1_players + team2_players
+                    
+                    if all_players:
+                        include_player = st.checkbox("Esta aposta é específica para um jogador?")
+                        if include_player:
+                            player_options = {p['name']: p['id'] for p in all_players}
+                            selected_player = st.selectbox("Jogador", options=list(player_options.keys()))
+                            player_id = player_options[selected_player]
+                
+                if st.form_submit_button("Criar Aposta Personalizada"):
+                    if bet_description.strip():
+                        match_id = match_options[selected_match]
+                        success, message = add_custom_bet(match_id, bet_description, odds_value, player_id, st.session_state.username)
+                        if success:
+                            st.success(message)
+                            st.rerun()
+                        else:
+                            st.error(message)
+                    else:
+                        st.error("Descrição da aposta é obrigatória")
+        else:
+            st.warning("Cadastre partidas antes de criar apostas personalizadas")
+        
+        # Listar apostas personalizadas existentes
+        st.subheader("Apostas Personalizadas Ativas")
+        if matches:
+            conn = db_connect()
+            custom_bets = [dict(row) for row in conn.execute("""
+                SELECT cb.description, cb.odds, cb.player_id, 
+                       t1.name as team1_name, t2.name as team2_name, m.date, m.time
+                FROM custom_bets cb
+                JOIN matches m ON cb.match_id = m.id
+                JOIN teams t1 ON m.team1_id = t1.id
+                JOIN teams t2 ON m.team2_id = t2.id
+                WHERE cb.status = 'active' AND m.status = 'upcoming'
+                ORDER BY m.date, m.time
+            """).fetchall()]
+            conn.close()
+            
+            if custom_bets:
+                for bet in custom_bets:
+                    player_info = ""
+                    if bet['player_id']:
+                        player_name = get_player_name(bet['player_id'])
+                        player_info = f" - {player_name}"
+                    
+                    st.write(f"🎯 **{bet['description']}**{player_info}")
+                    st.write(f"   📊 Odds: {bet['odds']:.2f} | ⚽ {bet['team1_name']} vs {bet['team2_name']} - {bet['date']}")
+                    st.write("---")
+            else:
+                st.info("Nenhuma aposta personalizada ativa")
     
-    with admin_tabs[4]:  # Usuários
+    with admin_tabs[5]:  # Usuários
         st.header("Gerenciar Usuários")
         
         conn = db_connect()
@@ -603,7 +719,7 @@ def admin_panel():
 # Interface do usuário
 def login_page():
     """Página de login"""
-    st.title("🎯 Bem-vindo ao GuimaBet!")
+    st.title("🎯 Bem-vindo ao PrimaBet!")
     st.markdown("---")
     
     tab1, tab2 = st.tabs(["🔑 Entrar", "📝 Registrar"])
@@ -680,131 +796,74 @@ def betting_page():
     
     for match in matches:
         with st.expander(f"🏆 {match['team1_name']} vs {match['team2_name']} - {match['date']} {match['time']}"):
-            odds = get_match_odds(match['id'])
-            if not odds:
-                st.write("📋 Odds para esta partida ainda não foram definidas.")
-                continue
             
-            st.markdown("### 🎲 Opções de Aposta")
+            # Tabs para diferentes tipos de apostas
+            bet_tabs = st.tabs(["🎲 Odds Regulares", "✨ Apostas Personalizadas"])
             
-            with st.form(f"bet_form_{match['id']}"):
-                # Organizar odds por categoria
-                odds_by_category = {}
-                for odd in odds:
-                    category = odd['category_name']
-                    if category not in odds_by_category:
-                        odds_by_category[category] = []
-                    odds_by_category[category].append(odd)
-                
-                # Criar opções de seleção
-                odds_options = {}
-                for category, category_odds in odds_by_category.items():
-                    st.markdown(f"**{category}**")
-                    for odd in category_odds:
-                        display_name = f"{odd['template_name']}"
-                        if odd['player_id']:
-                            player_name = get_player_name(odd['player_id'])
-                            display_name += f" - {player_name}"
-                        display_name += f" (Odds: {odd['odds_value']:.2f})"
-                        odds_options[display_name] = odd['id']
-                
-                selected_odd_str = st.selectbox("Escolha sua aposta:", options=list(odds_options.keys()))
-                amount = st.number_input("💰 Valor da aposta (pontos)", min_value=1, value=10, step=1)
-                
-                col1, col2 = st.columns(2)
-                selected_odd_id = odds_options[selected_odd_str]
-                selected_odd = next(o for o in odds if o['id'] == selected_odd_id)
-                potential_win = amount * selected_odd['odds_value']
-                
-                col1.metric("Aposta", f"{amount} pts")
-                col2.metric("Ganho Potencial", f"{potential_win:.0f} pts")
-                
-                if st.form_submit_button("🚀 Fazer Aposta", use_container_width=True):
-                    success, message = place_bet(st.session_state.username, match['id'], selected_odd_id, amount)
-                    if success:
-                        st.success(message)
-                        st.balloons()
-                        st.rerun()
-                    else: 
-                        st.error(message)
-
-def my_bets_page():
-    """Página do histórico de apostas"""
-    st.title("📊 Meu Histórico de Apostas")
-    
-    bets = get_user_bets(st.session_state.username)
-    if not bets:
-        st.info("🤷‍♂️ Você ainda não fez nenhuma aposta.")
-        return
-    
-    # Estatísticas gerais
-    total_bets = len(bets)
-    total_amount = sum(bet['amount'] for bet in bets)
-    won_bets = len([bet for bet in bets if bet['status'] == 'won'])
-    lost_bets = len([bet for bet in bets if bet['status'] == 'lost'])
-    pending_bets = len([bet for bet in bets if bet['status'] == 'pending'])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total de Apostas", total_bets)
-    col2.metric("Total Apostado", f"{total_amount:.0f} pts")
-    col3.metric("Apostas Ganhas", won_bets, delta=f"{won_bets/total_bets*100:.1f}%" if total_bets > 0 else "0%")
-    col4.metric("Pendentes", pending_bets)
-    
-    st.markdown("---")
-    
-    # Histórico detalhado
-    for bet in bets:
-        status_icons = {"pending": "⏳", "won": "✅", "lost": "❌"}
-        status_colors = {"pending": "🟡", "won": "🟢", "lost": "🔴"}
-        
-        with st.container(border=True):
-            col1, col2 = st.columns([3, 1])
+            with bet_tabs[0]:  # Odds regulares
+                odds = get_match_odds(match['id'])
+                if not odds:
+                    st.write("📋 Odds para esta partida ainda não foram definidas.")
+                else:
+                    st.markdown("### 🎲 Opções de Aposta")
+                    
+                    with st.form(f"bet_form_{match['id']}"):
+                        # Organizar odds por categoria
+                        odds_by_category = {}
+                        for odd in odds:
+                            category = odd['category_name']
+                            if category not in odds_by_category:
+                                odds_by_category[category] = []
+                            odds_by_category[category].append(odd)
+                        
+                        # Criar opções de seleção
+                        odds_options = {}
+                        for category, category_odds in odds_by_category.items():
+                            st.markdown(f"**{category}**")
+                            for odd in category_odds:
+                                display_name = f"{odd['template_name']}"
+                                if odd['player_id']:
+                                    player_name = get_player_name(odd['player_id'])
+                                    display_name += f" - {player_name}"
+                                display_name += f" (Odds: {odd['odds_value']:.2f})"
+                                odds_options[display_name] = odd['id']
+                        
+                        if odds_options:
+                            selected_odd_str = st.selectbox("Escolha sua aposta:", options=list(odds_options.keys()))
+                            amount = st.number_input("💰 Valor da aposta (pontos)", min_value=1, value=10, step=1)
+                            
+                            col1, col2 = st.columns(2)
+                            selected_odd_id = odds_options[selected_odd_str]
+                            selected_odd = next(o for o in odds if o['id'] == selected_odd_id)
+                            potential_win = amount * selected_odd['odds_value']
+                            
+                            col1.metric("Aposta", f"{amount} pts")
+                            col2.metric("Ganho Potencial", f"{potential_win:.0f} pts")
+                            
+                            if st.form_submit_button("🚀 Fazer Aposta", use_container_width=True):
+                                success, message = place_bet(st.session_state.username, match['id'], match_odds_id=selected_odd_id, amount=amount)
+                                if success:
+                                    st.success(message)
+                                    st.balloons()
+                                    st.rerun()
+                                else: 
+                                    st.error(message)
             
-            with col1:
-                st.write(f"**⚽ {bet['team1_name']} vs {bet['team2_name']}**")
-                bet_name = bet.get('bet_name', 'Aposta Indefinida')
-                st.write(f"🎯 Sua aposta: *{bet_name}*")
-                st.caption(f"📅 Data: {bet['timestamp']}")
-            
-            with col2:
-                status = bet['status']
-                st.write(f"{status_colors[status]} **{status.upper()}** {status_icons[status]}")
-            
-            col3, col4, col5 = st.columns(3)
-            col3.metric("💰 Apostado", f"{bet['amount']} pts")
-            col4.metric("🎲 Odds", f"{bet['odds']:.2f}")
-            
-            if status == 'won':
-                winnings = bet['amount'] * bet['odds']
-                col5.metric("🏆 Ganhos", f"+{winnings:.0f} pts", delta_color="normal")
-            elif status == 'lost':
-                col5.metric("💸 Perdas", f"-{bet['amount']} pts", delta_color="inverse")
-            else:
-                potential_winnings = bet['amount'] * bet['odds']
-                col5.metric("🔮 Ganho Potencial", f"{potential_winnings:.0f} pts", delta_color="off")
-
-def main():
-    """Função principal"""
-    # Configuração da página
-    st.set_page_config(
-        page_title="GuimaBet",
-        page_icon="🎯",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Inicializar banco de dados
-    init_db()
-    
-    # Inicializar session state
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    
-    # Roteamento
-    if not st.session_state.logged_in:
-        login_page()
-    else:
-        main_dashboard()
-
-if __name__ == "__main__":
-    main()
+            with bet_tabs[1]:  # Apostas personalizadas
+                custom_bets = get_custom_bets(match['id'])
+                if not custom_bets:
+                    st.write("✨ Nenhuma aposta personalizada disponível para esta partida.")
+                else:
+                    st.markdown("### ✨ Apostas Personalizadas")
+                    st.caption("*Apostas únicas criadas pelo administrador*")
+                    
+                    with st.form(f"custom_bet_form_{match['id']}"):
+                        # Criar opções de apostas personalizadas
+                        custom_options = {}
+                        for custom_bet in custom_bets:
+                            display_name = custom_bet['description']
+                            if custom_bet['player_id']:
+                                player_name = get_player_name(custom_bet['player_id'])
+                                display_name += f" - {player_name}"
+                            display_name += f" (Odds: {custom_bet['odds']:.2f})"
+                            custom_options[display_name] = custom_bet['id']
