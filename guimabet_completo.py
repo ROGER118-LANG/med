@@ -6,7 +6,166 @@ import datetime
 import hashlib
 
 # ==============================================================================
-# FUNÇÕES DE BANCO DE DADOS (DB)
+# FUNÇÕES DE BANCO DE DADOS (DB)def init_db():
+    """
+    Cria e inicializa o banco de dados com todas as tabelas,
+    usuário admin, times e templates de odds.
+    """
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    print("Conectado ao banco de dados. Criando/Verificando tabelas...")
+
+    # Tabela de usuários
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        password TEXT NOT NULL,
+        points INTEGER DEFAULT 100,
+        is_admin INTEGER DEFAULT 0
+    )
+    ''')
+
+    # Tabela de times
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL
+    )
+    ''')
+
+    # Tabela de jogadores
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        team_id INTEGER,
+        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
+    )
+    ''')
+
+    # Tabela de partidas
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team1_id INTEGER,
+        team2_id INTEGER,
+        date TEXT NOT NULL,
+        time TEXT NOT NULL,
+        status TEXT DEFAULT 'upcoming',
+        team1_score INTEGER,
+        team2_score INTEGER,
+        FOREIGN KEY (team1_id) REFERENCES teams (id),
+        FOREIGN KEY (team2_id) REFERENCES teams (id)
+    )
+    ''')
+
+    # Tabela de categorias de odds
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS odds_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        is_active INTEGER DEFAULT 1
+    )
+    ''')
+
+    # Tabela de templates de odds
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS odds_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_id INTEGER,
+        name TEXT NOT NULL,
+        description TEXT,
+        bet_type TEXT UNIQUE NOT NULL,
+        default_odds REAL,
+        is_active INTEGER DEFAULT 1,
+        requires_player INTEGER DEFAULT 0,
+        FOREIGN KEY (category_id) REFERENCES odds_categories (id)
+    )
+    ''')
+
+    # Tabela de odds por partida
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS match_odds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        template_id INTEGER,
+        odds_value REAL,
+        is_active INTEGER DEFAULT 1,
+        player_id INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        FOREIGN KEY (match_id) REFERENCES matches (id),
+        FOREIGN KEY (template_id) REFERENCES odds_templates (id),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+    )
+    ''')
+    
+    # Tabela de histórico de odds
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS odds_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_odds_id INTEGER,
+        old_value REAL,
+        new_value REAL,
+        changed_by TEXT,
+        changed_at TEXT,
+        reason TEXT,
+        FOREIGN KEY (match_odds_id) REFERENCES match_odds (id)
+    )
+    ''')
+
+    # Tabela de apostas personalizadas
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS custom_bets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER,
+        description TEXT NOT NULL,
+        odds REAL NOT NULL,
+        player_id INTEGER,
+        status TEXT DEFAULT 'pending', -- pending, won, lost
+        created_by TEXT,
+        created_at TEXT,
+        FOREIGN KEY (match_id) REFERENCES matches (id),
+        FOREIGN KEY (player_id) REFERENCES players (id)
+    )
+    ''')
+
+    # Tabela de propostas de apostas
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS custom_bet_proposals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        match_id INTEGER,
+        description TEXT,
+        proposed_odds REAL,
+        status TEXT DEFAULT 'pending', -- pending, approved, rejected
+        admin_response TEXT,
+        created_at TEXT,
+        reviewed_at TEXT,
+        FOREIGN KEY (user_id) REFERENCES users (username),
+        FOREIGN KEY (match_id) REFERENCES matches (id)
+    )
+    ''')
+
+    # Tabela principal de apostas dos usuários (COM A ESTRUTURA CORRETA)
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS bets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        match_id INTEGER,
+        amount REAL,
+        odds REAL,
+        status TEXT DEFAULT 'pending',
+        timestamp TEXT,
+        match_odds_id INTEGER,  -- <<-- COLUNA ESSENCIAL QUE ESTAVA FALTANDO
+        custom_bet_id INTEGER,
+        FOREIGN KEY (user_id) REFERENCES users (username),
+        FOREIGN KEY (match_id) REFERENCES matches (id),
+        FOREIGN KEY (match_odds_id) REFERENCES match_odds (id),
+        FOREIGN KEY (custom_bet_id) REFERENCES custom_bets (id)
+    )
+    ''')
 # ==============================================================================
 
 def db_connect():
