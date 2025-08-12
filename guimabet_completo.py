@@ -6,40 +6,40 @@ import hashlib
 
 def init_db():
     """Inicializa o banco de dados com todas as tabelas necessárias"""
-    conn = sqlite3.connect('primabet.db')
+    conn = sqlite3.connect("primabet.db")
     c = conn.cursor()
     print("Conectado ao banco de dados. Criando/Verificando tabelas...")
 
     # Tabela de usuários
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY,
         password TEXT NOT NULL,
         points INTEGER DEFAULT 100,
         is_admin INTEGER DEFAULT 0
     )
-    ''')
+    """)
 
     # Tabela de times
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS teams (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL
     )
-    ''')
+    """)
 
     # Tabela de jogadores
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS players (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         team_id INTEGER,
         FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
     )
-    ''')
+    """)
 
     # Tabela de partidas
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS matches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         team1_id INTEGER,
@@ -52,20 +52,20 @@ def init_db():
         FOREIGN KEY (team1_id) REFERENCES teams (id),
         FOREIGN KEY (team2_id) REFERENCES teams (id)
     )
-    ''')
+    """)
 
     # Tabela de categorias de odds
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS odds_categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         description TEXT,
         is_active INTEGER DEFAULT 1
     )
-    ''')
+    """)
 
     # Tabela de templates de odds
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS odds_templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         category_id INTEGER,
@@ -77,10 +77,10 @@ def init_db():
         requires_player INTEGER DEFAULT 0,
         FOREIGN KEY (category_id) REFERENCES odds_categories (id)
     )
-    ''')
+    """)
 
     # Tabela de odds por partida
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS match_odds (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         match_id INTEGER,
@@ -94,10 +94,10 @@ def init_db():
         FOREIGN KEY (template_id) REFERENCES odds_templates (id),
         FOREIGN KEY (player_id) REFERENCES players (id)
     )
-    ''')
+    """)
     
     # Tabela de histórico de odds
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS odds_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         match_odds_id INTEGER,
@@ -108,10 +108,10 @@ def init_db():
         reason TEXT,
         FOREIGN KEY (match_odds_id) REFERENCES match_odds (id)
     )
-    ''')
+    """)
 
     # Tabela de apostas personalizadas
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS custom_bets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         match_id INTEGER,
@@ -125,10 +125,10 @@ def init_db():
         FOREIGN KEY (match_id) REFERENCES matches (id),
         FOREIGN KEY (player_id) REFERENCES players (id)
     )
-    ''')
+    """)
 
     # Tabela de propostas de apostas
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS custom_bet_proposals (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
@@ -142,10 +142,10 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users (username),
         FOREIGN KEY (match_id) REFERENCES matches (id)
     )
-    ''')
+    """)
 
     # Tabela principal de apostas dos usuários
-    c.execute('''
+    c.execute("""
     CREATE TABLE IF NOT EXISTS bets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT,
@@ -163,7 +163,7 @@ def init_db():
         FOREIGN KEY (match_odds_id) REFERENCES match_odds (id),
         FOREIGN KEY (custom_bet_id) REFERENCES custom_bets (id)
     )
-    ''')
+    """)
 
     # Categorias de odds
     c.execute("INSERT OR IGNORE INTO odds_categories (name, description) VALUES ('Resultado', 'Vitória, Empate ou Derrota')")
@@ -399,14 +399,9 @@ def get_odds_categories():
     conn.close()
     return categories
 
-def get_odds_templates(category_id=None):
-    """Obtém templates de odds"""
-    conn = db_connect()
-    if category_id:
-        templates = [dict(row) for row in conn.execute("SELECT * FROM odds_templates WHERE category_id = ?", (category_id,)).fetchall()]
-    else:
-        templates = [dict(row) for row in conn.execute("SELECT * FROM odds_templates").fetchall()]
-    conn.close()
+def get_odds_templates(conn):
+    """Obtém templates de odds usando a conexão fornecida"""
+    templates = [dict(row) for row in conn.execute("SELECT * FROM odds_templates").fetchall()]
     return templates
 
 def add_team(name):
@@ -437,12 +432,13 @@ def add_match(team1_id, team2_id, date, time):
     """Adiciona uma nova partida"""
     conn = db_connect()
     try:
-        conn.execute("INSERT INTO matches (team1_id, team2_id, date, time) VALUES (?, ?, ?, ?)", 
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO matches (team1_id, team2_id, date, time) VALUES (?, ?, ?, ?)", 
                     (team1_id, team2_id, date, time))
-        match_id = conn.lastrowid
+        match_id = cursor.lastrowid
         
         # Adicionar odds padrão para a partida
-        templates = get_odds_templates()
+        templates = get_odds_templates(conn) # Passa a conexão para a função
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         for template in templates:
@@ -455,6 +451,7 @@ def add_match(team1_id, team2_id, date, time):
         conn.commit()
         return True, "Partida adicionada com sucesso!"
     except Exception as e:
+        conn.rollback()
         return False, f"Erro ao adicionar partida: {e}"
     finally:
         conn.close()
