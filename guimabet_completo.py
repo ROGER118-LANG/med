@@ -5,12 +5,6 @@ import pandas as pd
 import datetime
 import hashlib
 
-# ==============================================================================
-# FUNÇÕES DE BANCO DE DADOS (DB)def init_db():
-    """
-    Cria e inicializa o banco de dados com todas as tabelas,
-    usuário admin, times e templates de odds.
-    """
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
     print("Conectado ao banco de dados. Criando/Verificando tabelas...")
