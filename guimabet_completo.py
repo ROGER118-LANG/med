@@ -432,10 +432,15 @@ def add_match(team1_id, team2_id, date, time):
     """Adiciona uma nova partida"""
     conn = db_connect()
     try:
-        cursor = conn.cursor()
+        # 1. Crie um cursor a partir da conexão
+        cursor = conn.cursor() 
+        
+        # 2. Use o cursor para executar a query
         cursor.execute("INSERT INTO matches (team1_id, team2_id, date, time) VALUES (?, ?, ?, ?)", 
-                    (team1_id, team2_id, date, time))
-        match_id = cursor.lastrowid
+                       (team1_id, team2_id, date, time))
+        
+        # 3. Obtenha o ID da última linha inserida a partir do cursor
+        match_id = cursor.lastrowid 
         
         # Adicionar odds padrão para a partida
         templates = get_odds_templates(conn) # Passa a conexão para a função
@@ -443,6 +448,7 @@ def add_match(team1_id, team2_id, date, time):
         
         for template in templates:
             if not template['requires_player']:
+                # Use o cursor ou a conexão para executar as próximas inserções
                 conn.execute("""
                     INSERT INTO match_odds (match_id, template_id, odds_value, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?)
@@ -452,6 +458,8 @@ def add_match(team1_id, team2_id, date, time):
         return True, "Partida adicionada com sucesso!"
     except Exception as e:
         conn.rollback()
+        # É uma boa prática logar o erro para depuração
+        print(f"Erro detalhado em add_match: {e}") 
         return False, f"Erro ao adicionar partida: {e}"
     finally:
         conn.close()
