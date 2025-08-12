@@ -672,8 +672,7 @@ def admin_panel():
                         st.error("Descrição da aposta é obrigatória")
         else:
             st.warning("Cadastre partidas antes de criar apostas personalizadas")
-        
-        # Listar apostas personalizadas existentes
+                # Listar apostas personalizadas existentes
         st.subheader("Apostas Personalizadas Ativas")
         if matches:
             conn = db_connect()
@@ -867,3 +866,5 @@ def betting_page():
                                 display_name += f" - {player_name}"
                             display_name += f" (Odds: {custom_bet['odds']:.2f})"
                             custom_options[display_name] = custom_bet['id']
+        
+     
