@@ -1,375 +1,397 @@
-# app.py
 import streamlit as st
-import sqlite3
 import pandas as pd
 import datetime
-import hashlib
+import sqlite3
 
+# Importar o admin_panel_enhanced como um módulo
+import admin_panel_enhanced
+
+# Funções de banco de dados (assumindo que estão em guimabet_melhorado.py ou similar)
+# Para este exemplo, vamos mockar algumas funções ou importá-las se existirem
+# from guimabet_melhorado import *
+
+# Mock de funções de banco de dados para que o Streamlit possa rodar
+def init_db():
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
-    print("Conectado ao banco de dados. Criando/Verificando tabelas...")
-
-    # Tabela de usuários
     c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        password TEXT NOT NULL,
-        points INTEGER DEFAULT 100,
-        is_admin INTEGER DEFAULT 0
-    )
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT,
+            points INTEGER,
+            is_admin INTEGER
+        )
     ''')
-
-    # Tabela de times
     c.execute('''
-    CREATE TABLE IF NOT EXISTS teams (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL
-    )
+        CREATE TABLE IF NOT EXISTS matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team1_id INTEGER,
+            team2_id INTEGER,
+            date TEXT,
+            time TEXT,
+            status TEXT DEFAULT 'upcoming',
+            team1_score INTEGER DEFAULT 0,
+            team2_score INTEGER DEFAULT 0
+        )
     ''')
-
-    # Tabela de jogadores
     c.execute('''
-    CREATE TABLE IF NOT EXISTS players (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        team_id INTEGER,
-        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
-    )
+        CREATE TABLE IF NOT EXISTS teams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE
+        )
     ''')
-
-    # Tabela de partidas
     c.execute('''
-    CREATE TABLE IF NOT EXISTS matches (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        team1_id INTEGER,
-        team2_id INTEGER,
-        date TEXT NOT NULL,
-        time TEXT NOT NULL,
-        status TEXT DEFAULT 'upcoming',
-        team1_score INTEGER,
-        team2_score INTEGER,
-        FOREIGN KEY (team1_id) REFERENCES teams (id),
-        FOREIGN KEY (team2_id) REFERENCES teams (id)
-    )
+        CREATE TABLE IF NOT EXISTS players (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            team_id INTEGER
+        )
     ''')
-
-    # Tabela de categorias de odds
     c.execute('''
-    CREATE TABLE IF NOT EXISTS odds_categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        description TEXT,
-        is_active INTEGER DEFAULT 1
-    )
+        CREATE TABLE IF NOT EXISTS bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            match_id INTEGER,
+            bet_type TEXT,
+            amount REAL,
+            odds REAL,
+            status TEXT DEFAULT 'pending',
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+            custom_bet_id INTEGER DEFAULT NULL
+        )
     ''')
-
-    # Tabela de templates de odds
     c.execute('''
-    CREATE TABLE IF NOT EXISTS odds_templates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category_id INTEGER,
-        name TEXT NOT NULL,
-        description TEXT,
-        bet_type TEXT UNIQUE NOT NULL,
-        default_odds REAL,
-        is_active INTEGER DEFAULT 1,
-        requires_player INTEGER DEFAULT 0,
-        FOREIGN KEY (category_id) REFERENCES odds_categories (id)
-    )
+        CREATE TABLE IF NOT EXISTS odds_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            description TEXT
+        )
     ''')
-
-    # Tabela de odds por partida
     c.execute('''
-    CREATE TABLE IF NOT EXISTS match_odds (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        match_id INTEGER,
-        template_id INTEGER,
-        odds_value REAL,
-        is_active INTEGER DEFAULT 1,
-        player_id INTEGER,
-        created_at TEXT,
-        updated_at TEXT,
-        FOREIGN KEY (match_id) REFERENCES matches (id),
-        FOREIGN KEY (template_id) REFERENCES odds_templates (id),
-        FOREIGN KEY (player_id) REFERENCES players (id)
-    )
+        CREATE TABLE IF NOT EXISTS odds_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_id INTEGER,
+            name TEXT,
+            description TEXT,
+            bet_type TEXT UNIQUE,
+            default_odds REAL,
+            requires_player INTEGER
+        )
     ''')
-    
-    # Tabela de histórico de odds
     c.execute('''
-    CREATE TABLE IF NOT EXISTS odds_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        match_odds_id INTEGER,
-        old_value REAL,
-        new_value REAL,
-        changed_by TEXT,
-        changed_at TEXT,
-        reason TEXT,
-        FOREIGN KEY (match_odds_id) REFERENCES match_odds (id)
-    )
+        CREATE TABLE IF NOT EXISTS match_odds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id INTEGER,
+            template_id INTEGER,
+            odds_value REAL,
+            player_id INTEGER DEFAULT NULL,
+            last_updated_by TEXT,
+            last_updated_reason TEXT,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+        )
     ''')
-
-    # Tabela de apostas personalizadas
     c.execute('''
-    CREATE TABLE IF NOT EXISTS custom_bets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        match_id INTEGER,
-        description TEXT NOT NULL,
-        odds REAL NOT NULL,
-        player_id INTEGER,
-        status TEXT DEFAULT 'pending', -- pending, won, lost
-        created_by TEXT,
-        created_at TEXT,
-        FOREIGN KEY (match_id) REFERENCES matches (id),
-        FOREIGN KEY (player_id) REFERENCES players (id)
-    )
+        CREATE TABLE IF NOT EXISTS custom_bets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id INTEGER,
+            description TEXT,
+            odds REAL,
+            player_id INTEGER DEFAULT NULL,
+            status TEXT DEFAULT 'pending' -- pending, approved, rejected, finished
+        )
     ''')
-
-    # Tabela de propostas de apostas
     c.execute('''
-    CREATE TABLE IF NOT EXISTS custom_bet_proposals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT,
-        match_id INTEGER,
-        description TEXT,
-        proposed_odds REAL,
-        status TEXT DEFAULT 'pending', -- pending, approved, rejected
-        admin_response TEXT,
-        created_at TEXT,
-        reviewed_at TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (username),
-        FOREIGN KEY (match_id) REFERENCES matches (id)
-    )
+        CREATE TABLE IF NOT EXISTS custom_bet_proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            match_id INTEGER,
+            description TEXT,
+            proposed_odds REAL,
+            status TEXT DEFAULT 'pending', -- pending, approved, rejected
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
     ''')
+    conn.commit()
+    conn.close()
 
-    # Tabela principal de apostas dos usuários (COM A ESTRUTURA CORRETA)
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS bets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT,
-        match_id INTEGER,
-        amount REAL,
-        odds REAL,
-        status TEXT DEFAULT 'pending',
-        timestamp TEXT,
-        match_odds_id INTEGER,  -- <<-- COLUNA ESSENCIAL QUE ESTAVA FALTANDO
-        custom_bet_id INTEGER,
-        FOREIGN KEY (user_id) REFERENCES users (username),
-        FOREIGN KEY (match_id) REFERENCES matches (id),
-        FOREIGN KEY (match_odds_id) REFERENCES match_odds (id),
-        FOREIGN KEY (custom_bet_id) REFERENCES custom_bets (id)
-    )
-    ''')
-# ==============================================================================
-
-def db_connect():
+def register_user(username, password):
     conn = sqlite3.connect('guimabet.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users (username, password, points, is_admin) VALUES (?, ?, ?, ?)", (username, password, 1000, 0))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False # Username already exists
+    finally:
+        conn.close()
 
-def login_user(username, password):
-    conn = db_connect()
-    hashed_password = hashlib.sha256(password.encode()).hexdigest()
-    user = conn.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, hashed_password)).fetchone()
+def login(username, password):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    user = c.fetchone()
     conn.close()
     return user
 
-def register_user(username, password):
-    if not username or not password: return False, "Usuário e senha não podem ser vazios."
-    conn = db_connect()
-    try:
-        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
-        conn.commit()
-        return True, "Conta criada com sucesso! Faça o login."
-    except sqlite3.IntegrityError: return False, "Este nome de usuário já existe."
-    finally: conn.close()
-
 def get_user_points(username):
-    conn = db_connect()
-    points = conn.execute("SELECT points FROM users WHERE username = ?", (username,)).fetchone()
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT points FROM users WHERE username = ?", (username,))
+    points = c.fetchone()[0]
     conn.close()
-    return points['points'] if points else 0
+    return points
+
+def update_user_points(username, points):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("UPDATE users SET points = ? WHERE username = ?", (points, username))
+    conn.commit()
+    conn.close()
+
+def get_upcoming_matches():
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM matches WHERE status = 'upcoming' ORDER BY date, time")
+    matches = c.fetchall()
+    conn.close()
+    return [{k: item[i] for i, k in enumerate(['id', 'team1_id', 'team2_id', 'date', 'time', 'status', 'team1_score', 'team2_score'])} for item in matches]
+
+def get_match_by_id(match_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM matches WHERE id = ?", (match_id,))
+    match = c.fetchone()
+    conn.close()
+    if match:
+        return {k: match[i] for i, k in enumerate(['id', 'team1_id', 'team2_id', 'date', 'time', 'status', 'team1_score', 'team2_score'])}
+    return None
 
 def get_team_name(team_id):
-    conn = db_connect()
-    name = conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)).fetchone()
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT name FROM teams WHERE id = ?", (team_id,))
+    name = c.fetchone()
     conn.close()
-    return name['name'] if name else "Desconhecido"
+    return name[0] if name else "Desconhecido"
 
-def get_upcoming_matches_with_names():
-    conn = db_connect()
-    matches = [dict(row) for row in conn.execute("""
-        SELECT m.id, m.date, m.time, t1.name as team1_name, t2.name as team2_name
-        FROM matches m JOIN teams t1 ON m.team1_id = t1.id JOIN teams t2 ON m.team2_id = t2.id
-        WHERE m.status = 'upcoming' ORDER BY m.date, m.time
-    """).fetchall()]
+def get_all_teams():
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM teams")
+    teams = c.fetchall()
     conn.close()
-    return matches
+    return [{'id': t[0], 'name': t[1]} for t in teams]
+
+def get_all_players():
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT id, name, team_id FROM players")
+    players = c.fetchall()
+    conn.close()
+    return [{'id': p[0], 'name': p[1], 'team_id': p[2]} for p in players]
+
+def get_player_name(player_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT name FROM players WHERE id = ?", (player_id,))
+    name = c.fetchone()
+    conn.close()
+    return name[0] if name else "Desconhecido"
+
+def get_match_players(match_id):
+    match = get_match_by_id(match_id)
+    if not match:
+        return []
+    team1_players = get_players_by_team(match['team1_id'])
+    team2_players = get_players_by_team(match['team2_id'])
+    return team1_players + team2_players
+
+def get_players_by_team(team_id):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM players WHERE team_id = ?", (team_id,))
+    players = c.fetchall()
+    conn.close()
+    return [{'id': p[0], 'name': p[1]} for p in players]
 
 def get_match_odds(match_id):
-    conn = db_connect()
-    odds = [dict(row) for row in conn.execute("""
-        SELECT mo.id, mo.odds_value, ot.name as template_name, ot.description
-        FROM match_odds mo JOIN odds_templates ot ON mo.template_id = ot.id
-        WHERE mo.match_id = ? AND mo.is_active = 1
-    """, (match_id,)).fetchall()]
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("""
+        SELECT mo.id, mo.odds_value, mo.player_id, ot.name as template_name, ot.description, oc.name as category_name
+        FROM match_odds mo
+        JOIN odds_templates ot ON mo.template_id = ot.id
+        JOIN odds_categories oc ON ot.category_id = oc.id
+        WHERE mo.match_id = ?
+    """, (match_id,))
+    odds = c.fetchall()
     conn.close()
-    return odds
+    return [{k: item[i] for i, k in enumerate(['id', 'odds_value', 'player_id', 'template_name', 'description', 'category_name'])} for item in odds]
 
-def place_bet(username, match_id, match_odds_id, amount):
-    if amount is None or amount <= 0: return False, "O valor da aposta deve ser maior que zero."
-    conn = db_connect()
-    try:
-        user_row = conn.execute("SELECT points FROM users WHERE username = ?", (username,)).fetchone()
-        if user_row is None: return False, "Erro: Usuário não encontrado."
-        user_points = user_row['points']
-        if user_points < amount: return False, "Pontos insuficientes."
-        
-        odd_info = conn.execute("SELECT odds_value FROM match_odds WHERE id = ?", (match_odds_id,)).fetchone()
-        if not odd_info: return False, "Odd não encontrada."
-        
-        conn.execute("UPDATE users SET points = points - ? WHERE username = ?", (amount, username))
-        conn.execute("""
-            INSERT INTO bets (user_id, match_id, amount, odds, match_odds_id, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (username, match_id, amount, odd_info['odds_value'], match_odds_id, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        return True, "Aposta realizada com sucesso!"
-    except Exception as e:
-        conn.rollback()
-        return False, f"Erro interno ao realizar aposta: {e}"
-    finally: conn.close()
-
-def get_user_bets(username):
-    """Busca o histórico de apostas de um usuário (CONSULTA CORRIGIDA)."""
-    conn = db_connect()
-    bets = [dict(row) for row in conn.execute("""
-        SELECT 
-            b.amount, b.odds, b.status, b.timestamp,
-            t1.name as team1_name, t2.name as team2_name,
-            ot.name as bet_name
-        FROM bets b
-        JOIN matches m ON b.match_id = m.id
-        JOIN teams t1 ON m.team1_id = t1.id
-        JOIN teams t2 ON m.team2_id = t2.id
-        LEFT JOIN match_odds mo ON b.match_odds_id = mo.id
-        LEFT JOIN odds_templates ot ON mo.template_id = ot.id
-        WHERE b.user_id = ? ORDER BY b.timestamp DESC
-    """, (username,)).fetchall()]
+def get_odds_templates(category_id=None):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    if category_id:
+        c.execute("SELECT * FROM odds_templates WHERE category_id = ?", (category_id,))
+    else:
+        c.execute("SELECT * FROM odds_templates")
+    templates = c.fetchall()
     conn.close()
-    return bets
+    return [{k: item[i] for i, k in enumerate(['id', 'category_id', 'name', 'description', 'bet_type', 'default_odds', 'requires_player'])} for item in templates]
 
-# ==============================================================================
-# INTERFACE DO USUÁRIO (UI)
-# ==============================================================================
+def get_odds_categories():
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM odds_categories")
+    categories = c.fetchall()
+    conn.close()
+    return [{k: item[i] for i, k in enumerate(['id', 'name', 'description'])} for item in categories]
+
+def get_custom_bets(match_id=None):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    if match_id:
+        c.execute("SELECT * FROM custom_bets WHERE match_id = ?", (match_id,))
+    else:
+        c.execute("SELECT * FROM custom_bets")
+    custom_bets = c.fetchall()
+    conn.close()
+    return [{k: item[i] for i, k in enumerate(['id', 'match_id', 'description', 'odds', 'player_id', 'status'])} for item in custom_bets]
+
+def get_custom_bet_proposals(status='pending'):
+    conn = sqlite3.connect('guimabet.db')
+    c = conn.cursor()
+    c.execute("""
+        SELECT cbp.id, cbp.user_id, u.username, cbp.match_id, cbp.description, cbp.proposed_odds, cbp.status, cbp.created_at
+        FROM custom_bet_proposals cbp
+        JOIN users u ON cbp.user_id = u.username
+        WHERE cbp.status = ?
+    """, (status,))
+    proposals = c.fetchall()
+    conn.close()
+    return [{k: item[i] for i, k in enumerate(['id', 'user_id', 'username', 'match_id', 'description', 'proposed_odds', 'status', 'created_at'])} for item in proposals]
+
+
+# --- Streamlit App --- #
+
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.is_admin = False
 
 def login_page():
     st.title("Bem-vindo ao GuimaBet!")
+    
     tab1, tab2 = st.tabs(["Entrar", "Registrar"])
+    
     with tab1:
-        with st.form("login_form"):
-            username = st.text_input("Usuário")
-            password = st.text_input("Senha", type="password")
-            if st.form_submit_button("Entrar"):
-                user = login_user(username, password)
+        st.subheader("Entrar na sua conta")
+        
+        with st.form("login_form", clear_on_submit=True):
+            username = st.text_input("Usuário", key="login_username")
+            password = st.text_input("Senha", type="password", key="login_password")
+            submit = st.form_submit_button("Entrar", key="login_submit")
+            
+            if submit:
+                user = login(username, password)
                 if user:
                     st.session_state.logged_in = True
-                    st.session_state.username = user['username']
-                    st.session_state.is_admin = bool(user['is_admin'])
-                    st.success("Login bem-sucedido!")
+                    st.session_state.username = username
+                    st.session_state.is_admin = bool(user[3])
+                    st.success("Login realizado com sucesso!")
                     st.rerun()
-                else: st.error("Usuário ou senha inválidos.")
+                else:
+                    st.error("Usuário ou senha inválidos")
+    
     with tab2:
-        with st.form("register_form"):
-            new_username = st.text_input("Escolha um nome de usuário")
-            new_password = st.text_input("Crie uma senha", type="password")
-            if st.form_submit_button("Registrar"):
-                success, message = register_user(new_username, new_password)
-                if success: st.success(message)
-                else: st.error(message)
+        st.subheader("Criar nova conta")
+        
+        with st.form("register_form", clear_on_submit=True):
+            new_username = st.text_input("Novo Usuário", key="register_username")
+            new_password = st.text_input("Nova Senha", type="password", key="register_password")
+            register_submit = st.form_submit_button("Registrar", key="register_submit")
+            
+            if register_submit:
+                if register_user(new_username, new_password):
+                    st.success("Conta criada com sucesso! Faça login para continuar.")
+                else:
+                    st.error("Nome de usuário já existe.")
 
-def main_dashboard():
+def user_dashboard():
     st.sidebar.title(f"Olá, {st.session_state.username}!")
-    st.sidebar.metric("Seus Pontos", get_user_points(st.session_state.username))
-    if st.sidebar.button("Logout"):
-        for key in list(st.session_state.keys()): del st.session_state[key]
+    
+    if st.sidebar.button("Logout", key="user_logout_button"):
+        st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.session_state.is_admin = False
         st.rerun()
 
-    pages = ["Apostar", "Minhas Apostas"]
-    if st.session_state.get('is_admin', False): pages.append("Painel do Admin")
-    selection = st.sidebar.radio("Navegação", pages)
+    if st.session_state.is_admin:
+        st.sidebar.subheader("Opções de Administrador")
+        if st.sidebar.button("Painel Admin", key="admin_panel_button"):
+            st.session_state.page = "admin_panel"
+            st.rerun()
 
-    if selection == "Apostar": betting_page()
-    elif selection == "Minhas Apostas": my_bets_page()
-    elif selection == "Painel do Admin":
-        st.title("Painel do Admin")
-        st.info("A funcionalidade de administração deve ser colocada em um arquivo separado (`admin_panel.py`) para melhor organização.")
+    st.title("Dashboard do Usuário")
+    st.write(f"Seus pontos: {get_user_points(st.session_state.username)}")
 
-def betting_page():
-    st.title("Partidas Disponíveis")
-    matches = get_upcoming_matches_with_names()
-    if not matches:
-        st.info("Nenhuma partida futura disponível no momento.")
-        return
-    for match in matches:
-        with st.expander(f"{match['team1_name']} vs {match['team2_name']} ({match['date']} {match['time']})"):
-            odds = get_match_odds(match['id'])
-            if not odds:
-                st.write("Odds para esta partida ainda não foram definidas.")
-                continue
-            with st.form(f"bet_form_{match['id']}"):
-                odds_dict = {f"{o['template_name']} ({o['odds_value']:.2f})": o['id'] for o in odds}
-                selected_odd_str = st.selectbox("Escolha sua aposta:", options=list(odds_dict.keys()))
-                amount = st.number_input("Valor da aposta (pontos)", min_value=1, value=1, step=1)
-                if st.form_submit_button("Fazer Aposta"):
-                    selected_odd_id = odds_dict[selected_odd_str]
-                    success, message = place_bet(st.session_state.username, match['id'], selected_odd_id, amount)
-                    if success:
-                        st.success(message)
-                        st.rerun()
-                    else: st.error(message)
+    # Main content area
+    if st.session_state.is_admin and st.session_state.get('page') == 'admin_panel':
+        admin_panel_enhanced.main_admin_panel_content()
+    else:
+        # Conteúdo normal do usuário
+        st.header("Partidas Disponíveis")
+        matches = get_upcoming_matches()
+        if matches:
+            for match in matches:
+                team1 = get_team_name(match['team1_id'])
+                team2 = get_team_name(match['team2_id'])
+                st.subheader(f"{team1} vs {team2} - {match['date']} {match['time']}")
+                
+                odds = get_match_odds(match['id'])
+                if odds:
+                    with st.form(f"bet_form_{match['id']}"):
+                        st.write("Odds disponíveis:")
+                        selected_odd_id = st.selectbox(
+                            "Selecione sua aposta:",
+                            options=[o['id'] for o in odds],
+                            format_func=lambda x: f"{next(item for item in odds if item['id'] == x)['template_name']} (Odds: {next(item for item in odds if item['id'] == x)['odds_value']})",
+                            key=f"odd_select_{match['id']}"
+                        )
+                        
+                        amount = st.number_input("Valor da Aposta:", min_value=1, value=10, key=f"bet_amount_{match['id']}")
+                        
+                        bet_submit = st.form_submit_button("Fazer Aposta", key=f"place_bet_button_{match['id']}")
+                        
+                        if bet_submit:
+                            selected_odd = next(item for item in odds if item['id'] == selected_odd_id)
+                            user_points = get_user_points(st.session_state.username)
+                            
+                            if user_points >= amount:
+                                # Placeholder for placing bet logic
+                                # In a real app, this would interact with a betting system
+                                st.success(f"Aposta de {amount} pontos em {selected_odd['template_name']} realizada com sucesso!")
+                                update_user_points(st.session_state.username, user_points - amount)
+                                st.rerun()
+                            else:
+                                st.error("Pontos insuficientes.")
+                else:
+                    st.info("Odds ainda não disponíveis para esta partida.")
+        else:
+            st.info("Nenhuma partida futura disponível no momento.")
 
-def my_bets_page():
-    st.title("Meu Histórico de Apostas")
-    bets = get_user_bets(st.session_state.username)
-    if not bets:
-        st.info("Você ainda não fez nenhuma aposta.")
-        return
-    for bet in bets:
-        status_color = {"pending": "grey", "won": "green", "lost": "red"}
-        status_icon = {"pending": "⏳", "won": "✅", "lost": "❌"}
-        with st.container(border=True):
-            st.write(f"**{bet['team1_name']} vs {bet['team2_name']}**")
-            bet_name = bet.get('bet_name', 'Aposta Indefinida')
-            st.write(f"Sua aposta: *{bet_name}*")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Apostado", f"{bet['amount']} pts")
-            col2.metric("Odds", f"{bet['odds']:.2f}")
-            status = bet['status']
-            winnings = bet['amount'] * bet['odds']
-            if status == 'won': col3.metric("Resultado", f"+{winnings:.0f} pts", delta_color="normal")
-            elif status == 'lost': col3.metric("Resultado", f"-{bet['amount']} pts", delta_color="inverse")
-            else: col3.metric("Ganhos Potenciais", f"{winnings:.0f} pts", delta_color="off")
-            st.caption(f"Status: :{status_color.get(status, 'grey')}[{status.upper()}] {status_icon.get(status, '')} | Data: {bet['timestamp']}")
-
-# ==============================================================================
-# LÓGICA PRINCIPAL DA APLICAÇÃO
-# ==============================================================================
+        st.header("Minhas Apostas")
+        # Placeholder for displaying user's bets
+        st.write("Suas apostas aparecerão aqui.")
 
 def main():
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
+    init_db()
     if not st.session_state.logged_in:
         login_page()
     else:
-        main_dashboard()
+        user_dashboard()
 
 if __name__ == "__main__":
-    try:
-        with open('guimabet.db', 'r') as f: pass
-    except FileNotFoundError:
-        st.error("Banco de dados 'guimabet.db' não encontrado!")
-        st.info("Por favor, rode o script 'guimabet_database.py' primeiro para criar o banco de dados.")
-        st.stop()
     main()
+
