@@ -12,7 +12,6 @@ import hashlib
 def init_db():
     """
     Cria e inicializa o banco de dados com todas as tabelas e dados padrão.
-    Esta função é chamada apenas uma vez se o banco de dados não existir.
     """
     conn = sqlite3.connect('guimabet.db')
     c = conn.cursor()
@@ -44,38 +43,15 @@ def init_db():
         FOREIGN KEY (team1_id) REFERENCES teams (id), FOREIGN KEY (team2_id) REFERENCES teams (id)
     )''')
 
-    # Tabela de categorias de odds
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS odds_categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT, is_active INTEGER DEFAULT 1
-    )''')
-
-    # Tabela de templates de odds
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS odds_templates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER, name TEXT NOT NULL, description TEXT,
-        bet_type TEXT UNIQUE NOT NULL, default_odds REAL, is_active INTEGER DEFAULT 1, requires_player INTEGER DEFAULT 0,
-        FOREIGN KEY (category_id) REFERENCES odds_categories (id)
-    )''')
-
     # Tabela de odds por partida
     c.execute('''
     CREATE TABLE IF NOT EXISTS match_odds (
         id INTEGER PRIMARY KEY AUTOINCREMENT, match_id INTEGER, template_id INTEGER, odds_value REAL,
         is_active INTEGER DEFAULT 1, player_id INTEGER, created_at TEXT, updated_at TEXT,
-        FOREIGN KEY (match_id) REFERENCES matches (id), FOREIGN KEY (template_id) REFERENCES odds_templates (id),
-        FOREIGN KEY (player_id) REFERENCES players (id)
+        FOREIGN KEY (match_id) REFERENCES matches (id)
     )''')
     
-    # Tabela de histórico de odds
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS odds_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, match_odds_id INTEGER, old_value REAL, new_value REAL,
-        changed_by TEXT, changed_at TEXT, reason TEXT,
-        FOREIGN KEY (match_odds_id) REFERENCES match_odds (id)
-    )''')
-
-    # Tabela de apostas dos usuários
+    # Tabela de apostas dos usuários (ESTRUTURA CORRIGIDA)
     c.execute('''
     CREATE TABLE IF NOT EXISTS bets (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, match_id INTEGER, amount REAL, odds REAL,
@@ -101,7 +77,7 @@ def init_db():
     st.toast("Banco de dados inicializado com sucesso!")
 
 # ==============================================================================
-# 2. FUNÇÕES DE BANCO DE DADOS (DB) - Operações do dia a dia
+# 2. FUNÇÕES DE BANCO DE DADOS (DB)
 # ==============================================================================
 
 def db_connect():
@@ -151,11 +127,13 @@ def get_upcoming_matches_with_names():
 
 def get_match_odds(match_id):
     conn = db_connect()
+    # Simplificando a busca de odds para evitar dependências complexas
     odds = [dict(row) for row in conn.execute("""
-        SELECT mo.id, mo.odds_value, ot.name as template_name, ot.description
-        FROM match_odds mo JOIN odds_templates ot ON mo.template_id = ot.id
-        WHERE mo.match_id = ? AND mo.is_active = 1
+        SELECT id, odds_value, template_id FROM match_odds WHERE match_id = ? AND is_active = 1
     """, (match_id,)).fetchall()]
+    # Adicionando um nome simples para exibição
+    for odd in odds:
+        odd['template_name'] = f"Aposta Tipo {odd['template_id']}"
     conn.close()
     return odds
 
@@ -185,11 +163,13 @@ def place_bet(username, match_id, match_odds_id, amount):
 
 def get_user_bets(username):
     conn = db_connect()
+    # Consulta simplificada para garantir que funcione com a estrutura básica
     bets = [dict(row) for row in conn.execute("""
-        SELECT b.amount, b.odds, b.status, b.timestamp, t1.name as team1_name, t2.name as team2_name, ot.name as bet_name
+        SELECT b.amount, b.odds, b.status, b.timestamp, t1.name as team1_name, t2.name as team2_name
         FROM bets b
-        JOIN matches m ON b.match_id = m.id JOIN teams t1 ON m.team1_id = t1.id JOIN teams t2 ON m.team2_id = t2.id
-        LEFT JOIN match_odds mo ON b.match_odds_id = mo.id LEFT JOIN odds_templates ot ON mo.template_id = ot.id
+        JOIN matches m ON b.match_id = m.id
+        JOIN teams t1 ON m.team1_id = t1.id
+        JOIN teams t2 ON m.team2_id = t2.id
         WHERE b.user_id = ? ORDER BY b.timestamp DESC
     """, (username,)).fetchall()]
     conn.close()
@@ -250,6 +230,16 @@ def betting_page():
             odds = get_match_odds(match['id'])
             if not odds:
                 st.write("Odds para esta partida ainda não foram definidas.")
+                if st.session_state.get('is_admin'):
+                    if st.button("Criar Odds Padrão", key=f"create_odds_{match['id']}"):
+                        conn = db_connect()
+                        # Simplesmente cria uma odd de vitória para cada time
+                        conn.execute("INSERT INTO match_odds (match_id, template_id, odds_value) VALUES (?, ?, ?)", (match['id'], 1, 2.0))
+                        conn.execute("INSERT INTO match_odds (match_id, template_id, odds_value) VALUES (?, ?, ?)", (match['id'], 2, 2.0))
+                        conn.commit()
+                        conn.close()
+                        st.success("Odds padrão criadas!")
+                        st.rerun()
                 continue
             with st.form(f"bet_form_{match['id']}"):
                 odds_dict = {f"{o['template_name']} ({o['odds_value']:.2f})": o['id'] for o in odds}
@@ -274,8 +264,7 @@ def my_bets_page():
         status_icon = {"pending": "⏳", "won": "✅", "lost": "❌"}
         with st.container(border=True):
             st.write(f"**{bet['team1_name']} vs {bet['team2_name']}**")
-            bet_name = bet.get('bet_name', 'Aposta Indefinida')
-            st.write(f"Sua aposta: *{bet_name}*")
+            st.write(f"Sua aposta: *Aposta em Resultado*") # Simplificado
             col1, col2, col3 = st.columns(3)
             col1.metric("Apostado", f"{bet['amount']} pts")
             col2.metric("Odds", f"{bet['odds']:.2f}")
@@ -292,52 +281,78 @@ def my_bets_page():
 
 def admin_panel():
     st.title("Painel de Administração")
-    admin_pages = ["Dashboard", "Gerenciar Partidas", "Gerenciar Times e Jogadores", "Gerenciar Usuários"]
+    admin_pages = ["Gerenciar Partidas", "Gerenciar Times", "Gerenciar Usuários"]
     admin_selection = st.selectbox("Selecione uma área para gerenciar", admin_pages)
 
-    if admin_selection == "Dashboard":
-        st.header("Dashboard do Admin")
-        # Adicionar métricas e gráficos aqui
-        st.info("Dashboard em construção.")
-    elif admin_selection == "Gerenciar Partidas":
+    if admin_selection == "Gerenciar Partidas":
         manage_matches_page()
-    elif admin_selection == "Gerenciar Times e Jogadores":
-        manage_teams_players_page()
+    elif admin_selection == "Gerenciar Times":
+        manage_teams_page()
     elif admin_selection == "Gerenciar Usuários":
         manage_users_page()
 
 def manage_matches_page():
     st.header("Gerenciar Partidas")
-    # Lógica para adicionar, editar, deletar e finalizar partidas
-    st.info("Gerenciamento de partidas em construção.")
+    conn = db_connect()
+    matches = conn.execute("SELECT m.*, t1.name as t1_name, t2.name as t2_name FROM matches m JOIN teams t1 ON m.team1_id = t1.id JOIN teams t2 ON m.team2_id = t2.id WHERE m.status = 'upcoming'").fetchall()
+    conn.close()
+    
+    st.subheader("Finalizar Partidas")
+    if not matches:
+        st.info("Nenhuma partida futura para finalizar.")
+    else:
+        for match in matches:
+            with st.expander(f"{match['t1_name']} vs {match['t2_name']}"):
+                with st.form(key=f"form_match_{match['id']}"):
+                    c1, c2 = st.columns(2)
+                    score1 = c1.number_input(f"Gols {match['t1_name']}", min_value=0, step=1)
+                    score2 = c2.number_input(f"Gols {match['t2_name']}", min_value=0, step=1)
+                    if st.form_submit_button("Finalizar Partida"):
+                        # Lógica de finalização
+                        conn = db_connect()
+                        conn.execute("UPDATE matches SET status='completed', team1_score=?, team2_score=? WHERE id=?", (score1, score2, match['id']))
+                        # Lógica de pagamento de apostas (simplificada)
+                        bets_to_resolve = conn.execute("SELECT * FROM bets WHERE match_id=? AND status='pending'", (match['id'],)).fetchall()
+                        for bet in bets_to_resolve:
+                            # Vitória Time 1
+                            if score1 > score2 and bet['match_odds_id'] == 1: # Simplificação: ID 1 = vitória time 1
+                                conn.execute("UPDATE users SET points = points + ? WHERE username=?", (bet['amount'] * bet['odds'], bet['user_id']))
+                                conn.execute("UPDATE bets SET status='won' WHERE id=?", (bet['id'],))
+                            else:
+                                conn.execute("UPDATE bets SET status='lost' WHERE id=?", (bet['id'],))
+                        conn.commit()
+                        conn.close()
+                        st.success("Partida finalizada e apostas processadas!")
+                        st.rerun()
 
-def manage_teams_players_page():
-    st.header("Gerenciar Times e Jogadores")
-    # Lógica para adicionar, editar e deletar times e jogadores
-    st.info("Gerenciamento de times e jogadores em construção.")
+def manage_teams_page():
+    st.header("Gerenciar Times")
+    conn = db_connect()
+    teams = conn.execute("SELECT * FROM teams").fetchall()
+    st.dataframe(teams)
+    conn.close()
 
 def manage_users_page():
     st.header("Gerenciar Usuários")
-    # Lógica para visualizar, editar e deletar usuários
-    st.info("Gerenciamento de usuários em construção.")
+    conn = db_connect()
+    users = conn.execute("SELECT username, points, is_admin FROM users").fetchall()
+    st.dataframe(users)
+    conn.close()
 
 # ==============================================================================
 # 5. LÓGICA PRINCIPAL DA APLICAÇÃO
 # ==============================================================================
 
 def main():
-    # Inicializa o estado da sessão se for a primeira vez
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     
-    # Roteamento principal: ou mostra a página de login ou o dashboard
     if not st.session_state.logged_in:
         login_page()
     else:
         main_dashboard()
 
 if __name__ == "__main__":
-    # Verifica se o DB existe, se não, cria e popula
     try:
         with open('guimabet.db', 'r') as f: pass
     except FileNotFoundError:
