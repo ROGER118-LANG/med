@@ -80,11 +80,23 @@ def get_match_odds(match_id):
     conn.close()
     return odds
 
+# Em app.py
+
 def place_bet(username, match_id, match_odds_id, amount):
-    """Registra uma aposta de um usuário."""
+    """Registra uma aposta de um usuário de forma segura."""
     conn = db_connect()
     try:
-        user_points = conn.execute("SELECT points FROM users WHERE username = ?", (username,)).fetchone()['points']
+        # Busca o registro completo do usuário
+        user_row = conn.execute("SELECT points FROM users WHERE username = ?", (username,)).fetchone()
+        
+        # --- CORREÇÃO ADICIONADA AQUI ---
+        # Verifica se o usuário foi encontrado antes de prosseguir
+        if user_row is None:
+            return False, "Erro: Usuário não encontrado no banco de dados."
+            
+        user_points = user_row['points']
+        
+        # Agora a verificação é segura, pois sabemos que user_points é um número
         if user_points < amount:
             return False, "Pontos insuficientes."
         
@@ -103,9 +115,11 @@ def place_bet(username, match_id, match_odds_id, amount):
         return True, "Aposta realizada com sucesso!"
     except Exception as e:
         conn.rollback()
-        return False, f"Erro ao realizar aposta: {e}"
+        # Fornece um erro mais detalhado para depuração
+        return False, f"Erro interno ao realizar aposta: {e}"
     finally:
         conn.close()
+
 
 def get_user_bets(username):
     """Busca o histórico de apostas de um usuário."""
