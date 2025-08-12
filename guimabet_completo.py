@@ -5,9 +5,6 @@ import pandas as pd
 import datetime
 import hashlib
 
-# Importa o painel de administração de um arquivo separado (opcional, mas bom para organização)
-# Para simplificar, vamos colocar tudo em um só arquivo, como solicitado.
-
 # ==============================================================================
 # FUNÇÕES DE BANCO DE DADOS (DB)
 # ==============================================================================
@@ -80,23 +77,23 @@ def get_match_odds(match_id):
     conn.close()
     return odds
 
-# Em app.py
-
 def place_bet(username, match_id, match_odds_id, amount):
     """Registra uma aposta de um usuário de forma segura."""
+    # --- CORREÇÃO ADICIONADA AQUI ---
+    # Valida o valor da aposta antes de qualquer outra coisa
+    if amount is None or amount <= 0:
+        return False, "O valor da aposta deve ser maior que zero."
+
     conn = db_connect()
     try:
-        # Busca o registro completo do usuário
         user_row = conn.execute("SELECT points FROM users WHERE username = ?", (username,)).fetchone()
         
-        # --- CORREÇÃO ADICIONADA AQUI ---
-        # Verifica se o usuário foi encontrado antes de prosseguir
         if user_row is None:
             return False, "Erro: Usuário não encontrado no banco de dados."
             
         user_points = user_row['points']
         
-        # Agora a verificação é segura, pois sabemos que user_points é um número
+        # Agora a verificação é segura
         if user_points < amount:
             return False, "Pontos insuficientes."
         
@@ -104,7 +101,6 @@ def place_bet(username, match_id, match_odds_id, amount):
         if not odd_info:
             return False, "Odd não encontrada."
         
-        # Deduz os pontos e insere a aposta
         conn.execute("UPDATE users SET points = points - ? WHERE username = ?", (amount, username))
         conn.execute("""
             INSERT INTO bets (user_id, match_id, amount, odds, match_odds_id, timestamp)
@@ -115,11 +111,9 @@ def place_bet(username, match_id, match_odds_id, amount):
         return True, "Aposta realizada com sucesso!"
     except Exception as e:
         conn.rollback()
-        # Fornece um erro mais detalhado para depuração
         return False, f"Erro interno ao realizar aposta: {e}"
     finally:
         conn.close()
-
 
 def get_user_bets(username):
     """Busca o histórico de apostas de um usuário."""
@@ -185,9 +179,8 @@ def main_dashboard():
             del st.session_state[key]
         st.rerun()
 
-    # Navegação principal
     pages = ["Apostar", "Minhas Apostas"]
-    if st.session_state.is_admin:
+    if st.session_state.get('is_admin', False):
         pages.append("Painel do Admin")
     
     selection = st.sidebar.radio("Navegação", pages)
@@ -197,11 +190,9 @@ def main_dashboard():
     elif selection == "Minhas Apostas":
         my_bets_page()
     elif selection == "Painel do Admin" and st.session_state.is_admin:
-        # Aqui poderíamos chamar um módulo separado, mas por simplicidade, vamos definir aqui.
-        # admin_panel() 
-        st.title("Funcionalidade de Admin movida para o arquivo `admin_panel.py`")
-        st.info("Para um projeto mais robusto, o ideal é separar o painel de admin em seu próprio arquivo.")
-
+        st.title("Painel do Admin")
+        st.info("A funcionalidade de administração foi movida para um arquivo separado (`admin_panel.py`) em projetos maiores para melhor organização.")
+        st.warning("Nesta versão simplificada, o painel de admin não está incluído neste arquivo.")
 
 def betting_page():
     """Página para visualizar partidas e fazer apostas."""
@@ -221,13 +212,14 @@ def betting_page():
             with st.form(f"bet_form_{match['id']}"):
                 odds_dict = {f"{o['template_name']} ({o['odds_value']:.2f})": o['id'] for o in odds}
                 selected_odd_str = st.selectbox("Escolha sua aposta:", options=list(odds_dict.keys()))
-                amount = st.number_input("Valor da aposta (pontos)", min_value=1, step=1)
+                amount = st.number_input("Valor da aposta (pontos)", min_value=1, value=1, step=1)
                 
                 if st.form_submit_button("Fazer Aposta"):
                     selected_odd_id = odds_dict[selected_odd_str]
                     success, message = place_bet(st.session_state.username, match['id'], selected_odd_id, amount)
                     if success:
                         st.success(message)
+                        st.rerun() # Atualiza os pontos na sidebar
                     else:
                         st.error(message)
 
@@ -245,7 +237,9 @@ def my_bets_page():
         
         with st.container(border=True):
             st.write(f"**{bet['team1_name']} vs {bet['team2_name']}**")
-            st.write(f"Sua aposta: *{bet['bet_name']}*")
+            # Verifica se bet_name existe para evitar erros
+            bet_name = bet.get('bet_name', 'Aposta Indefinida')
+            st.write(f"Sua aposta: *{bet_name}*")
             
             col1, col2, col3 = st.columns(3)
             col1.metric("Apostado", f"{bet['amount']} pts")
@@ -268,20 +262,17 @@ def my_bets_page():
 
 def main():
     """Função principal que controla o fluxo da aplicação."""
-    # Inicializa o estado da sessão
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.session_state.is_admin = False
 
-    # Controla qual página é exibida
     if not st.session_state.logged_in:
         login_page()
     else:
         main_dashboard()
 
 if __name__ == "__main__":
-    # Uma verificação para garantir que o DB existe antes de rodar o app.
     try:
         with open('guimabet.db', 'r') as f:
             pass
